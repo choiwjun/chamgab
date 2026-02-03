@@ -42,6 +42,7 @@ export interface PropertyResponse {
 export interface SearchSuggestion {
   id: string
   name: string
-  type: 'property' | 'complex'
+  type: 'property' | 'complex' | 'region'
   address?: string
+  description?: string
 }

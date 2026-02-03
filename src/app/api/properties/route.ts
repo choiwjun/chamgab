@@ -24,6 +24,7 @@ const supabase = createClient(
  * - max_price: 최대 가격
  * - min_area: 최소 면적
  * - max_area: 최대 면적
+ * - bounds: 지도 영역 (sw_lat,sw_lng,ne_lat,ne_lng)
  * - page: 페이지 번호 (기본: 1)
  * - limit: 페이지 사이즈 (기본: 20, 최대: 100)
  * - sort: 정렬 (예: created_at:desc, area_exclusive:asc)
@@ -39,10 +40,11 @@ export async function GET(request: NextRequest) {
     const sido = searchParams.get("sido") || undefined
     const sigungu = searchParams.get("sigungu") || undefined
     const property_type = searchParams.get("property_type") || undefined
-    const min_price = searchParams.get("min_price") ? parseInt(searchParams.get("min_price")\!) : undefined
-    const max_price = searchParams.get("max_price") ? parseInt(searchParams.get("max_price")\!) : undefined
-    const min_area = searchParams.get("min_area") ? parseFloat(searchParams.get("min_area")\!) : undefined
-    const max_area = searchParams.get("max_area") ? parseFloat(searchParams.get("max_area")\!) : undefined
+    const min_price = searchParams.get("min_price") ? parseInt(searchParams.get("min_price")!) : undefined
+    const max_price = searchParams.get("max_price") ? parseInt(searchParams.get("max_price")!) : undefined
+    const min_area = searchParams.get("min_area") ? parseFloat(searchParams.get("min_area")!) : undefined
+    const max_area = searchParams.get("max_area") ? parseFloat(searchParams.get("max_area")!) : undefined
+    const bounds = searchParams.get("bounds") || undefined
     const page = parseInt(searchParams.get("page") || "1")
     const limit = Math.min(parseInt(searchParams.get("limit") || "20"), 100)
     const sort = searchParams.get("sort") || "created_at:desc"
@@ -54,8 +56,19 @@ export async function GET(request: NextRequest) {
     if (sido) query = query.eq("sido", sido)
     if (sigungu) query = query.eq("sigungu", sigungu)
     if (property_type) query = query.eq("property_type", property_type)
-    if (min_area \!== undefined) query = query.gte("area_exclusive", min_area)
-    if (max_area \!== undefined) query = query.lte("area_exclusive", max_area)
+    if (min_area !== undefined) query = query.gte("area_exclusive", min_area)
+    if (max_area !== undefined) query = query.lte("area_exclusive", max_area)
+
+    // 지도 영역 필터 (PostGIS 공간 쿼리)
+    if (bounds) {
+      const [swLat, swLng, neLat, neLng] = bounds.split(',').map(Number)
+      // PostGIS ST_MakeEnvelope 사용
+      query = query.filter(
+        'location',
+        'filter',
+        `ST_Within(location, ST_MakeEnvelope(${swLng}, ${swLat}, ${neLng}, ${neLat}, 4326))`
+      )
+    }
 
     // 정렬 처리
     const [sortField, sortOrder] = sort.split(":")
