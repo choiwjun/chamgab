@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary: #1E3A5F;
+  --primary-light: #2E5A8F;
+  --accent: #D4A853;
+  --chamgab-up: #10B981;
+  --chamgab-down: #EF4444;
+  --chamgab-neutral: #64748B;
+}
+
+body {
+  font-family: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont,
+    system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo',
+    'Noto Sans KR', 'Malgun Gothic', 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Segoe UI Symbol', sans-serif;
+}
+
+/* 참값 가격 표시 */
+.chamgab-price {
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.chamgab-price.up {
+  color: var(--chamgab-up);
+}
+
+.chamgab-price.down {
+  color: var(--chamgab-down);
+}
+
+/* 신뢰도 프로그레스 바 */
+.confidence-bar {
+  background: linear-gradient(90deg, var(--chamgab-up) var(--confidence), #e5e7eb var(--confidence));
+}

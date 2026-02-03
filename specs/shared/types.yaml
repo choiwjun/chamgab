@@ -1,0 +1,159 @@
+# 참값(Chamgab) 공통 타입
+version: "2.0"
+
+# ============================================================
+# 기본 타입
+# ============================================================
+primitives:
+  uuid:
+    type: string
+    format: uuid
+    example: "550e8400-e29b-41d4-a716-446655440000"
+
+  datetime:
+    type: string
+    format: ISO8601
+    example: "2026-02-03T12:00:00Z"
+
+  date:
+    type: string
+    format: YYYY-MM-DD
+    example: "2026-02-03"
+
+  point:
+    type: object
+    properties:
+      lat: { type: number, description: 위도 }
+      lng: { type: number, description: 경도 }
+    example: { lat: 37.5665, lng: 126.978 }
+
+  money:
+    type: number
+    unit: 원 (KRW)
+    format: integer
+    example: 2500000000
+
+  area:
+    type: number
+    unit: ㎡
+    format: float
+    example: 84.5
+
+# ============================================================
+# 열거형
+# ============================================================
+enums:
+  property_type:
+    description: 부동산 유형
+    values:
+      - apt (아파트)
+      - officetel (오피스텔)
+      - villa (빌라)
+      - store (상가)
+      - land (토지)
+      - building (빌딩)
+
+  confidence_level:
+    description: 신뢰도 등급
+    values:
+      - very_high (90%+, 매우 높음)
+      - high (75-89%, 높음)
+      - medium (50-74%, 보통)
+      - low (<50%, 낮음)
+
+  user_tier:
+    description: 사용자 등급
+    values:
+      - free (무료)
+      - premium (프리미엄)
+      - business (비즈니스)
+
+  subscription_plan:
+    description: 구독 플랜
+    values:
+      - premium_monthly (프리미엄 월간)
+      - premium_yearly (프리미엄 연간)
+      - business (비즈니스)
+
+  subscription_status:
+    description: 구독 상태
+    values:
+      - active (활성)
+      - canceled (취소됨)
+      - expired (만료됨)
+
+  notification_type:
+    description: 알림 유형
+    values:
+      - chamgab_changed (참값 변동)
+      - transaction_new (신규 거래)
+      - report_ready (리포트 완료)
+      - system (시스템)
+
+  region_type:
+    description: 지역 유형 (행정구역)
+    values:
+      - sido (시도)
+      - sigungu (시군구)
+      - eupmyeondong (읍면동)
+
+  factor_direction:
+    description: 가격 영향 방향
+    values:
+      - positive (가격 상승 요인)
+      - negative (가격 하락 요인)
+
+# ============================================================
+# 복합 타입
+# ============================================================
+composites:
+  price_range:
+    description: 가격 범위
+    properties:
+      min: { type: money }
+      max: { type: money }
+
+  map_bounds:
+    description: 지도 영역
+    properties:
+      lat_min: { type: number }
+      lat_max: { type: number }
+      lng_min: { type: number }
+      lng_max: { type: number }
+
+  pagination:
+    description: 페이지네이션
+    properties:
+      page: { type: integer, default: 1 }
+      size: { type: integer, default: 20 }
+      total: { type: integer }
+      has_next: { type: boolean }
+
+  filter_state:
+    description: 검색 필터 상태
+    properties:
+      property_type: { type: property_type, nullable: true }
+      region_id: { type: uuid, nullable: true }
+      price_range: { type: price_range, nullable: true }
+      area_range: { type: price_range, nullable: true }
+      built_year_filter: { type: string, nullable: true }
+      sort: { type: string, default: chamgab }
+
+# ============================================================
+# 응답 타입
+# ============================================================
+responses:
+  api_error:
+    description: API 에러 응답
+    properties:
+      error:
+        code: { type: string, example: "LIMIT_EXCEEDED" }
+        message: { type: string, example: "일일 분석 한도를 초과했습니다" }
+        details: { type: object, nullable: true }
+
+  rate_limit_info:
+    description: 조회 제한 정보
+    properties:
+      used: { type: integer, example: 10 }
+      limit: { type: integer, example: 10 }
+      reset_at: { type: datetime }

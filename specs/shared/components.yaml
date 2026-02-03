@@ -1,0 +1,205 @@
+# 참값(Chamgab) 공통 컴포넌트
+version: "2.0"
+
+components:
+  # ============================================================
+  # 레이아웃
+  # ============================================================
+  layouts:
+    - id: single-column
+      description: 단일 컬럼 레이아웃
+      max_width: 1200px
+
+    - id: sidebar-main
+      description: 사이드바 + 메인 레이아웃
+      sidebar_width: 280px
+      main_min_width: 600px
+
+    - id: full-screen
+      description: 전체 화면 (지도용)
+      overflow: hidden
+
+    - id: centered
+      description: 중앙 정렬 (인증 페이지용)
+      max_width: 400px
+      padding: 24px
+
+  # ============================================================
+  # 네비게이션
+  # ============================================================
+  header:
+    description: 공통 헤더
+    variants:
+      desktop:
+        logo: left
+        search: center
+        menu: right
+      mobile:
+        logo: center
+        search: icon (expandable)
+        menu: hamburger
+
+  bottom_tab_bar:
+    description: 모바일 하단 탭 바
+    tabs:
+      - { id: home, icon: home, label: 홈, route: / }
+      - { id: search, icon: search, label: 검색, route: /search }
+      - { id: favorites, icon: heart, label: 관심, route: /favorites, auth: true }
+      - { id: notifications, icon: bell, label: 알림, route: /notifications, auth: true, badge: unread_count }
+      - { id: mypage, icon: user, label: MY, route: /mypage, auth: true }
+
+  # ============================================================
+  # 폼 컴포넌트
+  # ============================================================
+  form_components:
+    - id: text-input
+      props: [label, placeholder, validation, disabled]
+
+    - id: email-input
+      extends: text-input
+      validation: email_pattern
+
+    - id: password-input
+      extends: text-input
+      props: [show_toggle, strength_indicator]
+
+    - id: search-input
+      props: [placeholder, debounce_ms, min_chars, autocomplete]
+
+    - id: dropdown
+      props: [options, placeholder, multi_select]
+
+    - id: range-slider
+      props: [min, max, step, unit, dual_handle]
+
+    - id: checkbox
+      props: [label, checked, indeterminate]
+
+    - id: checkbox-group
+      props: [options, select_all]
+
+    - id: chip-group
+      props: [options, multi_select, wrap]
+
+  # ============================================================
+  # 데이터 표시
+  # ============================================================
+  data_components:
+    - id: card
+      description: 기본 카드
+      props: [thumbnail, title, subtitle, metadata]
+
+    - id: property-card
+      extends: card
+      description: 매물 카드
+      fields: [thumbnail, name, address, area_exclusive, chamgab_price, confidence_badge]
+
+    - id: card-list
+      description: 카드 리스트
+      props: [infinite_scroll, empty_state]
+
+    - id: card-grid
+      description: 카드 그리드
+      props: [columns, gap]
+
+    - id: horizontal-scroll
+      description: 가로 스크롤 리스트
+      props: [snap, peek_next]
+
+    - id: comparison-table
+      description: 비교 테이블
+      props: [columns, sortable, sticky_header]
+
+    - id: key-value-table
+      description: 키-값 테이블
+      props: [fields, two_columns]
+
+    - id: ranked-list
+      description: 순위 리스트 (가격 요인용)
+      props: [show_rank, show_bar, direction_color]
+
+  # ============================================================
+  # 지도
+  # ============================================================
+  map_components:
+    - id: kakao-map
+      description: Kakao Maps SDK 기반
+      props: [center, zoom, markers, clustering, controls]
+
+    - id: mini-map
+      description: 미니 지도 (상세 페이지용)
+      extends: kakao-map
+      props: [poi_categories, radius]
+
+  # ============================================================
+  # 피드백
+  # ============================================================
+  feedback_components:
+    - id: toast
+      description: 토스트 알림
+      variants:
+        - { type: success, color: green, icon: check }
+        - { type: warning, color: amber, icon: alert }
+        - { type: error, color: red, icon: x }
+        - { type: info, color: blue, icon: info }
+      props: [message, duration, action]
+
+    - id: modal
+      description: 모달 다이얼로그
+      props: [title, content, actions, closable]
+
+    - id: bottom-sheet
+      description: 하단 시트 (모바일)
+      props: [height, draggable, backdrop]
+
+    - id: alert
+      description: 인라인 알림
+      variants: [info, success, warning, error]
+      props: [title, message, dismissible]
+
+  # ============================================================
+  # 버튼
+  # ============================================================
+  button_components:
+    - id: button
+      variants: [primary, secondary, outline, ghost, danger]
+      sizes: [sm, md, lg]
+      props: [label, icon, loading, disabled]
+
+    - id: icon-button
+      props: [icon, size, variant, toggle]
+
+    - id: oauth-button
+      description: 소셜 로그인 버튼
+      props: [provider, label, icon, bg_color]
+
+    - id: fab
+      description: Floating Action Button
+      props: [icon, label, position]
+
+  # ============================================================
+  # 특수 컴포넌트
+  # ============================================================
+  special_components:
+    - id: analysis-card
+      description: 참값 분석 결과 카드
+      fields:
+        - chamgab_price (메인 가격)
+        - price_range (최소~최대)
+        - confidence (신뢰도 바)
+        - analyzed_at (분석일)
+        - valid_until (유효기간)
+      states:
+        - loading
+        - success
+        - error (데이터 부족)
+        - limit_reached (조회 제한)
+        - unauthenticated
+
+    - id: filter-bar
+      description: 필터 바
+      props: [filters, compact, sticky]
+
+    - id: gallery
+      description: 이미지 갤러리
+      props: [images, swipeable, indicator, lightbox]

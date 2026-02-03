@@ -1,0 +1,140 @@
+# S02: 검색 결과 (리스트)
+version: "2.0"
+
+screen:
+  id: S02
+  name: 검색 결과 (리스트)
+  route: /search
+  layout: sidebar-main
+  auth_required: false
+  description: 조건에 맞는 매물 리스트
+
+data_requirements:
+  - resource: properties
+    needs: [id, name, address, property_type, area_exclusive, built_year, thumbnail, location]
+    filters:
+      region: "?region"
+      type: "?type"
+      price_min: "?price_min"
+      price_max: "?price_max"
+      area_min: "?area_min"
+      area_max: "?area_max"
+      built_year: "?built_year"
+      sort: "?sort"
+      page: "?page"
+    pagination:
+      size: 20
+      type: infinite_scroll
+    description: 필터된 매물 목록
+
+  - resource: regions
+    needs: [id, name, type, parent_id]
+    description: 지역 필터용 계층 데이터
+
+  - resource: chamgab_analyses
+    needs: [property_id, chamgab_price, confidence_level]
+    description: 매물별 참값 (있는 경우)
+
+components:
+  - id: filter_bar
+    type: filter-bar
+    position: top
+    function: 필터 칩/드롭다운
+    props:
+      filters:
+        - id: property_type
+          label: 부동산 유형
+          type: chip-group
+          options: [전체, 아파트, 오피스텔, 빌라, 상가, 토지, 빌딩]
+        - id: region
+          label: 지역
+          type: cascading-dropdown
+          levels: [시도, 시군구, 읍면동]
+        - id: price
+          label: 가격
+          type: range-slider
+          range: [0, 10000000000]
+          unit: 원
+        - id: area
+          label: 면적
+          type: range-slider
+          range: [0, 200]
+          unit: ㎡
+        - id: built_year
+          label: 건축년도
+          type: chip-group
+          options: [전체, 5년 이내, 10년 이내, 15년 이내]
+
+  - id: sort_dropdown
+    type: dropdown
+    position: top-right
+    function: 정렬 옵션
+    props:
+      options:
+        - { value: chamgab, label: 참값순 }
+        - { value: recent, label: 최신순 }
+        - { value: area, label: 면적순 }
+
+  - id: view_toggle
+    type: toggle-button
+    position: top-right
+    function: 리스트/지도 뷰 전환
+    props:
+      options: [리스트, 지도]
+      default: 리스트
+
+  - id: property_list
+    type: card-list
+    position: main
+    function: 매물 카드 리스트
+    data_source:
+      resource: properties
+    props:
+      card_fields: [thumbnail, name, address, area_exclusive, chamgab_price]
+      infinite_scroll: true
+
+  - id: result_count
+    type: text
+    position: top-left
+    function: 검색 결과 수
+    props:
+      format: "총 {count}개 매물"
+
+connections:
+  - from: filter_bar
+    action: change
+    to: URL 쿼리 파라미터 업데이트 → 목록 갱신
+
+  - from: sort_dropdown
+    action: change
+    to: URL sort 파라미터 업데이트 → 목록 갱신
+
+  - from: view_toggle
+    action: select_map
+    to: /search/map?{current_filters}
+
+  - from: property_list.card
+    action: click
+    to: /property/{id}
+
+tests:
+  - name: 초기 로드
+    when: /search 접속
+    then:
+      - 매물 20개 표시
+      - 필터바 기본값 표시
+      - 정렬 기본값 "참값순"
+
+  - name: 필터 적용
+    when: 가격 필터 변경
+    then:
+      - URL 쿼리 파라미터 업데이트
+      - 필터된 결과 표시
+
+  - name: 무한 스크롤
+    when: 목록 하단 도달
+    then: 다음 20개 매물 로드
+
+  - name: 지도 뷰 전환
+    when: 지도 토글 클릭
+    then: /search/map으로 이동 (필터 유지)

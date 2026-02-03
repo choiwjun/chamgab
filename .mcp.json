@@ -1,0 +1,23 @@
+{
+  "mcpServers": {
+    "stitch": {
+      "command": "npx",
+      "args": ["-y", "@anthropic/stitch-mcp"],
+      "env": {
+        "STITCH_API_KEY": "AQ.Ab8RN6LT1-ULPtERAgnew2KFkjRWQM3wmdzwUF3UXLHAX6vEsA"
+      }
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp@latest"]
+    },
+    "supabase": {
+      "command": "npx",
+      "args": ["-y", "@anthropic/supabase-mcp"],
+      "env": {
+        "SUPABASE_URL": "${SUPABASE_URL}",
+        "SUPABASE_SERVICE_ROLE_KEY": "${SUPABASE_SERVICE_ROLE_KEY}"
+      }
+    }
+  }
+}

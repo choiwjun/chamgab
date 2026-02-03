@@ -1,0 +1,90 @@
+# 참값(Chamgab) 화면 목록
+version: "2.0"
+
+screens:
+  # P0 - MVP 필수
+  - id: S01
+    name: 홈
+    file: home.yaml
+    route: /
+    priority: P0
+    auth: false
+
+  - id: S02
+    name: 검색 결과 (리스트)
+    file: search-list.yaml
+    route: /search
+    priority: P0
+    auth: false
+
+  - id: S03
+    name: 검색 결과 (지도)
+    file: search-map.yaml
+    route: /search/map
+    priority: P0
+    auth: false
+
+  - id: S04
+    name: 매물 상세
+    file: property-detail.yaml
+    route: /property/[id]
+    priority: P0
+    auth: partial  # 참값 분석 시 필요
+
+  - id: S08
+    name: 로그인
+    file: auth-login.yaml
+    route: /auth/login
+    priority: P0
+    auth: false
+
+  - id: S09
+    name: 회원가입
+    file: auth-signup.yaml
+    route: /auth/signup
+    priority: P0
+    auth: false
+
+  # P1 - Phase 2
+  - id: S05
+    name: 비교하기
+    file: compare.yaml
+    route: /compare
+    priority: P1
+    auth: true
+
+  - id: S06
+    name: 관심 매물
+    file: favorites.yaml
+    route: /favorites
+    priority: P1
+    auth: true
+
+  - id: S07
+    name: 알림
+    file: notifications.yaml
+    route: /notifications
+    priority: P1
+    auth: true
+
+  - id: S10
+    name: 마이페이지
+    file: mypage.yaml
+    route: /mypage
+    priority: P1
+    auth: true
+
+  - id: S11
+    name: 결제/플랜 선택
+    file: checkout-plans.yaml
+    route: /checkout/plans
+    priority: P1
+    auth: true
+
+  # P2 - Phase 3
+  - id: S12
+    name: 리포트 목록
+    file: reports.yaml
+    route: /reports
+    priority: P2
+    auth: true

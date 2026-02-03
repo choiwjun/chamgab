@@ -1,0 +1,11 @@
+{
+  "version": "1.0",
+  "project": "chamgab",
+  "started_at": "2026-02-03T00:00:00Z",
+  "current_phase": 0,
+  "completed_phases": [],
+  "completed_tasks": [],
+  "failed_tasks": [],
+  "slack_webhook_url": null,
+  "last_checkpoint": null
+}

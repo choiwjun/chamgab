@@ -1,0 +1,251 @@
+# 참값(Chamgab) 도메인 리소스 정의
+# 화면 명세에서 data_requirements.resource로 참조됨
+
+version: "1.0"
+
+resources:
+  # ============================================================
+  # 매물 (Properties)
+  # ============================================================
+  properties:
+    description: 부동산 매물 정보
+    endpoints:
+      - method: GET
+        path: /api/properties
+        description: 매물 목록 조회
+      - method: GET
+        path: /api/properties/:id
+        description: 매물 상세 조회
+      - method: GET
+        path: /api/properties/autocomplete
+        description: 검색 자동완성
+    fields:
+      id: { type: uuid, description: 매물 ID }
+      property_type: { type: string, enum: [apt, officetel, villa, store, land, building] }
+      name: { type: string, description: 매물명 }
+      address: { type: string, description: 주소 }
+      sido: { type: string, description: 시도 }
+      sigungu: { type: string, description: 시군구 }
+      eupmyeondong: { type: string, description: 읍면동 }
+      location: { type: point, description: 위치 좌표 (lat, lng) }
+      area_exclusive: { type: number, description: 전용면적 (㎡) }
+      built_year: { type: number, description: 건축년도 }
+      floors: { type: number, description: 층수 }
+      thumbnail: { type: string, description: 썸네일 이미지 URL }
+      images: { type: array, description: 이미지 URL 배열 }
+
+  # ============================================================
+  # 참값 분석 (Chamgab Analysis)
+  # ============================================================
+  chamgab_analyses:
+    description: 참값 분석 결과
+    endpoints:
+      - method: GET
+        path: /api/chamgab/:property_id
+        description: 참값 분석 결과 조회
+      - method: POST
+        path: /api/chamgab
+        description: 참값 분석 요청
+    fields:
+      id: { type: uuid, description: 분석 ID }
+      property_id: { type: uuid, description: 매물 ID }
+      chamgab_price: { type: number, description: 참값 (원) }
+      min_price: { type: number, description: 최소 가격 (원) }
+      max_price: { type: number, description: 최대 가격 (원) }
+      confidence: { type: number, description: 신뢰도 (0~1) }
+      confidence_level: { type: string, enum: [very_high, high, medium, low] }
+      yield_rate: { type: number, description: 수익률 (상업용) }
+      analyzed_at: { type: datetime, description: 분석 시간 }
+      valid_until: { type: datetime, description: 유효 기간 }
+
+  # ============================================================
+  # 가격 요인 (Price Factors)
+  # ============================================================
+  price_factors:
+    description: 가격 영향 요인
+    endpoints:
+      - method: GET
+        path: /api/chamgab/:analysis_id/factors
+        description: 가격 요인 목록 조회
+    fields:
+      id: { type: uuid, description: 요인 ID }
+      analysis_id: { type: uuid, description: 분석 ID }
+      rank: { type: number, description: 순위 }
+      factor_name: { type: string, description: 요인명 }
+      factor_category: { type: string, description: 카테고리 }
+      factor_value: { type: string, description: 요인값 }
+      contribution: { type: number, description: 기여도 (원) }
+      contribution_pct: { type: number, description: 기여도 (%) }
+      direction: { type: string, enum: [positive, negative] }
+      description: { type: string, description: 설명 }
+
+  # ============================================================
+  # 유사 거래 (Similar Transactions)
+  # ============================================================
+  transactions:
+    description: 실거래 내역
+    endpoints:
+      - method: GET
+        path: /api/transactions
+        description: 거래 목록 조회
+      - method: GET
+        path: /api/properties/:id/similar
+        description: 유사 거래 조회
+    fields:
+      id: { type: uuid, description: 거래 ID }
+      property_id: { type: uuid, description: 매물 ID }
+      property_name: { type: string, description: 매물명 }
+      price: { type: number, description: 거래가 (원) }
+      transaction_date: { type: date, description: 거래일 }
+      area_exclusive: { type: number, description: 전용면적 }
+      floor: { type: number, description: 층수 }
+      distance: { type: number, description: 거리 (m) }
+      similarity: { type: number, description: 유사도 (0~1) }
+
+  # ============================================================
+  # 관심 매물 (Favorites)
+  # ============================================================
+  favorites:
+    description: 관심 매물
+    auth_required: true
+    endpoints:
+      - method: GET
+        path: /api/favorites
+        description: 관심 매물 목록
+      - method: POST
+        path: /api/favorites
+        description: 관심 매물 추가
+      - method: DELETE
+        path: /api/favorites/:id
+        description: 관심 매물 삭제
+    fields:
+      id: { type: uuid, description: 관심 ID }
+      user_id: { type: uuid, description: 사용자 ID }
+      property_id: { type: uuid, description: 매물 ID }
+      alert_enabled: { type: boolean, description: 알림 활성화 }
+      created_at: { type: datetime, description: 저장일 }
+
+  # ============================================================
+  # 알림 (Notifications)
+  # ============================================================
+  notifications:
+    description: 사용자 알림
+    auth_required: true
+    endpoints:
+      - method: GET
+        path: /api/notifications
+        description: 알림 목록
+      - method: PATCH
+        path: /api/notifications/:id/read
+        description: 읽음 처리
+    fields:
+      id: { type: uuid, description: 알림 ID }
+      user_id: { type: uuid, description: 사용자 ID }
+      type: { type: string, enum: [chamgab_changed, transaction_new, report_ready, system] }
+      title: { type: string, description: 제목 }
+      body: { type: string, description: 내용 }
+      is_read: { type: boolean, description: 읽음 여부 }
+      created_at: { type: datetime, description: 생성일 }
+
+  # ============================================================
+  # 사용자 (Users)
+  # ============================================================
+  users:
+    description: 사용자 정보
+    auth_required: true
+    endpoints:
+      - method: GET
+        path: /api/users/me
+        description: 현재 사용자 정보
+      - method: PATCH
+        path: /api/users/me
+        description: 프로필 수정
+    fields:
+      id: { type: uuid, description: 사용자 ID }
+      email: { type: string, description: 이메일 }
+      name: { type: string, description: 이름 }
+      tier: { type: string, enum: [free, premium, business] }
+      daily_analysis_count: { type: number, description: 일일 분석 횟수 }
+      daily_analysis_limit: { type: number, description: 일일 분석 한도 }
+
+  # ============================================================
+  # 구독 (Subscriptions)
+  # ============================================================
+  subscriptions:
+    description: 구독 정보
+    auth_required: true
+    endpoints:
+      - method: GET
+        path: /api/subscriptions
+        description: 구독 정보 조회
+      - method: POST
+        path: /api/subscriptions
+        description: 구독 시작
+      - method: POST
+        path: /api/subscriptions/cancel
+        description: 구독 취소
+    fields:
+      id: { type: uuid, description: 구독 ID }
+      user_id: { type: uuid, description: 사용자 ID }
+      plan: { type: string, enum: [premium_monthly, premium_yearly, business] }
+      status: { type: string, enum: [active, canceled, expired] }
+      current_period_start: { type: datetime, description: 현재 기간 시작 }
+      current_period_end: { type: datetime, description: 현재 기간 종료 }
+
+  # ============================================================
+  # 리포트 (Reports)
+  # ============================================================
+  reports:
+    description: PDF 리포트
+    auth_required: true
+    endpoints:
+      - method: GET
+        path: /api/reports
+        description: 리포트 목록
+      - method: POST
+        path: /api/reports
+        description: 리포트 생성
+      - method: GET
+        path: /api/reports/:id/download
+        description: 리포트 다운로드
+    fields:
+      id: { type: uuid, description: 리포트 ID }
+      user_id: { type: uuid, description: 사용자 ID }
+      property_id: { type: uuid, description: 매물 ID }
+      property_name: { type: string, description: 매물명 }
+      file_url: { type: string, description: 파일 URL }
+      created_at: { type: datetime, description: 생성일 }
+
+  # ============================================================
+  # 지역 (Regions)
+  # ============================================================
+  regions:
+    description: 지역 정보 (검색용)
+    endpoints:
+      - method: GET
+        path: /api/regions
+        description: 지역 목록 (계층)
+      - method: GET
+        path: /api/regions/trends
+        description: 지역별 가격 트렌드
+    fields:
+      id: { type: uuid, description: 지역 ID }
+      name: { type: string, description: 지역명 }
+      type: { type: string, enum: [sido, sigungu, eupmyeondong] }
+      parent_id: { type: uuid, description: 상위 지역 ID }
+      property_count: { type: number, description: 매물 수 }
+      avg_price: { type: number, description: 평균 가격 }
+      price_change_pct: { type: number, description: 주간 변동률 }
+
+  # ============================================================
+  # 인기 검색어 (Popular Searches)
+  # ============================================================
+  popular_searches:
+    description: 인기 검색어
+    endpoints:
+      - method: GET
+        path: /api/search/popular
+        description: 인기 검색어 목록
+    fields:
+      keyword: { type: string, description: 검색어 }
+      count: { type: number, description: 검색 횟수 }

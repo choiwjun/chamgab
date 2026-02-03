@@ -1,0 +1,149 @@
+# 참값(Chamgab) 도메인 커버리지 검증 리포트
+version: "2.0"
+generated_at: "2026-02-03"
+
+# ============================================================
+# 화면별 리소스 사용 매트릭스
+# ============================================================
+screen_resource_matrix:
+  home:
+    resources_used:
+      - popular_searches: [keyword, count]
+      - regions: [id, name, avg_price, price_change_pct]
+      - properties: [id, name, address, thumbnail, area_exclusive]
+    coverage: 100%
+
+  search-list:
+    resources_used:
+      - properties: [id, name, address, property_type, area_exclusive, built_year, thumbnail, location]
+      - regions: [id, name, type, parent_id]
+      - chamgab_analyses: [property_id, chamgab_price, confidence_level]
+    coverage: 100%
+
+  search-map:
+    resources_used:
+      - properties: [id, name, address, location, thumbnail, area_exclusive]
+      - chamgab_analyses: [property_id, chamgab_price]
+    coverage: 100%
+
+  property-detail:
+    resources_used:
+      - properties: [id, name, address, property_type, area_exclusive, built_year, floors, images, location, sido, sigungu, eupmyeondong]
+      - chamgab_analyses: [chamgab_price, min_price, max_price, confidence, confidence_level, analyzed_at, valid_until]
+      - price_factors: [rank, factor_name, factor_category, contribution, contribution_pct, direction, description]
+      - transactions: [id, property_name, price, transaction_date, area_exclusive, floor, distance, similarity]
+      - favorites: [id]
+    coverage: 100%
+
+  auth-login:
+    resources_used: []
+    note: 정적 화면, 리소스 불필요
+    coverage: N/A
+
+  auth-signup:
+    resources_used: []
+    note: 정적 화면, 리소스 불필요
+    coverage: N/A
+
+# ============================================================
+# 리소스별 필드 사용 현황
+# ============================================================
+resource_field_coverage:
+  properties:
+    total_fields: 14
+    used_fields: 14
+    unused_fields: []
+    coverage: 100%
+    used_by_screens: [home, search-list, search-map, property-detail]
+
+  chamgab_analyses:
+    total_fields: 10
+    used_fields: 8
+    unused_fields: [id, yield_rate]
+    coverage: 80%
+    used_by_screens: [search-list, search-map, property-detail]
+    note: yield_rate는 상업용 전용 (MVP 제외)
+
+  price_factors:
+    total_fields: 10
+    used_fields: 8
+    unused_fields: [id, analysis_id]
+    coverage: 80%
+    used_by_screens: [property-detail]
+    note: id, analysis_id는 내부 참조용
+
+  transactions:
+    total_fields: 9
+    used_fields: 8
+    unused_fields: [property_id]
+    coverage: 89%
+    used_by_screens: [property-detail]
+
+  favorites:
+    total_fields: 5
+    used_fields: 1
+    unused_fields: [user_id, property_id, alert_enabled, created_at]
+    coverage: 20%
+    used_by_screens: [property-detail]
+    note: P0에서는 존재 여부만 확인, P1에서 전체 사용
+
+  regions:
+    total_fields: 8
+    used_fields: 6
+    unused_fields: [property_count, price_change_pct]
+    coverage: 75%
+    used_by_screens: [home, search-list]
+
+  popular_searches:
+    total_fields: 2
+    used_fields: 2
+    unused_fields: []
+    coverage: 100%
+    used_by_screens: [home]
+
+  # P1+ 리소스 (미사용)
+  notifications:
+    total_fields: 8
+    used_fields: 0
+    coverage: 0%
+    note: P1 화면 (S07)에서 사용 예정
+
+  users:
+    total_fields: 6
+    used_fields: 0
+    coverage: 0%
+    note: P1 화면 (S10)에서 사용 예정
+
+  subscriptions:
+    total_fields: 6
+    used_fields: 0
+    coverage: 0%
+    note: P1 화면 (S11)에서 사용 예정
+
+  reports:
+    total_fields: 6
+    used_fields: 0
+    coverage: 0%
+    note: P2 화면 (S12)에서 사용 예정
+
+# ============================================================
+# 검증 결과 요약
+# ============================================================
+summary:
+  total_screens_p0: 6
+  screens_validated: 6
+  total_resources: 11
+  resources_used_p0: 7
+  resources_pending: 4  # notifications, users, subscriptions, reports
+
+  validation_status: PASS
+
+  notes:
+    - "P0 화면에서 필요한 모든 필드가 리소스에 정의됨"
+    - "auth-login, auth-signup은 정적 화면으로 리소스 불필요"
+    - "favorites는 P0에서 최소 사용, P1에서 전체 활용 예정"
+    - "4개 리소스(notifications, users, subscriptions, reports)는 P1/P2 화면에서 사용 예정"
+
+  recommendations:
+    - "yield_rate 필드는 상업용 부동산 MVP 확장 시 활용"
+    - "regions.property_count는 지역 통계 화면 추가 시 활용"

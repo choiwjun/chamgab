@@ -1,0 +1,171 @@
+# S09: 회원가입
+version: "2.0"
+
+screen:
+  id: S09
+  name: 회원가입
+  route: /auth/signup
+  layout: centered
+  auth_required: false
+  description: 신규 회원 가입
+
+data_requirements: []  # 정적 화면
+
+components:
+  - id: logo
+    type: image
+    position: top-center
+    function: 참값 로고
+    props:
+      src: /images/logo.svg
+      alt: 참값
+
+  - id: title
+    type: heading
+    position: top
+    function: 페이지 제목
+    props:
+      level: h1
+      text: 회원가입
+
+  - id: social_signup
+    type: button-group
+    position: main
+    function: 소셜 회원가입
+    props:
+      direction: vertical
+    children:
+      - id: google_btn
+        type: oauth-button
+        props:
+          provider: google
+          label: Google로 시작하기
+
+      - id: kakao_btn
+        type: oauth-button
+        props:
+          provider: kakao
+          label: 카카오로 시작하기
+
+      - id: naver_btn
+        type: oauth-button
+        props:
+          provider: naver
+          label: 네이버로 시작하기
+
+  - id: divider
+    type: divider
+    position: main
+    props:
+      label: 또는
+
+  - id: signup_form
+    type: form
+    position: main
+    function: 이메일 회원가입 폼
+    props:
+      fields:
+        - id: email
+          type: email
+          label: 이메일
+          placeholder: email@example.com
+          validation:
+            required: true
+            pattern: email
+          async_validation:
+            endpoint: /api/auth/check-email
+            message: 이미 사용 중인 이메일입니다
+
+        - id: password
+          type: password
+          label: 비밀번호
+          placeholder: 8자 이상, 영문+숫자
+          validation:
+            required: true
+            min_length: 8
+            pattern: "^(?=.*[A-Za-z])(?=.*\\d).+$"
+            pattern_message: 영문과 숫자를 포함해야 합니다
+          show_strength: true
+
+        - id: password_confirm
+          type: password
+          label: 비밀번호 확인
+          placeholder: 비밀번호 다시 입력
+          validation:
+            required: true
+            match: password
+            match_message: 비밀번호가 일치하지 않습니다
+
+        - id: terms
+          type: checkbox-group
+          label: 약관 동의
+          options:
+            - id: all
+              label: 전체 동의
+              select_all: true
+            - id: service
+              label: (필수) 서비스 이용약관
+              required: true
+              link: /terms/service
+            - id: privacy
+              label: (필수) 개인정보 처리방침
+              required: true
+              link: /terms/privacy
+            - id: marketing
+              label: (선택) 마케팅 정보 수신
+              required: false
+
+      submit:
+        label: 가입하기
+        loading_label: 가입 처리 중...
+
+  - id: login_link
+    type: text-link
+    position: bottom
+    function: 로그인 페이지 링크
+    props:
+      text: 이미 계정이 있으신가요?
+      link_text: 로그인
+      to: /auth/login
+
+connections:
+  - from: google_btn
+    action: click
+    to: Supabase OAuth (Google)
+
+  - from: kakao_btn
+    action: click
+    to: Supabase OAuth (Kakao)
+
+  - from: naver_btn
+    action: click
+    to: Supabase OAuth (Naver)
+
+  - from: signup_form
+    action: submit
+    to: POST /api/auth/signup → 이메일 인증 페이지
+
+  - from: signup_form.email
+    action: blur
+    to: GET /api/auth/check-email?email={value}
+
+tests:
+  - name: 이메일 중복 확인
+    when: 이메일 입력 후 포커스 아웃
+    then:
+      - 중복 확인 API 호출
+      - 중복 시 에러 메시지 표시
+
+  - name: 비밀번호 유효성
+    when: 영문만 입력
+    then: "영문과 숫자를 포함해야 합니다" 메시지
+
+  - name: 비밀번호 일치
+    when: 비밀번호 확인 불일치
+    then: "비밀번호가 일치하지 않습니다" 메시지
+
+  - name: 회원가입 성공
+    when: 모든 필드 유효 + 필수 약관 동의
+    then:
+      - 가입 처리
+      - 이메일 인증 안내 페이지로 이동

@@ -1,0 +1,101 @@
+# S01: 홈 화면
+version: "2.0"
+
+screen:
+  id: S01
+  name: 홈
+  route: /
+  layout: single-column
+  auth_required: false
+  description: 서비스 소개 및 검색 진입점
+
+data_requirements:
+  - resource: popular_searches
+    needs: [keyword, count]
+    description: 인기 검색어 (실시간)
+
+  - resource: regions
+    needs: [id, name, avg_price, price_change_pct]
+    filters: { type: sigungu, limit: 6 }
+    description: 주간 가격 트렌드 지역
+
+  - resource: properties
+    needs: [id, name, address, thumbnail, area_exclusive]
+    filters: { sort: views_desc, limit: 10 }
+    description: 인기 매물 Top 10
+
+components:
+  - id: hero_section
+    type: section
+    position: top
+    function: 히어로 영역 (검색바 + 슬로건)
+    children:
+      - id: search_bar
+        type: search-input
+        function: 검색 자동완성
+        props:
+          placeholder: "아파트, 지역명으로 검색"
+          debounce_ms: 300
+          min_chars: 2
+        data_source:
+          resource: popular_searches
+
+  - id: price_trends
+    type: card-grid
+    position: main
+    function: 지역별 가격 트렌드 카드
+    data_source:
+      resource: regions
+    props:
+      columns: { mobile: 2, desktop: 3 }
+
+  - id: popular_properties
+    type: horizontal-scroll
+    position: main
+    function: 인기 매물 카드 리스트
+    data_source:
+      resource: properties
+
+  - id: service_intro
+    type: section
+    position: bottom
+    function: 서비스 소개 (정적)
+    props:
+      items:
+        - title: "AI 기반 참값 분석"
+          description: "머신러닝으로 정확한 가격 예측"
+        - title: "가격 형성 요인"
+          description: "왜 이 가격인지 투명하게 공개"
+        - title: "유사 거래 비교"
+          description: "실거래 데이터 기반 검증"
+
+connections:
+  - from: search_bar
+    action: submit
+    to: /search?q={query}
+
+  - from: price_trends.card
+    action: click
+    to: /search?region={region_id}
+
+  - from: popular_properties.card
+    action: click
+    to: /property/{id}
+
+tests:
+  - name: 초기 로드
+    when: 페이지 접속
+    then:
+      - 검색바 표시
+      - 인기 검색어 로드
+      - 가격 트렌드 6개 표시
+
+  - name: 검색 자동완성
+    when: 검색어 2자 이상 입력
+    then:
+      - 300ms 디바운스 후 자동완성 표시
+      - 지역(3) → 매물(5) → 검색어 순서
+
+  - name: 인기 매물 클릭
+    when: 매물 카드 클릭
+    then: 매물 상세 페이지로 이동

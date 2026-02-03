@@ -1,0 +1,147 @@
+# S08: 로그인
+version: "2.0"
+
+screen:
+  id: S08
+  name: 로그인
+  route: /auth/login
+  layout: centered
+  auth_required: false
+  description: 사용자 인증
+
+data_requirements: []  # 정적 화면
+
+components:
+  - id: logo
+    type: image
+    position: top-center
+    function: 참값 로고
+    props:
+      src: /images/logo.svg
+      alt: 참값
+
+  - id: social_login
+    type: button-group
+    position: main
+    function: 소셜 로그인 버튼
+    props:
+      direction: vertical
+      gap: 12px
+    children:
+      - id: google_btn
+        type: oauth-button
+        function: Google 로그인
+        props:
+          provider: google
+          label: Google로 계속하기
+          icon: google
+
+      - id: kakao_btn
+        type: oauth-button
+        function: Kakao 로그인
+        props:
+          provider: kakao
+          label: 카카오로 계속하기
+          icon: kakao
+          bg_color: "#FEE500"
+
+      - id: naver_btn
+        type: oauth-button
+        function: Naver 로그인
+        props:
+          provider: naver
+          label: 네이버로 계속하기
+          icon: naver
+          bg_color: "#03C75A"
+
+  - id: divider
+    type: divider
+    position: main
+    function: 구분선
+    props:
+      label: 또는
+
+  - id: email_form
+    type: form
+    position: main
+    function: 이메일 로그인 폼
+    props:
+      fields:
+        - id: email
+          type: email
+          label: 이메일
+          placeholder: email@example.com
+          validation:
+            required: true
+            pattern: email
+
+        - id: password
+          type: password
+          label: 비밀번호
+          placeholder: 비밀번호 입력
+          validation:
+            required: true
+            min_length: 8
+
+      submit:
+        label: 로그인
+        loading_label: 로그인 중...
+
+  - id: links
+    type: link-group
+    position: bottom
+    function: 관련 링크
+    props:
+      links:
+        - label: 회원가입
+          to: /auth/signup
+        - label: 비밀번호 찾기
+          to: /auth/forgot-password
+
+  - id: error_message
+    type: alert
+    position: form-bottom
+    function: 에러 메시지
+    props:
+      variant: error
+      visible: false
+
+connections:
+  - from: google_btn
+    action: click
+    to: Supabase OAuth (Google)
+
+  - from: kakao_btn
+    action: click
+    to: Supabase OAuth (Kakao)
+
+  - from: naver_btn
+    action: click
+    to: Supabase OAuth (Naver)
+
+  - from: email_form
+    action: submit
+    to: POST /api/auth/login → redirect={redirect || /}
+
+  - from: links.signup
+    action: click
+    to: /auth/signup
+
+tests:
+  - name: 소셜 로그인
+    when: Google 버튼 클릭
+    then:
+      - Google OAuth 페이지로 리다이렉트
+      - 인증 성공 시 원래 페이지로 복귀
+
+  - name: 이메일 로그인 성공
+    when: 올바른 이메일/비밀번호 입력
+    then:
+      - 로그인 성공
+      - redirect 파라미터 경로로 이동
+
+  - name: 로그인 실패
+    when: 잘못된 비밀번호 입력
+    then:
+      - 에러 메시지 "이메일 또는 비밀번호가 올바르지 않습니다"
+      - 5회 실패 시 15분 잠금

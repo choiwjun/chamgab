@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Skill(document-skills:skill-creator)",
+      "Skill(document-skills:skill-creator:*)",
+      "Bash(python3:*)",
+      "Bash(chmod:*)",
+      "Bash(unzip:*)",
+      "Bash(rsync:*)",
+      "Bash(bash:*)",
+      "Bash(pip install:*)",
+      "Bash(pip3 install:*)",
+      "Bash(uv:*)",
+      "Bash(skill-seekers:*)",
+      "Bash(cat:*)",
+      "Bash(claude --version:*)",
+      "Bash(claude --agent orchestrator:*)",
+      "Bash(claude config:*)",
+      "Bash(ls:*)",
+      "Bash(claude --agent test-agent -p \"hello\":*)",
+      "Bash(claude -p:*)",
+      "Bash( grep -l \"TDD\" ~/.claude/skills/tasks-generator/references/*.md)",
+      "Bash( grep -l \"Worktree\" ~/.claude/skills/tasks-generator/references/*.md)",
+      "Bash(__NEW_LINE__ echo \"\")",
+      "Bash(grep:*)",
+      "Bash(git init:*)",
+      "Bash(git branch:*)",
+      "Bash(git remote add:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
+    ]
+  }
+}
