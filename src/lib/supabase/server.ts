@@ -1,8 +1,15 @@
+// @TASK P1-R1 - Supabase Server Client
+// @SPEC .claude/constitutions/supabase/auth-integration.md
+
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
-export function createClient() {
-  const cookieStore = cookies()
+/**
+ * 서버 측 Supabase 클라이언트 생성
+ * Next.js 14+ 호환 (async cookies)
+ */
+export async function createClient() {
+  const cookieStore = await cookies()
 
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -15,7 +22,7 @@ export function createClient() {
         set(name: string, value: string, options: CookieOptions) {
           try {
             cookieStore.set({ name, value, ...options })
-          } catch (error) {
+          } catch {
             // The `set` method was called from a Server Component.
             // This can be ignored if you have middleware refreshing user sessions.
           }
@@ -23,7 +30,7 @@ export function createClient() {
         remove(name: string, options: CookieOptions) {
           try {
             cookieStore.set({ name, value: '', ...options })
-          } catch (error) {
+          } catch {
             // The `delete` method was called from a Server Component.
             // This can be ignored if you have middleware refreshing user sessions.
           }
