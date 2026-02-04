@@ -26,6 +26,23 @@ AI 기반 부동산 가격 분석 서비스
 
 ## Lessons Learned
 
+### [2026-02-04] Phase 4: 비교하기 화면 구현
+
+**문제**: Next.js TypedRoutes + 동적 쿼리 파라미터 타입 충돌
+**원인**: `router.replace(\`/compare?ids=${ids}\`)` 형태의 동적 쿼리가 TypedRoutes와 호환되지 않음
+**해결**: `@ts-expect-error` 주석으로 타입 체크 우회
+**교훈**: TypedRoutes는 정적 경로만 지원하므로, 동적 쿼리 파라미터 사용 시 타입 단언 필요
+
+**문제**: framer-motion 의존성 누락 에러
+**원인**: node_modules 미설치 상태
+**해결**: `npm install` 재실행
+**교훈**: 프로젝트 체크아웃 후 반드시 의존성 설치 확인
+
+**문제**: Supabase 환경변수 누락으로 빌드 실패
+**원인**: .env 파일 미존재 (gitignore 대상)
+**해결**: .env.example 복사하여 .env 생성 (mock 값 사용)
+**교훈**: 프로젝트 초기 설정 시 환경변수 파일 확인 필수
+
 ### [2026-02-03] 프로젝트 부트스트랩
 
 - 기획 문서가 잘 정리되어 있어 Domain-Guarded 구조 적용
