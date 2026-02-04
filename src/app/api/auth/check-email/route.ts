@@ -7,6 +7,68 @@ import { checkEmailSchema } from '@/lib/validations/auth'
 import type { AuthErrorResponse, CheckEmailResponse } from '@/types/auth'
 
 /**
+ * GET /api/auth/check-email
+ * 이메일 중복 확인 (Query Parameter)
+ *
+ * @query {email}
+ * @returns {CheckEmailResponse | AuthErrorResponse}
+ */
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url)
+  const email = searchParams.get('email')
+
+  if (!email) {
+    return NextResponse.json<AuthErrorResponse>(
+      { error: '이메일을 입력해주세요' },
+      { status: 400 }
+    )
+  }
+
+  // 입력값 검증
+  const validationResult = checkEmailSchema.safeParse({ email })
+
+  if (!validationResult.success) {
+    const errorMessage = validationResult.error.errors[0]?.message || '입력값이 올바르지 않습니다'
+    return NextResponse.json<AuthErrorResponse>(
+      { error: errorMessage },
+      { status: 400 }
+    )
+  }
+
+  try {
+    const supabase = await createClient()
+
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select('id')
+      .eq('email', email)
+      .maybeSingle()
+
+    if (error) {
+      // 테이블이 없는 경우 등은 available로 처리
+      return NextResponse.json<CheckEmailResponse>(
+        { available: true, message: '사용 가능한 이메일입니다' },
+        { status: 200 }
+      )
+    }
+
+    return NextResponse.json<CheckEmailResponse>(
+      {
+        available: !data,
+        message: data ? '이미 사용 중인 이메일입니다' : '사용 가능한 이메일입니다',
+      },
+      { status: data ? 409 : 200 }
+    )
+  } catch (error) {
+    console.error('Check email error:', error)
+    return NextResponse.json<AuthErrorResponse>(
+      { error: '서버 오류가 발생했습니다' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
  * POST /api/auth/check-email
  * 이메일 중복 확인
  *

@@ -8,15 +8,15 @@ const supabase = createClient(
 )
 
 /**
- * GET /api/chamgab/:propertyId
- * 특정 매물의 참값 분석 결과 조회
+ * GET /api/chamgab/:id
+ * 특정 매물의 참값 분석 결과 조회 (id = propertyId)
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ propertyId: string }> }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { propertyId } = await params
+    const { id: propertyId } = await params
 
     // 유효한 분석 결과 조회 (만료되지 않은 것)
     const { data: analysis, error } = await supabase

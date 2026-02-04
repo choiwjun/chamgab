@@ -3,9 +3,7 @@
 
 'use client';
 
-export const dynamic = 'force-dynamic';
-
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import { KakaoMap } from '@/components/map/KakaoMap';
 import { PropertyPreview } from '@/components/map/PropertyPreview';
 import Script from 'next/script';
@@ -26,7 +24,7 @@ interface Property {
   chamgab_price?: number;
 }
 
-export default function SearchMapPage() {
+function SearchMapContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -63,6 +61,7 @@ export default function SearchMapPage() {
         const data = await response.json();
 
         // location 파싱 (PostGIS POINT 형식)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const parsedProperties = (data.items || []).map((item: any) => {
           // location이 "POINT(lng lat)" 형식이면 파싱
           let location = { lat: 37.5665, lng: 126.978 }; // 기본값
@@ -129,7 +128,8 @@ export default function SearchMapPage() {
     if (priceMin) params.set('price_min', priceMin);
     if (priceMax) params.set('price_max', priceMax);
 
-    router.push(`/search?${params.toString()}`);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    router.push(`/search?${params.toString()}` as any);
   };
 
   return (
@@ -207,5 +207,22 @@ export default function SearchMapPage() {
         />
       </div>
     </>
+  );
+}
+
+// 로딩 폴백 컴포넌트
+function MapLoading() {
+  return (
+    <div className="fixed inset-0 flex items-center justify-center bg-gray-100">
+      <p className="text-gray-600">지도를 불러오는 중...</p>
+    </div>
+  );
+}
+
+export default function SearchMapPage() {
+  return (
+    <Suspense fallback={<MapLoading />}>
+      <SearchMapContent />
+    </Suspense>
   );
 }

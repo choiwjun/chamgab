@@ -22,15 +22,15 @@ const MOCK_FACTORS = [
 ]
 
 /**
- * GET /api/chamgab/:analysisId/factors
- * 가격 요인 목록 조회
+ * GET /api/chamgab/:id/factors
+ * 가격 요인 목록 조회 (id = analysisId)
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ analysisId: string }> }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { analysisId } = await params
+    const { id: analysisId } = await params
     const searchParams = request.nextUrl.searchParams
     const limit = Math.min(parseInt(searchParams.get('limit') || '5'), 10)
 

@@ -46,3 +46,9 @@ export function formatNumber(num: number | null | undefined): string {
   if (num === null || num === undefined) return '-'
   return num.toLocaleString('ko-KR')
 }
+
+/**
+ * 가격을 한글로 포맷팅 (formatCurrency의 별칭)
+ * @example formatPrice(250000000) => "2억 5천만원"
+ */
+export const formatPrice = formatCurrency
