@@ -14,10 +14,10 @@ export function ImageGallery({ images, alt }: ImageGalleryProps) {
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isLightboxOpen, setIsLightboxOpen] = useState(false)
 
-  // 이미지가 없을 때 placeholder
-  const displayImages = images.length > 0
-    ? images
-    : ['/images/placeholder-property.jpg']
+  // 이미지가 없을 때 placeholder (SVG data URI)
+  const placeholderImage =
+    'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="800" height="600"%3E%3Crect width="800" height="600" fill="%23f3f4f6"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="24" fill="%239ca3af"%3E이미지 없음%3C/text%3E%3C/svg%3E'
+  const displayImages = images.length > 0 ? images : [placeholderImage]
 
   const goToPrevious = () => {
     setCurrentIndex((prev) =>
@@ -44,6 +44,7 @@ export function ImageGallery({ images, alt }: ImageGalleryProps) {
               fill
               className="object-cover"
               priority={currentIndex === 0}
+              unoptimized={displayImages[currentIndex].startsWith('data:')}
             />
           ) : (
             <div className="flex h-full items-center justify-center bg-gray-200">
@@ -109,9 +110,7 @@ export function ImageGallery({ images, alt }: ImageGalleryProps) {
               key={index}
               onClick={() => setCurrentIndex(index)}
               className={`relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-lg border-2 ${
-                index === currentIndex
-                  ? 'border-primary'
-                  : 'border-transparent'
+                index === currentIndex ? 'border-primary' : 'border-transparent'
               }`}
             >
               <Image
@@ -119,6 +118,7 @@ export function ImageGallery({ images, alt }: ImageGalleryProps) {
                 alt={`${alt} 썸네일 ${index + 1}`}
                 fill
                 className="object-cover"
+                unoptimized={image.startsWith('data:')}
               />
             </button>
           ))}
@@ -147,6 +147,7 @@ export function ImageGallery({ images, alt }: ImageGalleryProps) {
               alt={`${alt} - ${currentIndex + 1}`}
               fill
               className="object-contain"
+              unoptimized={displayImages[currentIndex].startsWith('data:')}
             />
 
             {displayImages.length > 1 && (
