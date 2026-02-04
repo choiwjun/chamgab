@@ -74,6 +74,8 @@ export function SearchBar() {
       router.push(`/property/${suggestion.id}`)
     } else if (suggestion.type === 'complex' && suggestion.id) {
       router.push(`/search?complex=${suggestion.id}`)
+    } else if (suggestion.type === 'region' && suggestion.id) {
+      router.push(`/search?region=${suggestion.id}`)
     } else {
       router.push(`/search?q=${encodeURIComponent(suggestion.name)}`)
     }
@@ -122,28 +124,29 @@ export function SearchBar() {
               <div className="px-4 py-3 text-sm text-gray-500">검색 중...</div>
             )}
 
-            {!isLoading && suggestions.map((suggestion, index) => (
-              <button
-                key={`${suggestion.type}-${suggestion.id || index}`}
-                type="button"
-                role="option"
-                aria-selected={false}
-                onClick={() => handleSuggestionClick(suggestion)}
-                className="flex w-full items-center gap-3 border-b border-gray-100 px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-gray-50"
-              >
-                {getIconByType(suggestion.type)}
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-gray-900">
-                    {suggestion.name}
-                  </p>
-                  {suggestion.description && (
-                    <p className="text-xs text-gray-500">
-                      {suggestion.description}
+            {!isLoading &&
+              suggestions.map((suggestion, index) => (
+                <button
+                  key={`${suggestion.type}-${suggestion.id || index}`}
+                  type="button"
+                  role="option"
+                  aria-selected={false}
+                  onClick={() => handleSuggestionClick(suggestion)}
+                  className="flex w-full items-center gap-3 border-b border-gray-100 px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-gray-50"
+                >
+                  {getIconByType(suggestion.type)}
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-gray-900">
+                      {suggestion.name}
                     </p>
-                  )}
-                </div>
-              </button>
-            ))}
+                    {suggestion.description && (
+                      <p className="text-xs text-gray-500">
+                        {suggestion.description}
+                      </p>
+                    )}
+                  </div>
+                </button>
+              ))}
           </div>
         )}
       </form>

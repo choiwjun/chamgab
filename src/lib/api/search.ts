@@ -3,17 +3,25 @@
 
 import type { PopularSearchesResponse } from '@/types/search'
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
+const getBaseUrl = () => {
+  if (typeof window !== 'undefined') return '' // 클라이언트
+  return process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000' // 서버
+}
 
 /**
  * 인기 검색어 목록 조회
  * @param limit 조회 개수 (기본 10개)
  */
-export async function getPopularSearches(limit = 10): Promise<PopularSearchesResponse> {
+export async function getPopularSearches(
+  limit = 10
+): Promise<PopularSearchesResponse> {
   try {
-    const res = await fetch(`${API_BASE_URL}/api/search/popular?limit=${limit}`, {
-      next: { revalidate: 600 }, // 10분 캐시
-    })
+    const res = await fetch(
+      `${getBaseUrl()}/api/search/popular?limit=${limit}`,
+      {
+        next: { revalidate: 600 }, // 10분 캐시
+      }
+    )
 
     if (!res.ok) {
       console.error('Failed to fetch popular searches:', res.statusText)

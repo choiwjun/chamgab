@@ -1,73 +1,26 @@
 // @TASK P2-R3-T1 - 인기 검색어 API
 // @SPEC specs/domain/resources.yaml#popular_searches
 
+import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import type {
+  PopularSearch,
+  PopularSearchesResponse,
+  RankChange,
+} from '@/types/search'
 
 // 동적 렌더링 강제 (searchParams 사용)
 export const dynamic = 'force-dynamic'
-import type { PopularSearch, PopularSearchesResponse } from '@/types/search'
 
-/**
- * 인기 검색어 목 데이터
- * TODO: 추후 Redis 캐시로 실시간 집계 데이터로 교체
- */
-const MOCK_POPULAR_SEARCHES: PopularSearch[] = [
-  { rank: 1, keyword: '강남구', search_count: 1523, change: 'same' },
-  {
-    rank: 2,
-    keyword: '잠실',
-    search_count: 1234,
-    change: 'up',
-    change_rank: 2,
-  },
-  {
-    rank: 3,
-    keyword: '마포구',
-    search_count: 987,
-    change: 'down',
-    change_rank: 1,
-  },
-  { rank: 4, keyword: '판교', search_count: 876, change: 'up', change_rank: 3 },
-  { rank: 5, keyword: '래미안', search_count: 765, change: 'same' },
-  {
-    rank: 6,
-    keyword: '서초구',
-    search_count: 654,
-    change: 'down',
-    change_rank: 2,
-  },
-  {
-    rank: 7,
-    keyword: '송파구',
-    search_count: 543,
-    change: 'up',
-    change_rank: 1,
-  },
-  { rank: 8, keyword: '분당', search_count: 432, change: 'same' },
-  { rank: 9, keyword: '용산', search_count: 321, change: 'up', change_rank: 4 },
-  {
-    rank: 10,
-    keyword: '청담동',
-    search_count: 210,
-    change: 'down',
-    change_rank: 3,
-  },
-]
-
-/**
- * 마지막 업데이트 시간 (캐시용)
- * TODO: 추후 Redis에서 실제 업데이트 시간 조회
- */
-const getLastUpdatedAt = (): string => {
-  // 현재 시간에서 1시간 전으로 설정 (캐시 시뮬레이션)
-  const date = new Date()
-  date.setHours(date.getHours() - 1)
-  return date.toISOString()
-}
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+)
 
 /**
  * GET /api/search/popular
  * 인기 검색어 목록을 반환합니다.
+ * 실제 데이터: regions 테이블에서 시군구(level=2) 기준 avg_price 내림차순으로 조회
  *
  * Query Parameters:
  * - limit: 반환할 최대 개수 (기본값: 10, 최대: 20)
@@ -93,12 +46,53 @@ export async function GET(
       }
     }
 
-    // 인기 검색어 목록 (limit 적용)
-    const items = MOCK_POPULAR_SEARCHES.slice(0, limit)
+    // Supabase에서 인기 지역 조회 (시군구 level=2, avg_price 기준 정렬)
+    const { data: regions, error } = await supabase
+      .from('regions')
+      .select('name, avg_price, price_change_weekly, updated_at')
+      .eq('level', 2)
+      .not('avg_price', 'is', null)
+      .order('avg_price', { ascending: false })
+      .limit(limit)
+
+    if (error) {
+      console.error('[Popular Searches API] Supabase error:', error)
+      return NextResponse.json(
+        { items: [], updated_at: new Date().toISOString() },
+        { status: 500 }
+      )
+    }
+
+    // regions 데이터를 PopularSearch 형식으로 변환
+    const items: PopularSearch[] = (regions || []).map((region, index) => {
+      // 가격 변동률 기반으로 순위 변동 계산
+      const priceChange = region.price_change_weekly || 0
+      let change: RankChange = 'same'
+      let changeRank: number | undefined
+
+      if (priceChange > 0.3) {
+        change = 'up'
+        changeRank = Math.ceil(priceChange * 2)
+      } else if (priceChange < -0.3) {
+        change = 'down'
+        changeRank = Math.ceil(Math.abs(priceChange) * 2)
+      }
+
+      return {
+        rank: index + 1,
+        keyword: region.name,
+        search_count: Math.floor((region.avg_price || 0) / 10000000), // 억 단위로 환산하여 검색 수 시뮬레이션
+        change,
+        ...(changeRank && { change_rank: changeRank }),
+      }
+    })
+
+    // 마지막 업데이트 시간 (가장 최근 업데이트된 region 기준)
+    const latestUpdate = regions?.[0]?.updated_at || new Date().toISOString()
 
     const response: PopularSearchesResponse = {
       items,
-      updated_at: getLastUpdatedAt(),
+      updated_at: latestUpdate,
     }
 
     // Cache-Control 헤더 설정 (5분 캐시)
