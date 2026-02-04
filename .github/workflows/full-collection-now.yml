@@ -1,0 +1,209 @@
+name: Full Data Collection & Training (Immediate)
+
+on:
+  workflow_dispatch:
+    inputs:
+      regions:
+        description: '수집 대상 (all=전국, seoul=서울, sample=샘플 10개)'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - seoul
+          - sample
+      months:
+        description: '수집 기간 (개월)'
+        required: true
+        default: '36'
+        type: string
+      skip_training:
+        description: 'ML 학습 건너뛰기'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  collect-all-data:
+    name: 전국 데이터 수집
+    runs-on: ubuntu-latest
+    timeout-minutes: 360  # 6시간 타임아웃
+
+    strategy:
+      matrix:
+        # 병렬로 시도별 수집
+        region_group: [1, 2, 3, 4, 5]
+      fail-fast: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: ml-api/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          cd ml-api
+          pip install -r requirements.txt
+
+      - name: Collect transaction data (Group ${{ matrix.region_group }})
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          DATA_GO_KR_API_KEY: ${{ secrets.DATA_GO_KR_API_KEY }}
+          REGION_GROUP: ${{ matrix.region_group }}
+          COLLECTION_MODE: ${{ inputs.regions }}
+          MONTHS: ${{ inputs.months }}
+        run: |
+          cd ml-api
+          python scripts/collect_all_transactions.py \
+            --group $REGION_GROUP \
+            --mode $COLLECTION_MODE \
+            --months $MONTHS
+
+      - name: Upload collection logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: collection-logs-group-${{ matrix.region_group }}
+          path: ml-api/logs/
+          retention-days: 7
+
+  collect-supplementary:
+    name: 보조 데이터 수집
+    runs-on: ubuntu-latest
+    needs: collect-all-data
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: ml-api/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          cd ml-api
+          pip install -r requirements.txt
+
+      - name: Collect REB price index
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          REB_API_KEY: ${{ secrets.REB_API_KEY }}
+        run: |
+          cd ml-api
+          python scripts/collect_reb_index.py --all-regions
+
+      - name: Collect footfall data
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SBIZ_API_KEY: ${{ secrets.SBIZ_API_KEY }}
+        run: |
+          cd ml-api
+          python scripts/collect_footfall_all.py
+
+      - name: Collect POI data
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          KAKAO_REST_API_KEY: ${{ secrets.KAKAO_REST_API_KEY }}
+        run: |
+          cd ml-api
+          python scripts/collect_poi_data.py --all-regions
+
+  train-model:
+    name: ML 모델 학습
+    runs-on: ubuntu-latest
+    needs: collect-supplementary
+    if: inputs.skip_training == false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: ml-api/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          cd ml-api
+          pip install -r requirements.txt
+
+      - name: Prepare training data
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd ml-api
+          python scripts/prepare_training_data.py --full
+
+      - name: Train XGBoost model
+        run: |
+          cd ml-api
+          python scripts/train_model.py \
+            --data-path data/training_data.parquet \
+            --output-path models/ \
+            --model-name price_predictor \
+            --full-training
+
+      - name: Generate SHAP analysis
+        run: |
+          cd ml-api
+          python scripts/generate_shap.py \
+            --model-path models/price_predictor.joblib \
+            --output-path models/shap_values.joblib
+
+      - name: Upload model to Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd ml-api
+          python scripts/upload_model.py
+
+      - name: Upload model artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ml-models-full
+          path: |
+            ml-api/models/*.joblib
+            ml-api/models/*.json
+            ml-api/reports/
+          retention-days: 30
+
+  summary:
+    name: 완료 요약
+    runs-on: ubuntu-latest
+    needs: [collect-all-data, collect-supplementary, train-model]
+    if: always()
+
+    steps:
+      - name: Generate summary
+        run: |
+          echo "## 🏠 전국 데이터 수집 & ML 학습 완료" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 실행 설정" >> $GITHUB_STEP_SUMMARY
+          echo "- 대상: ${{ inputs.regions }}" >> $GITHUB_STEP_SUMMARY
+          echo "- 기간: ${{ inputs.months }}개월" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 결과" >> $GITHUB_STEP_SUMMARY
+          echo "- 실거래가 수집: ${{ needs.collect-all-data.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- 보조 데이터: ${{ needs.collect-supplementary.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- ML 학습: ${{ needs.train-model.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "완료 시간: $(date '+%Y-%m-%d %H:%M:%S KST')" >> $GITHUB_STEP_SUMMARY
