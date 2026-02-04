@@ -1,0 +1,142 @@
+name: Daily Data Collection
+
+on:
+  schedule:
+    # 매일 한국시간 06:00 (UTC 21:00)
+    - cron: '0 21 * * *'
+  workflow_dispatch: # 수동 실행 가능
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  collect-transactions:
+    name: 실거래가 수집
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: ml-api/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          cd ml-api
+          pip install -r requirements.txt
+
+      - name: Collect transaction data
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          DATA_GO_KR_API_KEY: ${{ secrets.DATA_GO_KR_API_KEY }}
+        run: |
+          cd ml-api
+          python -c "
+          from app.collectors.transaction_collector import TransactionCollector
+          import asyncio
+
+          async def main():
+              collector = TransactionCollector()
+              # 최근 3개월 데이터 수집
+              result = await collector.collect_recent_transactions(months=3)
+              print(f'Collected {result} transactions')
+
+          asyncio.run(main())
+          "
+
+  collect-reb-index:
+    name: REB 가격지수 수집
+    runs-on: ubuntu-latest
+    # 월요일에만 실행 (주간 지수)
+    if: github.event.schedule == '0 21 * * 1' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: ml-api/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          cd ml-api
+          pip install -r requirements.txt
+
+      - name: Collect REB price index
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          REB_API_KEY: ${{ secrets.REB_API_KEY }}
+        run: |
+          cd ml-api
+          python -c "
+          from app.collectors.reb_collector import REBCollector
+          import asyncio
+
+          async def main():
+              collector = REBCollector()
+              result = await collector.collect_price_index()
+              print(f'Collected REB index: {result}')
+
+          asyncio.run(main())
+          "
+
+  collect-footfall:
+    name: 유동인구 데이터 수집
+    runs-on: ubuntu-latest
+    # 수요일에만 실행 (주간)
+    if: github.event.schedule == '0 21 * * 3' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: ml-api/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          cd ml-api
+          pip install -r requirements.txt
+
+      - name: Collect footfall data
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SBIZ_API_KEY: ${{ secrets.SBIZ_API_KEY }}
+        run: |
+          cd ml-api
+          python -c "
+          from app.collectors.footfall_collector import FootfallCollector
+          import asyncio
+
+          async def main():
+              collector = FootfallCollector()
+              result = await collector.collect_footfall_data()
+              print(f'Collected footfall data: {result}')
+
+          asyncio.run(main())
+          "
+
+  notify-completion:
+    name: 완료 알림
+    needs: [collect-transactions]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Send notification
+        run: |
+          echo "Data collection completed at $(date)"
+          echo "Transaction collection: ${{ needs.collect-transactions.result }}"
