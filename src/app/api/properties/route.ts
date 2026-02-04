@@ -97,11 +97,8 @@ export async function GET(request: NextRequest) {
       ascending: sortOrder === 'asc',
     })
 
-    // bounds가 있으면 location이 있는 매물만 필터 (페이지네이션은 나중에)
-    if (bounds) {
-      query = query.not('location', 'is', null)
-    } else {
-      // bounds가 없으면 페이지네이션 적용
+    // bounds가 없으면 페이지네이션 적용
+    if (!bounds) {
       const offset = (page - 1) * limit
       query = query.range(offset, offset + limit - 1)
     }
@@ -109,6 +106,7 @@ export async function GET(request: NextRequest) {
     const { data, count, error } = await query
 
     if (error) {
+      console.error('[Properties API] Supabase error:', error)
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
 
@@ -118,8 +116,15 @@ export async function GET(request: NextRequest) {
       const [swLat, swLng, neLat, neLng] = bounds.split(',').map(Number)
       filteredData = data.filter((property) => {
         if (!property.location) return false
-        const { lat, lng } = property.location as { lat: number; lng: number }
-        return lat >= swLat && lat <= neLat && lng >= swLng && lng <= neLng
+        const loc = property.location as { lat: number; lng: number }
+        if (typeof loc.lat !== 'number' || typeof loc.lng !== 'number')
+          return false
+        return (
+          loc.lat >= swLat &&
+          loc.lat <= neLat &&
+          loc.lng >= swLng &&
+          loc.lng <= neLng
+        )
       })
       // bounds 필터 후 limit 적용
       filteredData = filteredData.slice(0, limit)
