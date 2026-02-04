@@ -7,6 +7,10 @@ XGBoost 모델 학습을 위한 Feature Engineering
 - 단지: total_units, parking_ratio, brand_encoded
 - 위치: sido_encoded, sigungu_encoded
 - 파생: price_per_sqm, floor_ratio
+- 주변환경 (POI): distance_to_subway, school_count_1km, academy_count_1km 등
+- 시장 지표: base_rate, jeonse_ratio, buying_power_index 등
+- 재건축/학군: is_reconstruction_target, school_district_grade 등
+- 매물 특성: direction_premium, view_premium, is_remodeled 등
 """
 import os
 import json
@@ -26,6 +30,9 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.core.database import get_supabase_client
+from app.services.poi_service import POIService, generate_simulated_poi_features
+from app.services.market_service import MarketService, generate_simulated_market_features
+from app.services.property_features_service import PropertyFeaturesService, generate_simulated_property_features
 
 
 class FeatureEngineer:
@@ -206,6 +213,135 @@ class FeatureEngineer:
         else:
             df["sigungu"] = "강남구"
 
+        # 8. 주변환경 피처 (POI)
+        df = self._add_poi_features(df)
+
+        # 9. 시장 지표 피처
+        df = self._add_market_features(df)
+
+        # 10. 매물 추가 피처 (재건축, 학군, 향/뷰 등)
+        df = self._add_property_features(df)
+
+        return df
+
+    def _add_poi_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """POI 기반 주변환경 피처 추가"""
+        poi_columns = [
+            "distance_to_subway",
+            "subway_count_1km",
+            "distance_to_school",
+            "school_count_1km",
+            "distance_to_academy",
+            "academy_count_1km",
+            "distance_to_hospital",
+            "hospital_count_1km",
+            "distance_to_mart",
+            "convenience_count_500m",
+            "distance_to_park",
+            "poi_score",
+        ]
+
+        # POI 컬럼이 이미 있으면 그대로 사용
+        if all(col in df.columns for col in poi_columns[:5]):
+            print("POI 피처가 이미 존재합니다.")
+            return df
+
+        print("POI 피처 생성 중...")
+
+        # 시뮬레이션 데이터 생성 (실제 좌표가 없는 경우)
+        poi_data = []
+        for _, row in df.iterrows():
+            sido = row.get("sido", "서울시")
+            sigungu = row.get("sigungu", "강남구")
+
+            # 시뮬레이션 POI 피처 생성
+            features = generate_simulated_poi_features(sido, sigungu)
+
+            # POI 점수 계산
+            poi_service = POIService()
+            features["poi_score"] = poi_service.get_poi_score(features)
+
+            poi_data.append(features)
+
+        # POI 피처를 DataFrame에 추가
+        poi_df = pd.DataFrame(poi_data)
+        for col in poi_df.columns:
+            df[col] = poi_df[col].values
+
+        print(f"POI 피처 {len(poi_df.columns)}개 추가 완료")
+        return df
+
+    def _add_market_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """시장 지표 피처 추가"""
+        market_columns = [
+            "base_rate",
+            "mortgage_rate",
+            "jeonse_ratio",
+            "buying_power_index",
+            "transaction_volume",
+            "price_change_rate",
+        ]
+
+        # 이미 있으면 그대로 사용
+        if all(col in df.columns for col in market_columns[:3]):
+            print("시장 지표 피처가 이미 존재합니다.")
+            return df
+
+        print("시장 지표 피처 생성 중...")
+
+        market_data = []
+        for _, row in df.iterrows():
+            year = row.get("transaction_year", 2026)
+            month = row.get("transaction_month", 1)
+            sigungu = row.get("sigungu", "강남구")
+
+            features = generate_simulated_market_features(int(year), int(month), sigungu)
+            market_data.append(features)
+
+        market_df = pd.DataFrame(market_data)
+        for col in market_df.columns:
+            df[col] = market_df[col].values
+
+        print(f"시장 지표 피처 {len(market_df.columns)}개 추가 완료")
+        return df
+
+    def _add_property_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """매물 추가 피처 (재건축, 학군, 향/뷰 등)"""
+        property_columns = [
+            "is_old_building",
+            "is_reconstruction_target",
+            "reconstruction_premium",
+            "school_district_grade",
+            "is_premium_school_district",
+            "price_vs_previous",
+            "price_vs_complex_avg",
+            "price_vs_area_avg",
+            "direction_premium",
+            "view_premium",
+            "is_remodeled",
+            "remodel_premium",
+        ]
+
+        # 이미 있으면 그대로 사용
+        if all(col in df.columns for col in property_columns[:3]):
+            print("매물 추가 피처가 이미 존재합니다.")
+            return df
+
+        print("매물 추가 피처 생성 중...")
+
+        property_data = []
+        for _, row in df.iterrows():
+            built_year = row.get("built_year", 2010)
+            sigungu = row.get("sigungu", "강남구")
+
+            features = generate_simulated_property_features(int(built_year), sigungu)
+            property_data.append(features)
+
+        property_df = pd.DataFrame(property_data)
+        for col in property_df.columns:
+            df[col] = property_df[col].values
+
+        print(f"매물 추가 피처 {len(property_df.columns)}개 추가 완료")
         return df
 
     def encode_categoricals(self, df: pd.DataFrame, fit: bool = True) -> pd.DataFrame:
@@ -254,6 +390,42 @@ class FeatureEngineer:
             # 인코딩된 범주형
             "sido_encoded",
             "sigungu_encoded",
+            # 주변환경 피처 (POI)
+            "distance_to_subway",
+            "subway_count_1km",
+            "distance_to_school",
+            "school_count_1km",
+            "distance_to_academy",
+            "academy_count_1km",
+            "distance_to_hospital",
+            "hospital_count_1km",
+            "distance_to_mart",
+            "convenience_count_500m",
+            "distance_to_park",
+            "poi_score",
+            # 시장 지표 피처
+            "base_rate",
+            "mortgage_rate",
+            "jeonse_ratio",
+            "buying_power_index",
+            "transaction_volume",
+            "price_change_rate",
+            # 재건축 피처
+            "is_old_building",
+            "is_reconstruction_target",
+            "reconstruction_premium",
+            # 학군 피처
+            "school_district_grade",
+            "is_premium_school_district",
+            # 가격 비교 피처
+            "price_vs_previous",
+            "price_vs_complex_avg",
+            "price_vs_area_avg",
+            # 매물 특성 피처 (향/뷰/리모델링)
+            "direction_premium",
+            "view_premium",
+            "is_remodeled",
+            "remodel_premium",
         ]
 
     def prepare_training_data(self, csv_path: str = None) -> Tuple[pd.DataFrame, pd.Series]:

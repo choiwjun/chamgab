@@ -14,36 +14,119 @@ from app.core.database import get_supabase_client
 
 # 피처 한글 매핑
 FEATURE_NAME_KO = {
+    # 기본 피처
     "area_exclusive": "전용면적",
     "floor": "층수",
     "transaction_year": "거래년도",
     "transaction_month": "거래월",
     "transaction_quarter": "거래분기",
+    # 건물 피처
     "building_age": "건물연식",
     "floor_ratio": "층수비율",
     "total_floors": "총층수",
+    # 단지 피처
     "total_units": "총세대수",
     "parking_ratio": "주차대수비율",
     "brand_tier": "브랜드등급",
+    # 위치 피처
     "sido_encoded": "시도",
     "sigungu_encoded": "시군구",
+    # 주변환경 피처 (POI)
+    "distance_to_subway": "지하철역 거리",
+    "subway_count_1km": "지하철역 수(1km)",
+    "distance_to_school": "학교 거리",
+    "school_count_1km": "학교 수(1km)",
+    "distance_to_academy": "학원가 거리",
+    "academy_count_1km": "학원 수(1km)",
+    "distance_to_hospital": "병원 거리",
+    "hospital_count_1km": "병원 수(1km)",
+    "distance_to_mart": "대형마트 거리",
+    "convenience_count_500m": "편의점 수(500m)",
+    "distance_to_park": "공원 거리",
+    "poi_score": "입지 점수",
+    # 시장 지표 피처
+    "base_rate": "기준금리",
+    "mortgage_rate": "주담대금리",
+    "jeonse_ratio": "전세가율",
+    "buying_power_index": "매수우위지수",
+    "transaction_volume": "거래량",
+    "price_change_rate": "가격변동률",
+    # 재건축 피처
+    "is_old_building": "구축여부",
+    "is_reconstruction_target": "재건축대상",
+    "reconstruction_premium": "재건축프리미엄",
+    # 학군 피처
+    "school_district_grade": "학군등급",
+    "is_premium_school_district": "명문학군여부",
+    # 가격 비교 피처
+    "price_vs_previous": "직전거래대비",
+    "price_vs_complex_avg": "단지평균대비",
+    "price_vs_area_avg": "지역평균대비",
+    # 매물 특성 피처
+    "direction_premium": "향프리미엄",
+    "view_premium": "뷰프리미엄",
+    "is_remodeled": "리모델링여부",
+    "remodel_premium": "리모델링프리미엄",
 }
 
 # 피처 카테고리 매핑
 FEATURE_CATEGORY = {
+    # 기본 피처
     "area_exclusive": "기본",
     "floor": "기본",
-    "transaction_year": "시장",
-    "transaction_month": "시장",
-    "transaction_quarter": "시장",
+    # 시점 피처
+    "transaction_year": "시점",
+    "transaction_month": "시점",
+    "transaction_quarter": "시점",
+    # 건물 피처
     "building_age": "건물",
     "floor_ratio": "건물",
     "total_floors": "건물",
+    # 단지 피처
     "total_units": "단지",
     "parking_ratio": "단지",
     "brand_tier": "단지",
+    # 입지 피처
     "sido_encoded": "입지",
     "sigungu_encoded": "입지",
+    # 교통 피처
+    "distance_to_subway": "교통",
+    "subway_count_1km": "교통",
+    # 교육 피처
+    "distance_to_school": "교육",
+    "school_count_1km": "교육",
+    "distance_to_academy": "교육",
+    "academy_count_1km": "교육",
+    "school_district_grade": "교육",
+    "is_premium_school_district": "교육",
+    # 생활 피처
+    "distance_to_hospital": "생활",
+    "hospital_count_1km": "생활",
+    "distance_to_mart": "생활",
+    "convenience_count_500m": "생활",
+    "distance_to_park": "생활",
+    # 종합 피처
+    "poi_score": "종합",
+    # 시장 지표 피처
+    "base_rate": "시장",
+    "mortgage_rate": "시장",
+    "jeonse_ratio": "시장",
+    "buying_power_index": "시장",
+    "transaction_volume": "시장",
+    "price_change_rate": "시장",
+    # 재건축 피처
+    "is_old_building": "재건축",
+    "is_reconstruction_target": "재건축",
+    "reconstruction_premium": "재건축",
+    # 가격 비교 피처
+    "price_vs_previous": "가격비교",
+    "price_vs_complex_avg": "가격비교",
+    "price_vs_area_avg": "가격비교",
+    # 매물 특성 피처
+    "direction_premium": "매물특성",
+    "view_premium": "매물특성",
+    "is_remodeled": "매물특성",
+    "remodel_premium": "매물특성",
 }
 
 

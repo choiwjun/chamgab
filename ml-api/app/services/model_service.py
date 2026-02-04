@@ -143,6 +143,19 @@ class ModelService:
         sido_encoded = self._encode_label("sido", sido)
         sigungu_encoded = self._encode_label("sigungu", sigungu)
 
+        # POI 피처 (기본값 또는 property_data에서 가져오기)
+        poi_features = self._get_poi_features(property_data, sigungu)
+
+        # 시장 지표 피처
+        market_features = self._get_market_features(
+            property_data.get("transaction_year") or current_year,
+            property_data.get("transaction_month") or 1,
+            sigungu
+        )
+
+        # 매물 추가 피처 (재건축, 학군, 향/뷰/리모델링)
+        property_extra_features = self._get_property_extra_features(built_year, sigungu)
+
         features = {
             "area_exclusive": property_data.get("area_exclusive") or 84,
             "floor": floor,
@@ -157,6 +170,9 @@ class ModelService:
             "brand_tier": brand_tier,
             "sido_encoded": sido_encoded,
             "sigungu_encoded": sigungu_encoded,
+            **poi_features,  # POI 피처 추가
+            **market_features,  # 시장 지표 피처 추가
+            **property_extra_features,  # 매물 추가 피처
         }
 
         # feature_names 순서에 맞게 정렬
@@ -166,6 +182,180 @@ class ModelService:
                 df[col] = 0
 
         return df[self.feature_names]
+
+    def _get_poi_features(self, property_data: dict, sigungu: str) -> dict:
+        """
+        POI 피처 가져오기
+
+        property_data에 POI 정보가 있으면 사용하고,
+        없으면 지역 기반 기본값을 시뮬레이션
+        """
+        # property_data에 POI 피처가 있으면 사용
+        if property_data.get("distance_to_subway") is not None:
+            return {
+                "distance_to_subway": property_data.get("distance_to_subway", 500),
+                "subway_count_1km": property_data.get("subway_count_1km", 2),
+                "distance_to_school": property_data.get("distance_to_school", 400),
+                "school_count_1km": property_data.get("school_count_1km", 3),
+                "distance_to_academy": property_data.get("distance_to_academy", 300),
+                "academy_count_1km": property_data.get("academy_count_1km", 10),
+                "distance_to_hospital": property_data.get("distance_to_hospital", 600),
+                "hospital_count_1km": property_data.get("hospital_count_1km", 2),
+                "distance_to_mart": property_data.get("distance_to_mart", 800),
+                "convenience_count_500m": property_data.get("convenience_count_500m", 5),
+                "distance_to_park": property_data.get("distance_to_park", 500),
+                "poi_score": property_data.get("poi_score", 60),
+            }
+
+        # 지역 기반 기본값 (프리미엄 지역은 더 좋은 값)
+        premium_areas = ["강남구", "서초구", "송파구", "용산구", "마포구", "성동구"]
+        good_areas = ["영등포구", "강동구", "광진구", "동작구", "양천구"]
+
+        if sigungu in premium_areas:
+            return {
+                "distance_to_subway": 300,
+                "subway_count_1km": 3,
+                "distance_to_school": 300,
+                "school_count_1km": 5,
+                "distance_to_academy": 200,
+                "academy_count_1km": 20,
+                "distance_to_hospital": 400,
+                "hospital_count_1km": 3,
+                "distance_to_mart": 500,
+                "convenience_count_500m": 10,
+                "distance_to_park": 400,
+                "poi_score": 80,
+            }
+        elif sigungu in good_areas:
+            return {
+                "distance_to_subway": 450,
+                "subway_count_1km": 2,
+                "distance_to_school": 400,
+                "school_count_1km": 4,
+                "distance_to_academy": 350,
+                "academy_count_1km": 12,
+                "distance_to_hospital": 550,
+                "hospital_count_1km": 2,
+                "distance_to_mart": 700,
+                "convenience_count_500m": 7,
+                "distance_to_park": 500,
+                "poi_score": 65,
+            }
+        else:
+            return {
+                "distance_to_subway": 700,
+                "subway_count_1km": 1,
+                "distance_to_school": 500,
+                "school_count_1km": 3,
+                "distance_to_academy": 500,
+                "academy_count_1km": 6,
+                "distance_to_hospital": 800,
+                "hospital_count_1km": 1,
+                "distance_to_mart": 1000,
+                "convenience_count_500m": 4,
+                "distance_to_park": 700,
+                "poi_score": 50,
+            }
+
+    def _get_market_features(self, year: int, month: int, sigungu: str) -> dict:
+        """시장 지표 피처 가져오기"""
+        # 기준금리 이력
+        base_rate_history = {
+            (2024, 1): 3.50, (2024, 6): 3.50, (2024, 10): 3.25, (2024, 12): 3.00,
+            (2025, 1): 3.00, (2025, 2): 2.75, (2025, 6): 2.50,
+            (2026, 1): 2.50, (2026, 2): 2.50,
+        }
+
+        base_rate = 2.50
+        for (y, m), rate in sorted(base_rate_history.items()):
+            if (year, month) >= (y, m):
+                base_rate = rate
+
+        mortgage_rate = round(base_rate + 1.8, 2)
+
+        # 지역별 전세가율
+        jeonse_ratios = {
+            "강남구": 52, "서초구": 54, "송파구": 58, "용산구": 55,
+            "마포구": 62, "성동구": 60, "영등포구": 65, "강동구": 63,
+        }
+        jeonse_ratio = jeonse_ratios.get(sigungu, 65)
+
+        # 매수우위지수
+        buying_power_base = {
+            "강남구": 85, "서초구": 88, "송파구": 92, "용산구": 90,
+            "마포구": 95, "성동구": 93, "영등포구": 100, "강동구": 98,
+        }
+        buying_power = buying_power_base.get(sigungu, 100) + (3.0 - base_rate) * 5
+
+        # 거래량 (계절성)
+        seasonal_factors = {
+            1: 0.7, 2: 0.8, 3: 1.2, 4: 1.3, 5: 1.2, 6: 0.9,
+            7: 0.8, 8: 0.7, 9: 1.1, 10: 1.2, 11: 1.1, 12: 0.8,
+        }
+        transaction_volume = int(500 * seasonal_factors.get(month, 1.0))
+
+        return {
+            "base_rate": base_rate,
+            "mortgage_rate": mortgage_rate,
+            "jeonse_ratio": float(jeonse_ratio),
+            "buying_power_index": round(buying_power, 1),
+            "transaction_volume": transaction_volume,
+            "price_change_rate": 0.3,
+        }
+
+    def _get_property_extra_features(self, built_year: int, sigungu: str) -> dict:
+        """매물 추가 피처 (재건축, 학군, 향/뷰/리모델링)"""
+        from datetime import datetime
+        current_year = datetime.now().year
+        building_age = current_year - built_year
+
+        # 재건축 피처
+        is_old_building = 1 if building_age >= 20 else 0
+        is_reconstruction_target = 1 if building_age >= 30 else 0
+
+        if 30 <= building_age <= 40:
+            reconstruction_premium = 0.15
+        elif 25 <= building_age < 30:
+            reconstruction_premium = 0.05
+        elif building_age > 40:
+            reconstruction_premium = 0.10
+        else:
+            reconstruction_premium = 0.0
+
+        # 학군 등급
+        school_grades = {
+            "강남구": 5, "서초구": 5, "송파구": 4, "양천구": 4,
+            "노원구": 4, "광진구": 3, "마포구": 3, "성동구": 3,
+            "용산구": 3, "동작구": 3, "영등포구": 2, "강동구": 3,
+        }
+        school_district_grade = school_grades.get(sigungu, 2)
+        is_premium_school_district = 1 if school_district_grade >= 4 else 0
+
+        # 가격 비교 피처 (기본값)
+        price_vs_previous = 1.0
+        price_vs_complex_avg = 1.0
+        price_vs_area_avg = 1.0
+
+        # 매물 특성 피처 (기본값 - 남향, 일반뷰, 미리모델링)
+        direction_premium = 1.0
+        view_premium = 1.0
+        is_remodeled = 0
+        remodel_premium = 0.0
+
+        return {
+            "is_old_building": is_old_building,
+            "is_reconstruction_target": is_reconstruction_target,
+            "reconstruction_premium": reconstruction_premium,
+            "school_district_grade": school_district_grade,
+            "is_premium_school_district": is_premium_school_district,
+            "price_vs_previous": price_vs_previous,
+            "price_vs_complex_avg": price_vs_complex_avg,
+            "price_vs_area_avg": price_vs_area_avg,
+            "direction_premium": direction_premium,
+            "view_premium": view_premium,
+            "is_remodeled": is_remodeled,
+            "remodel_premium": remodel_premium,
+        }
 
     def _encode_label(self, column: str, value: str) -> int:
         """라벨 인코딩"""
