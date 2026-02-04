@@ -97,8 +97,10 @@ export async function GET(request: NextRequest) {
       ascending: sortOrder === 'asc',
     })
 
-    // bounds가 없으면 페이지네이션 적용
-    if (!bounds) {
+    // 페이지네이션 (bounds가 있으면 limit만 적용)
+    if (bounds) {
+      query = query.limit(limit)
+    } else {
       const offset = (page - 1) * limit
       query = query.range(offset, offset + limit - 1)
     }
@@ -110,29 +112,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
 
-    // 지도 영역 필터 (JavaScript에서 처리)
-    let filteredData = data || []
-    if (bounds && data) {
-      const [swLat, swLng, neLat, neLng] = bounds.split(',').map(Number)
-      filteredData = data.filter((property) => {
-        if (!property.location) return false
-        const loc = property.location as { lat: number; lng: number }
-        if (typeof loc.lat !== 'number' || typeof loc.lng !== 'number')
-          return false
-        return (
-          loc.lat >= swLat &&
-          loc.lat <= neLat &&
-          loc.lng >= swLng &&
-          loc.lng <= neLng
-        )
-      })
-      // bounds 필터 후 limit 적용
-      filteredData = filteredData.slice(0, limit)
-    }
+    // TODO: PostGIS 공간 쿼리를 위한 RPC 함수 필요
+    // 현재는 location이 WKB 형식이라 JavaScript에서 bounds 필터링 불가
+    // 지도에서는 모든 매물이 표시됨 (데이터가 적을 때만 허용)
 
     return NextResponse.json({
-      items: filteredData,
-      total: bounds ? filteredData.length : count || 0,
+      items: data || [],
+      total: count || 0,
       page,
       limit,
     })
