@@ -171,12 +171,10 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
       <div className="mt-2 bg-white px-4 py-6">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-bold text-gray-900">최근 실거래</h2>
-          <Link
-            href={`/complex/${complex.id}/transactions`}
-            className="flex items-center gap-1 text-sm text-primary"
-          >
+          {/* TODO: 실거래 전체보기 페이지 구현 */}
+          <button className="flex items-center gap-1 text-sm text-primary">
             전체보기 <ChevronRight className="h-4 w-4" />
-          </Link>
+          </button>
         </div>
 
         {isLoading ? (
@@ -240,7 +238,7 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
       {/* 하단 CTA */}
       <div className="fixed bottom-0 left-0 right-0 border-t border-gray-200 bg-white px-4 py-3">
         <Link
-          href={`/search?q=${encodeURIComponent(complex.name)}`}
+          href={`/search?q=${encodeURIComponent(complex.name)}` as '/search'}
           className="block w-full rounded-lg bg-primary py-3 text-center font-semibold text-white hover:bg-primary/90"
         >
           이 단지 매물 보기
