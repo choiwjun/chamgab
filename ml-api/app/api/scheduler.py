@@ -1,0 +1,111 @@
+# -*- coding: utf-8 -*-
+"""
+스케줄러 관리 API
+
+자동 수집 스케줄러 제어
+- GET /api/scheduler/status: 스케줄러 상태
+- POST /api/scheduler/start: 스케줄러 시작
+- POST /api/scheduler/stop: 스케줄러 중지
+- POST /api/scheduler/run: 즉시 실행
+"""
+from typing import Optional
+from fastapi import APIRouter, HTTPException, BackgroundTasks
+from pydantic import BaseModel, Field
+
+from app.core.scheduler import data_scheduler
+
+
+router = APIRouter(prefix="/scheduler", tags=["Scheduler"])
+
+
+class SchedulerStatusResponse(BaseModel):
+    """스케줄러 상태"""
+    is_running: bool
+    jobs: list
+    last_collection_job: Optional[str]
+    last_analysis_job: Optional[str]
+
+
+class RunNowRequest(BaseModel):
+    """즉시 실행 요청"""
+    job_type: str = Field(
+        ...,
+        description="작업 유형 (daily/weekly/monthly)"
+    )
+
+
+@router.get("/status", response_model=SchedulerStatusResponse)
+async def get_scheduler_status():
+    """
+    스케줄러 상태 조회
+    """
+    return SchedulerStatusResponse(
+        is_running=data_scheduler.is_running,
+        jobs=data_scheduler.get_jobs(),
+        last_collection_job=data_scheduler.last_collection_job,
+        last_analysis_job=data_scheduler.last_analysis_job,
+    )
+
+
+@router.post("/start")
+async def start_scheduler():
+    """
+    스케줄러 시작
+    """
+    if data_scheduler.is_running:
+        return {"message": "스케줄러가 이미 실행 중입니다"}
+
+    data_scheduler.start()
+    return {
+        "message": "스케줄러가 시작되었습니다",
+        "jobs": data_scheduler.get_jobs()
+    }
+
+
+@router.post("/stop")
+async def stop_scheduler():
+    """
+    스케줄러 중지
+    """
+    if not data_scheduler.is_running:
+        return {"message": "스케줄러가 이미 중지되어 있습니다"}
+
+    data_scheduler.stop()
+    return {"message": "스케줄러가 중지되었습니다"}
+
+
+@router.post("/run")
+async def run_job_now(
+    request: RunNowRequest,
+    background_tasks: BackgroundTasks
+):
+    """
+    작업 즉시 실행
+
+    - daily: 일간 수집 (주요 도시)
+    - weekly: 주간 수집 (수도권) + 분석
+    - monthly: 월간 수집 (전국)
+    """
+    if request.job_type not in ["daily", "weekly", "monthly"]:
+        raise HTTPException(
+            status_code=400,
+            detail="job_type은 daily, weekly, monthly 중 하나여야 합니다"
+        )
+
+    background_tasks.add_task(data_scheduler.run_now, request.job_type)
+
+    return {
+        "message": f"{request.job_type} 작업이 백그라운드에서 실행됩니다",
+        "job_type": request.job_type
+    }
+
+
+@router.get("/jobs")
+async def list_scheduled_jobs():
+    """
+    예약된 작업 목록
+    """
+    return {
+        "jobs": data_scheduler.get_jobs(),
+        "is_running": data_scheduler.is_running
+    }

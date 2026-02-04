@@ -3,6 +3,7 @@
 - XGBoost 기반 부동산 가격 예측
 - SHAP 기반 가격 요인 분석
 - 유사 거래 검색
+- 전국 아파트 데이터 자동 수집 및 분석
 """
 import pickle
 from pathlib import Path
@@ -12,7 +13,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from app.api import predict, factors, similar, health
+from app.api import collect, analyze, scheduler
 from app.core.config import settings
+from app.core.scheduler import data_scheduler
 
 
 # 모델 경로
@@ -55,10 +58,16 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Error loading models: {e}")
 
+    # Start scheduler (optional: can be enabled via API)
+    # data_scheduler.start()
+    print("Scheduler available. Use /api/scheduler/start to enable.")
+
     yield
 
     # Shutdown
     print("Shutting down...")
+    if data_scheduler.is_running:
+        data_scheduler.stop()
 
 
 app = FastAPI(
@@ -82,6 +91,11 @@ app.include_router(health.router, tags=["Health"])
 app.include_router(predict.router, prefix="/api", tags=["Prediction"])
 app.include_router(factors.router, prefix="/api", tags=["Factors"])
 app.include_router(similar.router, prefix="/api", tags=["Similar"])
+
+# 데이터 수집/분석 라우터
+app.include_router(collect.router, prefix="/api", tags=["Collection"])
+app.include_router(analyze.router, prefix="/api", tags=["Analysis"])
+app.include_router(scheduler.router, prefix="/api", tags=["Scheduler"])
 
 
 @app.get("/")
