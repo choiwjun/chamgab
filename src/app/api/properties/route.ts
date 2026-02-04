@@ -291,17 +291,14 @@ export async function GET(request: NextRequest) {
 
     const { data, count, error } = await query
 
-    if (error) {
-      console.error('[Properties API] Supabase error:', error)
-      return NextResponse.json({ error: error.message }, { status: 400 })
-    }
-
-    // TODO: PostGIS 공간 쿼리를 위한 RPC 함수 필요
-    // 현재는 location이 WKB 형식이라 JavaScript에서 bounds 필터링 불가
-    // 지도에서는 모든 매물이 표시됨 (데이터가 적을 때만 허용)
-
-    // 데이터가 없으면 Mock 데이터 반환
-    if (!data || data.length === 0) {
+    // Supabase 에러 또는 데이터 없으면 Mock 데이터 반환
+    if (error || !data || data.length === 0) {
+      if (error) {
+        console.error(
+          '[Properties API] Supabase error, using mock data:',
+          error.message
+        )
+      }
       const mockData = MOCK_PROPERTIES.slice(0, limit)
       return NextResponse.json({
         items: mockData,
@@ -313,15 +310,22 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({
-      items: data || [],
+      items: data,
       total: count || 0,
       page,
       limit,
     })
   } catch (err) {
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
+    // 예외 발생 시에도 Mock 데이터 반환
+    console.error('[Properties API] Exception, using mock data:', err)
+    const page = 1
+    const limit = 20
+    return NextResponse.json({
+      items: MOCK_PROPERTIES.slice(0, limit),
+      total: MOCK_PROPERTIES.length,
+      page,
+      limit,
+      isMock: true,
+    })
   }
 }

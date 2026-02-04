@@ -149,13 +149,29 @@ export async function GET(request: NextRequest) {
 
     const { data: trends, error } = await query
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 })
+    // Supabase 에러 또는 데이터 없으면 Mock 데이터 반환
+    if (error || !trends || trends.length === 0) {
+      if (error) {
+        console.error(
+          '[Regions API] Supabase error, using mock data:',
+          error.message
+        )
+      }
+      return NextResponse.json({
+        items: MOCK_TRENDS.slice(0, limit),
+        metadata: {
+          level,
+          limit,
+          sort,
+          count: Math.min(MOCK_TRENDS.length, limit),
+          isMock: true,
+        },
+      })
     }
 
     // RegionTrend 객체로 변환
     const result: RegionTrend[] = await Promise.all(
-      (trends || []).map(async (region) => {
+      trends.map(async (region) => {
         // 각 지역의 매물 수 조회
         const { count } = await supabase
           .from('properties')
@@ -173,20 +189,6 @@ export async function GET(request: NextRequest) {
       })
     )
 
-    // 데이터가 없으면 Mock 데이터 반환
-    if (result.length === 0) {
-      return NextResponse.json({
-        items: MOCK_TRENDS.slice(0, limit),
-        metadata: {
-          level,
-          limit,
-          sort,
-          count: Math.min(MOCK_TRENDS.length, limit),
-          isMock: true,
-        },
-      })
-    }
-
     return NextResponse.json({
       items: result,
       metadata: {
@@ -197,10 +199,17 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (err) {
-    console.error('Error fetching region trends:', err)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
+    // 예외 발생 시에도 Mock 데이터 반환
+    console.error('[Regions API] Exception, using mock data:', err)
+    return NextResponse.json({
+      items: MOCK_TRENDS.slice(0, 6),
+      metadata: {
+        level: 2,
+        limit: 6,
+        sort: 'price_change',
+        count: 6,
+        isMock: true,
+      },
+    })
   }
 }
