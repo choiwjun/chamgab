@@ -173,6 +173,10 @@ class ModelService:
             **poi_features,  # POI 피처 추가
             **market_features,  # 시장 지표 피처 추가
             **property_extra_features,  # 매물 추가 피처
+            # 유동인구/상권 피처 (기본값)
+            "footfall_score": 60.0,
+            "commercial_density": 100.0,
+            "store_diversity_index": 0.6,
         }
 
         # feature_names 순서에 맞게 정렬
@@ -301,6 +305,9 @@ class ModelService:
             "buying_power_index": round(buying_power, 1),
             "transaction_volume": transaction_volume,
             "price_change_rate": 0.3,
+            # 한국부동산원 R-ONE 피처 (신규)
+            "reb_price_index": 100.0,  # 기본값 (MarketService에서 업데이트)
+            "reb_rent_index": 100.0,   # 기본값
         }
 
     def _get_property_extra_features(self, built_year: int, sigungu: str) -> dict:

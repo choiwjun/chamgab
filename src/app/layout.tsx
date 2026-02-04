@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import { Providers } from '@/components/providers'
+import { Header } from '@/components/layout/Header'
+import { BottomTabBar } from '@/components/layout/BottomTabBar'
 
 export const metadata: Metadata = {
   title: '참값 - AI 부동산 가격 분석',
@@ -23,7 +25,11 @@ export default function RootLayout({
         />
       </head>
       <body className="font-sans antialiased">
-        <Providers>{children}</Providers>
+        <Providers>
+          <Header />
+          <main className="pb-16 md:pb-0">{children}</main>
+          <BottomTabBar />
+        </Providers>
       </body>
     </html>
   )

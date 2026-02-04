@@ -19,13 +19,13 @@ export interface ComplexListResult {
 /**
  * 아파트 단지 목록 조회
  */
-export async function getComplexes(params: ComplexSearchParams): Promise<ComplexListResult> {
+export async function getComplexes(
+  params: ComplexSearchParams
+): Promise<ComplexListResult> {
   const { sido, sigungu, keyword, page = 1, limit = 20 } = params
   const offset = (page - 1) * limit
 
-  let query = supabase
-    .from('complexes')
-    .select('*', { count: 'exact' })
+  let query = supabase.from('complexes').select('*', { count: 'exact' })
 
   // 필터 적용
   if (sido) {
@@ -35,7 +35,10 @@ export async function getComplexes(params: ComplexSearchParams): Promise<Complex
     query = query.eq('sigungu', sigungu)
   }
   if (keyword) {
-    query = query.ilike('name', `%${keyword}%`)
+    // 키워드가 지역명일 수 있으므로 이름, 시군구, 주소에서 모두 검색
+    query = query.or(
+      `name.ilike.%${keyword}%,sigungu.ilike.%${keyword}%,address.ilike.%${keyword}%`
+    )
   }
 
   // 정렬 및 페이지네이션
@@ -83,7 +86,11 @@ export async function getComplexById(id: string): Promise<Complex | null> {
 /**
  * 브랜드별 아파트 단지 목록 조회
  */
-export async function getComplexesByBrand(brand: string, page = 1, limit = 20): Promise<ComplexListResult> {
+export async function getComplexesByBrand(
+  brand: string,
+  page = 1,
+  limit = 20
+): Promise<ComplexListResult> {
   const offset = (page - 1) * limit
 
   const { data, count, error } = await supabase
@@ -111,6 +118,7 @@ export async function getComplexesByBrand(brand: string, page = 1, limit = 20): 
  * DB 레코드를 Complex 타입으로 변환
  * PostGIS GEOGRAPHY 타입을 lat/lng 객체로 변환
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function transformComplex(record: any): Complex {
   const complex: Complex = {
     id: record.id,
@@ -122,7 +130,9 @@ function transformComplex(record: any): Complex {
     total_units: record.total_units,
     total_buildings: record.total_buildings,
     built_year: record.built_year,
-    parking_ratio: record.parking_ratio ? parseFloat(record.parking_ratio) : undefined,
+    parking_ratio: record.parking_ratio
+      ? parseFloat(record.parking_ratio)
+      : undefined,
     brand: record.brand,
     created_at: record.created_at,
     updated_at: record.updated_at,

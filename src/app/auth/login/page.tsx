@@ -8,11 +8,15 @@ export const metadata: Metadata = {
   description: 'AI 기반 부동산 가격 분석 서비스 참값에 로그인하세요.',
 }
 
-export default function LoginPage({
+export default async function LoginPage({
   searchParams,
 }: {
   searchParams: Promise<{ redirect?: string }>
 }) {
+  // Server Component에서 searchParams를 await
+  const params = await searchParams
+  const redirectUrl = params.redirect || '/'
+
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 px-4 py-12">
       <div className="w-full max-w-md space-y-8">
@@ -27,7 +31,7 @@ export default function LoginPage({
         </div>
 
         {/* 로그인 폼 */}
-        <LoginForm searchParams={searchParams} />
+        <LoginForm redirectUrl={redirectUrl} />
 
         {/* 하단 링크 */}
         <div className="text-center text-sm">

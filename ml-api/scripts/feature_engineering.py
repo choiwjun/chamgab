@@ -33,6 +33,7 @@ from app.core.database import get_supabase_client
 from app.services.poi_service import POIService, generate_simulated_poi_features
 from app.services.market_service import MarketService, generate_simulated_market_features
 from app.services.property_features_service import PropertyFeaturesService, generate_simulated_property_features
+from app.services.footfall_service import FootfallService, generate_simulated_footfall_features
 
 
 class FeatureEngineer:
@@ -222,6 +223,9 @@ class FeatureEngineer:
         # 10. 매물 추가 피처 (재건축, 학군, 향/뷰 등)
         df = self._add_property_features(df)
 
+        # 11. 유동인구/상권 피처 (신규)
+        df = self._add_footfall_features(df)
+
         return df
 
     def _add_poi_features(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -344,6 +348,35 @@ class FeatureEngineer:
         print(f"매물 추가 피처 {len(property_df.columns)}개 추가 완료")
         return df
 
+    def _add_footfall_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """유동인구/상권 피처 추가 (소상공인 API 데이터)"""
+        footfall_columns = [
+            "footfall_score",
+            "commercial_density",
+            "store_diversity_index",
+        ]
+
+        # 이미 있으면 그대로 사용
+        if all(col in df.columns for col in footfall_columns):
+            print("유동인구/상권 피처가 이미 존재합니다.")
+            return df
+
+        print("유동인구/상권 피처 생성 중...")
+
+        footfall_data = []
+        for _, row in df.iterrows():
+            sigungu = row.get("sigungu", "강남구")
+            features = generate_simulated_footfall_features(sigungu)
+            footfall_data.append(features)
+
+        footfall_df = pd.DataFrame(footfall_data)
+        for col in footfall_columns:
+            if col in footfall_df.columns:
+                df[col] = footfall_df[col].values
+
+        print(f"유동인구/상권 피처 {len(footfall_columns)}개 추가 완료")
+        return df
+
     def encode_categoricals(self, df: pd.DataFrame, fit: bool = True) -> pd.DataFrame:
         """범주형 변수 인코딩"""
         df = df.copy()
@@ -410,6 +443,9 @@ class FeatureEngineer:
             "buying_power_index",
             "transaction_volume",
             "price_change_rate",
+            # 한국부동산원 R-ONE 피처 (신규)
+            "reb_price_index",
+            "reb_rent_index",
             # 재건축 피처
             "is_old_building",
             "is_reconstruction_target",
@@ -426,6 +462,10 @@ class FeatureEngineer:
             "view_premium",
             "is_remodeled",
             "remodel_premium",
+            # 유동인구/상권 피처 (신규)
+            "footfall_score",
+            "commercial_density",
+            "store_diversity_index",
         ]
 
     def prepare_training_data(self, csv_path: str = None) -> Tuple[pd.DataFrame, pd.Series]:

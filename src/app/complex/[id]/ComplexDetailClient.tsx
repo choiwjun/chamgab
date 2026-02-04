@@ -27,11 +27,25 @@ interface Transaction {
   transaction_date: string
 }
 
+interface AnalysisResult {
+  predicted_price: number
+  confidence: number
+  price_per_pyeong: number
+  market_comparison: 'undervalued' | 'fair' | 'overvalued'
+  factors: {
+    name: string
+    impact: number
+    description: string
+  }[]
+}
+
 export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [analysisRequested, setAnalysisRequested] = useState(false)
   const [isRequesting, setIsRequesting] = useState(false)
+  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(
+    null
+  )
 
   // 참값 분석 요청
   const handleRequestAnalysis = async () => {
@@ -43,10 +57,41 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
       //   body: JSON.stringify({ complex_id: complex.id }),
       // })
 
-      // Mock: 2초 후 완료
+      // Mock: 2초 후 완료 + Mock 분석 결과
       await new Promise((resolve) => setTimeout(resolve, 2000))
-      setAnalysisRequested(true)
-      alert('분석 요청이 접수되었습니다. 잠시 후 결과를 확인해주세요.')
+
+      // Mock 분석 결과 생성
+      const mockResult: AnalysisResult = {
+        predicted_price: 1480000000,
+        confidence: 87.5,
+        price_per_pyeong: 5850,
+        market_comparison: 'fair',
+        factors: [
+          {
+            name: '역세권 접근성',
+            impact: 15.2,
+            description: '지하철역 도보 5분',
+          },
+          { name: '학군', impact: 12.8, description: '강남 8학군 내 위치' },
+          {
+            name: '단지 규모',
+            impact: 8.5,
+            description: `${complex.total_units || 500}세대 대단지`,
+          },
+          {
+            name: '준공년도',
+            impact: -5.2,
+            description: `${complex.built_year || 2015}년 준공`,
+          },
+          {
+            name: '주차',
+            impact: 3.1,
+            description: `세대당 ${complex.parking_ratio?.toFixed(1) || '1.2'}대`,
+          },
+        ],
+      }
+
+      setAnalysisResult(mockResult)
     } catch (error) {
       console.error('Analysis request failed:', error)
       alert('분석 요청 중 오류가 발생했습니다.')
@@ -179,28 +224,113 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
       {/* 참값 분석 */}
       <div className="mt-2 bg-white px-4 py-6">
         <h2 className="mb-4 text-lg font-bold text-gray-900">참값 분석</h2>
-        <div className="rounded-xl bg-gradient-to-r from-primary to-primary/80 p-6 text-white">
-          <p className="mb-2 text-sm opacity-80">AI 예측 적정가</p>
-          <p className="mb-4 text-3xl font-bold">
-            {analysisRequested ? '분석 진행중...' : '분석 대기중'}
-          </p>
-          <p className="text-sm opacity-80">
-            {analysisRequested
-              ? '분석 결과가 준비되면 알려드릴게요'
-              : '이 단지의 AI 가격 분석을 요청해보세요'}
-          </p>
-          <button
-            onClick={handleRequestAnalysis}
-            disabled={isRequesting || analysisRequested}
-            className="mt-4 w-full rounded-lg bg-white py-3 font-semibold text-primary hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isRequesting
-              ? '요청 중...'
-              : analysisRequested
-                ? '요청 완료'
-                : '참값 분석 요청'}
-          </button>
-        </div>
+
+        {analysisResult ? (
+          // 분석 결과 표시
+          <div className="space-y-4">
+            {/* 예측 가격 카드 */}
+            <div className="rounded-xl bg-gradient-to-r from-primary to-primary/80 p-6 text-white">
+              <p className="mb-2 text-sm opacity-80">AI 예측 적정가</p>
+              <p className="mb-2 text-3xl font-bold">
+                {formatPrice(analysisResult.predicted_price)}
+              </p>
+              <div className="flex items-center gap-4 text-sm">
+                <span className="opacity-80">
+                  평당 {analysisResult.price_per_pyeong.toLocaleString()}만원
+                </span>
+                <span className="rounded-full bg-white/20 px-2 py-0.5">
+                  신뢰도 {analysisResult.confidence}%
+                </span>
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <span
+                  className={`rounded-full px-3 py-1 text-sm font-medium ${
+                    analysisResult.market_comparison === 'undervalued'
+                      ? 'bg-green-500'
+                      : analysisResult.market_comparison === 'overvalued'
+                        ? 'bg-red-500'
+                        : 'bg-white/30'
+                  }`}
+                >
+                  {analysisResult.market_comparison === 'undervalued'
+                    ? '저평가'
+                    : analysisResult.market_comparison === 'overvalued'
+                      ? '고평가'
+                      : '적정가'}
+                </span>
+              </div>
+            </div>
+
+            {/* 가격 영향 요인 */}
+            <div className="rounded-xl border border-gray-200 p-4">
+              <h3 className="mb-3 font-semibold text-gray-900">
+                가격 영향 요인 (SHAP)
+              </h3>
+              <div className="space-y-3">
+                {analysisResult.factors.map((factor, idx) => (
+                  <div key={idx} className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-gray-700">
+                          {factor.name}
+                        </span>
+                        <span
+                          className={`text-sm font-semibold ${
+                            factor.impact > 0 ? 'text-red-500' : 'text-blue-500'
+                          }`}
+                        >
+                          {factor.impact > 0 ? '+' : ''}
+                          {factor.impact}%
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        {factor.description}
+                      </p>
+                    </div>
+                    <div className="h-2 w-24 overflow-hidden rounded-full bg-gray-200">
+                      <div
+                        className={`h-full rounded-full ${
+                          factor.impact > 0 ? 'bg-red-400' : 'bg-blue-400'
+                        }`}
+                        style={{
+                          width: `${Math.min(Math.abs(factor.impact) * 5, 100)}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 다시 분석 버튼 */}
+            <button
+              onClick={() => setAnalysisResult(null)}
+              className="w-full rounded-lg border border-primary py-3 font-semibold text-primary hover:bg-primary/5"
+            >
+              다시 분석하기
+            </button>
+          </div>
+        ) : (
+          // 분석 요청 전
+          <div className="rounded-xl bg-gradient-to-r from-primary to-primary/80 p-6 text-white">
+            <p className="mb-2 text-sm opacity-80">AI 예측 적정가</p>
+            <p className="mb-4 text-3xl font-bold">
+              {isRequesting ? '분석 중...' : '분석 대기중'}
+            </p>
+            <p className="text-sm opacity-80">
+              {isRequesting
+                ? 'AI가 가격을 분석하고 있습니다'
+                : '이 단지의 AI 가격 분석을 요청해보세요'}
+            </p>
+            <button
+              onClick={handleRequestAnalysis}
+              disabled={isRequesting}
+              className="mt-4 w-full rounded-lg bg-white py-3 font-semibold text-primary hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isRequesting ? '분석 중...' : '참값 분석 요청'}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 최근 실거래 */}

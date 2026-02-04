@@ -1,7 +1,7 @@
 'use client'
 
 // @TASK P3-S5-T2 - 로그인 폼 컴포넌트
-import { useState, use } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -19,11 +19,10 @@ const loginSchema = z.object({
 type LoginFormData = z.infer<typeof loginSchema>
 
 interface LoginFormProps {
-  searchParams: Promise<{ redirect?: string }>
+  redirectUrl?: string
 }
 
-export function LoginForm({ searchParams }: LoginFormProps) {
-  const params = use(searchParams)
+export function LoginForm({ redirectUrl = '/' }: LoginFormProps) {
   const router = useRouter()
   const { setUser } = useAuthStore()
   const [showPassword, setShowPassword] = useState(false)
@@ -38,8 +37,6 @@ export function LoginForm({ searchParams }: LoginFormProps) {
   } = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
   })
-
-  const redirectUrl = params.redirect || '/'
 
   // 이메일 로그인
   const onSubmit = async (data: LoginFormData) => {
