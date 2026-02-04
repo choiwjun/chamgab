@@ -3,7 +3,10 @@
 
 import type { RegionTrend } from '@/types/region'
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
+const getBaseUrl = () => {
+  if (typeof window !== 'undefined') return '' // 클라이언트
+  return process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000' // 서버
+}
 
 /**
  * 지역별 가격 트렌드 조회
@@ -12,10 +15,10 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
 export async function getRegionTrends(limit = 6): Promise<RegionTrend[]> {
   try {
     const res = await fetch(
-      `${API_BASE_URL}/api/regions/trends?type=sigungu&limit=${limit}`,
+      `${getBaseUrl()}/api/regions/trends?type=sigungu&limit=${limit}`,
       {
         next: { revalidate: 3600 }, // 1시간 캐시
-      },
+      }
     )
 
     if (!res.ok) {

@@ -82,11 +82,15 @@ export function LoginForm({ searchParams }: LoginFormProps) {
     setError(null)
 
     try {
+      // 네이버는 Supabase 미지원으로 직접 구현한 API 사용
+      if (provider === 'naver') {
+        window.location.href = `/api/auth/naver?redirect=${encodeURIComponent(redirectUrl)}`
+        return
+      }
+
       const supabase = createClient()
-      // Supabase Provider 타입 캐스팅 (naver는 커스텀 OIDC로 설정 필요)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error: authError } = await supabase.auth.signInWithOAuth({
-        provider: provider as any,
+        provider,
         options: {
           redirectTo: `${window.location.origin}/auth/callback?redirect=${encodeURIComponent(redirectUrl)}`,
         },
