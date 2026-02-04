@@ -1,5 +1,11 @@
 // @TASK P2-R1-T1 - Properties 타입 정의
-export type PropertyType = 'apt' | 'officetel' | 'villa' | 'store' | 'land' | 'building'
+export type PropertyType =
+  | 'apt'
+  | 'officetel'
+  | 'villa'
+  | 'store'
+  | 'land'
+  | 'building'
 
 export interface Property {
   id: string
@@ -20,6 +26,8 @@ export interface Property {
 }
 
 export interface PropertyQueryParams {
+  q?: string
+  region?: string
   sido?: string
   sigungu?: string
   property_type?: PropertyType

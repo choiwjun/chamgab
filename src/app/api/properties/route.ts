@@ -5,13 +5,13 @@
 // 동적 렌더링 강제 (Supabase 사용)
 export const dynamic = 'force-dynamic'
 
-import { createClient } from "@supabase/supabase-js"
-import { NextRequest, NextResponse } from "next/server"
-import type { PropertyQueryParams } from "@/types/property"
+import { createClient } from '@supabase/supabase-js'
+import { NextRequest, NextResponse } from 'next/server'
+import type { PropertyQueryParams } from '@/types/property'
 
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || "",
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
+  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 )
 
 /**
@@ -20,6 +20,8 @@ const supabase = createClient(
  * 매물 목록 조회 (필터, 페이지네이션)
  *
  * Query Parameters:
+ * - q: 검색어 (이름, 주소 검색)
+ * - region: 지역 ID (regions 테이블에서 sigungu 조회)
  * - sido: 시도 필터
  * - sigungu: 시군구 필터
  * - property_type: 매물 유형 (apt, officetel, villa, store, land, building)
@@ -40,27 +42,54 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
 
     // Query parameters 파싱
-    const sido = searchParams.get("sido") || undefined
-    const sigungu = searchParams.get("sigungu") || undefined
-    const property_type = searchParams.get("property_type") || undefined
-    const min_price = searchParams.get("min_price") ? parseInt(searchParams.get("min_price")!) : undefined
-    const max_price = searchParams.get("max_price") ? parseInt(searchParams.get("max_price")!) : undefined
-    const min_area = searchParams.get("min_area") ? parseFloat(searchParams.get("min_area")!) : undefined
-    const max_area = searchParams.get("max_area") ? parseFloat(searchParams.get("max_area")!) : undefined
-    const bounds = searchParams.get("bounds") || undefined
-    const page = parseInt(searchParams.get("page") || "1")
-    const limit = Math.min(parseInt(searchParams.get("limit") || "20"), 100)
-    const sort = searchParams.get("sort") || "created_at:desc"
+    const q = searchParams.get('q') || undefined
+    const regionId = searchParams.get('region') || undefined
+    const sido = searchParams.get('sido') || undefined
+    let sigungu = searchParams.get('sigungu') || undefined
+    const property_type = searchParams.get('property_type') || undefined
+    const min_area = searchParams.get('min_area')
+      ? parseFloat(searchParams.get('min_area')!)
+      : undefined
+    const max_area = searchParams.get('max_area')
+      ? parseFloat(searchParams.get('max_area')!)
+      : undefined
+    const bounds = searchParams.get('bounds') || undefined
+    const page = parseInt(searchParams.get('page') || '1')
+    const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 100)
+    const sort = searchParams.get('sort') || 'created_at:desc'
+
+    // region ID로 sigungu 조회
+    if (regionId && !sigungu) {
+      const { data: region } = await supabase
+        .from('regions')
+        .select('name, level')
+        .eq('id', regionId)
+        .single()
+
+      if (region) {
+        if (region.level === 2) {
+          sigungu = region.name
+        } else if (region.level === 3) {
+          // 읍면동인 경우 eupmyeondong 검색은 별도 처리 필요
+          sigungu = region.name
+        }
+      }
+    }
 
     // 기본 쿼리 구성
-    let query = supabase.from("properties").select("*", { count: "exact" })
+    let query = supabase.from('properties').select('*', { count: 'exact' })
+
+    // 텍스트 검색 (이름, 주소)
+    if (q) {
+      query = query.or(`name.ilike.%${q}%,address.ilike.%${q}%`)
+    }
 
     // 필터 적용
-    if (sido) query = query.eq("sido", sido)
-    if (sigungu) query = query.eq("sigungu", sigungu)
-    if (property_type) query = query.eq("property_type", property_type)
-    if (min_area !== undefined) query = query.gte("area_exclusive", min_area)
-    if (max_area !== undefined) query = query.lte("area_exclusive", max_area)
+    if (sido) query = query.eq('sido', sido)
+    if (sigungu) query = query.eq('sigungu', sigungu)
+    if (property_type) query = query.eq('property_type', property_type)
+    if (min_area !== undefined) query = query.gte('area_exclusive', min_area)
+    if (max_area !== undefined) query = query.lte('area_exclusive', max_area)
 
     // 지도 영역 필터 (PostGIS 공간 쿼리)
     if (bounds) {
@@ -74,8 +103,10 @@ export async function GET(request: NextRequest) {
     }
 
     // 정렬 처리
-    const [sortField, sortOrder] = sort.split(":")
-    query = query.order(sortField || "created_at", { ascending: sortOrder === "asc" })
+    const [sortField, sortOrder] = sort.split(':')
+    query = query.order(sortField || 'created_at', {
+      ascending: sortOrder === 'asc',
+    })
 
     // 페이지네이션
     const offset = (page - 1) * limit
@@ -94,6 +125,9 @@ export async function GET(request: NextRequest) {
       limit,
     })
   } catch (err) {
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
   }
 }

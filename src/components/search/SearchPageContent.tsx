@@ -14,13 +14,26 @@ export function SearchPageContent() {
 
   // URL 쿼리 파라미터 파싱
   const filters: PropertyQueryParams = {
+    q: searchParams.get('q') || undefined,
+    region: searchParams.get('region') || undefined,
     sido: searchParams.get('sido') || undefined,
     sigungu: searchParams.get('sigungu') || undefined,
-    property_type: (searchParams.get('property_type') as PropertyQueryParams['property_type']) || undefined,
-    min_price: searchParams.get('min_price') ? Number(searchParams.get('min_price')) : undefined,
-    max_price: searchParams.get('max_price') ? Number(searchParams.get('max_price')) : undefined,
-    min_area: searchParams.get('min_area') ? Number(searchParams.get('min_area')) : undefined,
-    max_area: searchParams.get('max_area') ? Number(searchParams.get('max_area')) : undefined,
+    property_type:
+      (searchParams.get(
+        'property_type'
+      ) as PropertyQueryParams['property_type']) || undefined,
+    min_price: searchParams.get('min_price')
+      ? Number(searchParams.get('min_price'))
+      : undefined,
+    max_price: searchParams.get('max_price')
+      ? Number(searchParams.get('max_price'))
+      : undefined,
+    min_area: searchParams.get('min_area')
+      ? Number(searchParams.get('min_area'))
+      : undefined,
+    max_area: searchParams.get('max_area')
+      ? Number(searchParams.get('max_area'))
+      : undefined,
     sort: searchParams.get('sort') || 'created_at',
   }
 
