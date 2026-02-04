@@ -2,6 +2,9 @@
 // @SPEC specs/domain/resources.yaml#properties
 // @SPEC docs/planning/02-trd.md#properties-api
 
+// 동적 렌더링 강제 (Supabase 사용)
+export const dynamic = 'force-dynamic'
+
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 

@@ -1,6 +1,9 @@
 // @TASK P2-R0-T1 - Complexes API - 단일 조회
 // @SPEC specs/domain/resources.yaml#complexes
 
+// 동적 렌더링 강제 (Supabase 사용)
+export const dynamic = 'force-dynamic'
+
 import { NextRequest, NextResponse } from 'next/server'
 import { getComplexById } from '@/services/complexes'
 

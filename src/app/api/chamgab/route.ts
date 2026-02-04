@@ -1,4 +1,8 @@
 // @TASK P3-R1-T2 - Chamgab API - 분석 요청
+
+// 동적 렌더링 강제 (Supabase 사용)
+export const dynamic = 'force-dynamic'
+
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 

@@ -2,6 +2,9 @@
 // @SPEC specs/domain/resources.yaml#regions
 // @SPEC docs/planning/04-database-design.md#regions-api
 
+// 동적 렌더링 강제 (Supabase 사용)
+export const dynamic = 'force-dynamic'
+
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import type { RegionWithChildren, RegionQueryParams } from '@/types/region'

@@ -1,4 +1,8 @@
 // @TASK P3-R3-T2 - Similar Transactions API
+
+// 동적 렌더링 강제 (Supabase 사용)
+export const dynamic = 'force-dynamic'
+
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
