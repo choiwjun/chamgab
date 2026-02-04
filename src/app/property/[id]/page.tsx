@@ -1,4 +1,8 @@
 // @TASK P3-S4-T1 - 매물 상세 페이지
+
+// 동적 렌더링 강제 (Supabase 사용)
+export const dynamic = 'force-dynamic'
+
 import { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
@@ -22,24 +26,7 @@ async function getProperty(id: string) {
     .single()
 
   if (error || !data) {
-    // Mock 데이터 반환 (개발용)
-    return {
-      id,
-      name: '래미안 강남 퍼스트',
-      address: '서울 강남구 역삼동 123-45',
-      property_type: 'apt',
-      sido: '서울시',
-      sigungu: '강남구',
-      eupmyeondong: '역삼동',
-      area_exclusive: 84.5,
-      built_year: 2021,
-      floors: 15,
-      thumbnail: null,
-      images: [],
-      complex_id: null,
-      created_at: new Date().toISOString(),
-      complexes: null,
-    }
+    return null
   }
 
   return data
@@ -48,6 +35,13 @@ async function getProperty(id: string) {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params
   const property = await getProperty(id)
+
+  if (!property) {
+    return {
+      title: '매물을 찾을 수 없음 | 참값',
+      description: 'AI 기반 부동산 가격 분석 서비스',
+    }
+  }
 
   return {
     title: `${property.name} | 참값`,

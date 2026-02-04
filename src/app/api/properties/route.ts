@@ -91,26 +91,20 @@ export async function GET(request: NextRequest) {
     if (min_area !== undefined) query = query.gte('area_exclusive', min_area)
     if (max_area !== undefined) query = query.lte('area_exclusive', max_area)
 
-    // 지도 영역 필터 (PostGIS 공간 쿼리)
-    if (bounds) {
-      const [swLat, swLng, neLat, neLng] = bounds.split(',').map(Number)
-      // PostGIS ST_MakeEnvelope 사용
-      query = query.filter(
-        'location',
-        'filter',
-        `ST_Within(location, ST_MakeEnvelope(${swLng}, ${swLat}, ${neLng}, ${neLat}, 4326))`
-      )
-    }
-
     // 정렬 처리
     const [sortField, sortOrder] = sort.split(':')
     query = query.order(sortField || 'created_at', {
       ascending: sortOrder === 'asc',
     })
 
-    // 페이지네이션
-    const offset = (page - 1) * limit
-    query = query.range(offset, offset + limit - 1)
+    // bounds가 있으면 location이 있는 매물만 필터 (페이지네이션은 나중에)
+    if (bounds) {
+      query = query.not('location', 'is', null)
+    } else {
+      // bounds가 없으면 페이지네이션 적용
+      const offset = (page - 1) * limit
+      query = query.range(offset, offset + limit - 1)
+    }
 
     const { data, count, error } = await query
 
@@ -118,9 +112,22 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
 
+    // 지도 영역 필터 (JavaScript에서 처리)
+    let filteredData = data || []
+    if (bounds && data) {
+      const [swLat, swLng, neLat, neLng] = bounds.split(',').map(Number)
+      filteredData = data.filter((property) => {
+        if (!property.location) return false
+        const { lat, lng } = property.location as { lat: number; lng: number }
+        return lat >= swLat && lat <= neLat && lng >= swLng && lng <= neLng
+      })
+      // bounds 필터 후 limit 적용
+      filteredData = filteredData.slice(0, limit)
+    }
+
     return NextResponse.json({
-      items: data || [],
-      total: count || 0,
+      items: filteredData,
+      total: bounds ? filteredData.length : count || 0,
       page,
       limit,
     })
