@@ -30,6 +30,30 @@ interface Transaction {
 export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [analysisRequested, setAnalysisRequested] = useState(false)
+  const [isRequesting, setIsRequesting] = useState(false)
+
+  // 참값 분석 요청
+  const handleRequestAnalysis = async () => {
+    setIsRequesting(true)
+    try {
+      // TODO: 실제 ML API 연동
+      // const res = await fetch('/api/chamgab', {
+      //   method: 'POST',
+      //   body: JSON.stringify({ complex_id: complex.id }),
+      // })
+
+      // Mock: 2초 후 완료
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+      setAnalysisRequested(true)
+      alert('분석 요청이 접수되었습니다. 잠시 후 결과를 확인해주세요.')
+    } catch (error) {
+      console.error('Analysis request failed:', error)
+      alert('분석 요청 중 오류가 발생했습니다.')
+    } finally {
+      setIsRequesting(false)
+    }
+  }
 
   // 실거래 데이터 로드 (Mock)
   useEffect(() => {
@@ -157,12 +181,24 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
         <h2 className="mb-4 text-lg font-bold text-gray-900">참값 분석</h2>
         <div className="rounded-xl bg-gradient-to-r from-primary to-primary/80 p-6 text-white">
           <p className="mb-2 text-sm opacity-80">AI 예측 적정가</p>
-          <p className="mb-4 text-3xl font-bold">분석 대기중</p>
-          <p className="text-sm opacity-80">
-            이 단지의 AI 가격 분석을 요청해보세요
+          <p className="mb-4 text-3xl font-bold">
+            {analysisRequested ? '분석 진행중...' : '분석 대기중'}
           </p>
-          <button className="mt-4 w-full rounded-lg bg-white py-3 font-semibold text-primary hover:bg-gray-100">
-            참값 분석 요청
+          <p className="text-sm opacity-80">
+            {analysisRequested
+              ? '분석 결과가 준비되면 알려드릴게요'
+              : '이 단지의 AI 가격 분석을 요청해보세요'}
+          </p>
+          <button
+            onClick={handleRequestAnalysis}
+            disabled={isRequesting || analysisRequested}
+            className="mt-4 w-full rounded-lg bg-white py-3 font-semibold text-primary hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isRequesting
+              ? '요청 중...'
+              : analysisRequested
+                ? '요청 완료'
+                : '참값 분석 요청'}
           </button>
         </div>
       </div>
