@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-from typing import List
+from typing import List, Optional
 
 
 class Settings(BaseSettings):
@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = ""
 
+    # Supabase
+    SUPABASE_URL: Optional[str] = None
+    SUPABASE_SERVICE_KEY: Optional[str] = None
+
     # Redis
     REDIS_URL: str = ""
 
@@ -25,6 +29,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"  # Allow extra env vars
 
 
 settings = Settings()

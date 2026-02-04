@@ -2,6 +2,9 @@
 // @SPEC specs/domain/resources.yaml#popular_searches
 
 import { NextRequest, NextResponse } from 'next/server'
+
+// 동적 렌더링 강제 (searchParams 사용)
+export const dynamic = 'force-dynamic'
 import type { PopularSearch, PopularSearchesResponse } from '@/types/search'
 
 /**
@@ -10,15 +13,45 @@ import type { PopularSearch, PopularSearchesResponse } from '@/types/search'
  */
 const MOCK_POPULAR_SEARCHES: PopularSearch[] = [
   { rank: 1, keyword: '강남구', search_count: 1523, change: 'same' },
-  { rank: 2, keyword: '잠실', search_count: 1234, change: 'up', change_rank: 2 },
-  { rank: 3, keyword: '마포구', search_count: 987, change: 'down', change_rank: 1 },
+  {
+    rank: 2,
+    keyword: '잠실',
+    search_count: 1234,
+    change: 'up',
+    change_rank: 2,
+  },
+  {
+    rank: 3,
+    keyword: '마포구',
+    search_count: 987,
+    change: 'down',
+    change_rank: 1,
+  },
   { rank: 4, keyword: '판교', search_count: 876, change: 'up', change_rank: 3 },
   { rank: 5, keyword: '래미안', search_count: 765, change: 'same' },
-  { rank: 6, keyword: '서초구', search_count: 654, change: 'down', change_rank: 2 },
-  { rank: 7, keyword: '송파구', search_count: 543, change: 'up', change_rank: 1 },
+  {
+    rank: 6,
+    keyword: '서초구',
+    search_count: 654,
+    change: 'down',
+    change_rank: 2,
+  },
+  {
+    rank: 7,
+    keyword: '송파구',
+    search_count: 543,
+    change: 'up',
+    change_rank: 1,
+  },
   { rank: 8, keyword: '분당', search_count: 432, change: 'same' },
   { rank: 9, keyword: '용산', search_count: 321, change: 'up', change_rank: 4 },
-  { rank: 10, keyword: '청담동', search_count: 210, change: 'down', change_rank: 3 },
+  {
+    rank: 10,
+    keyword: '청담동',
+    search_count: 210,
+    change: 'down',
+    change_rank: 3,
+  },
 ]
 
 /**
@@ -43,7 +76,9 @@ const getLastUpdatedAt = (): string => {
  * - items: PopularSearch[] - 인기 검색어 목록
  * - updated_at: string - 마지막 업데이트 시간 (ISO 8601)
  */
-export async function GET(request: NextRequest): Promise<NextResponse<PopularSearchesResponse>> {
+export async function GET(
+  request: NextRequest
+): Promise<NextResponse<PopularSearchesResponse>> {
   try {
     // Query parameter 파싱
     const { searchParams } = new URL(request.url)
@@ -70,7 +105,8 @@ export async function GET(request: NextRequest): Promise<NextResponse<PopularSea
     return NextResponse.json(response, {
       status: 200,
       headers: {
-        'Cache-Control': 'public, max-age=300, s-maxage=300, stale-while-revalidate=60',
+        'Cache-Control':
+          'public, max-age=300, s-maxage=300, stale-while-revalidate=60',
       },
     })
   } catch (error) {

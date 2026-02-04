@@ -2,6 +2,9 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
+// 동적 렌더링 강제 (searchParams 사용)
+export const dynamic = 'force-dynamic'
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || '',
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
@@ -19,9 +22,7 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1')
     const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 100)
 
-    let query = supabase
-      .from('transactions')
-      .select('*', { count: 'exact' })
+    let query = supabase.from('transactions').select('*', { count: 'exact' })
 
     if (complex_id) {
       query = query.eq('complex_id', complex_id)
@@ -43,7 +44,9 @@ export async function GET(request: NextRequest) {
         id: `mock-tx-${i}`,
         complex_id,
         property_id,
-        transaction_date: new Date(Date.now() - i * 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        transaction_date: new Date(Date.now() - i * 30 * 24 * 60 * 60 * 1000)
+          .toISOString()
+          .split('T')[0],
         price: 800000000 + Math.floor(Math.random() * 200000000),
         area_exclusive: 84.5 + Math.random() * 30,
         floor: Math.floor(Math.random() * 20) + 1,

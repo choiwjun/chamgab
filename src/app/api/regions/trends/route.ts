@@ -4,6 +4,9 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+
+// 동적 렌더링 강제 (searchParams 사용)
+export const dynamic = 'force-dynamic'
 import type { RegionTrend } from '@/types/region'
 
 const supabase = createClient(
@@ -82,7 +85,10 @@ export async function GET(request: NextRequest) {
 
     // 정렬 기준 적용
     if (sort === 'price_change') {
-      query = query.order('price_change_weekly', { ascending: false, nullsFirst: false })
+      query = query.order('price_change_weekly', {
+        ascending: false,
+        nullsFirst: false,
+      })
     } else if (sort === 'avg_price') {
       query = query.order('avg_price', { ascending: false, nullsFirst: false })
     }

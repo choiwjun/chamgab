@@ -2,6 +2,9 @@
 // @SPEC specs/domain/resources.yaml#complexes
 
 import { NextRequest, NextResponse } from 'next/server'
+
+// 동적 렌더링 강제 (searchParams 사용)
+export const dynamic = 'force-dynamic'
 import { getComplexes, getComplexesByBrand } from '@/services/complexes'
 
 /**
@@ -35,7 +38,10 @@ export async function GET(request: NextRequest) {
     const brand = searchParams.get('brand') || undefined
     const keyword = searchParams.get('keyword') || undefined
     const page = Math.max(1, parseInt(searchParams.get('page') || '1'))
-    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '20')))
+    const limit = Math.min(
+      100,
+      Math.max(1, parseInt(searchParams.get('limit') || '20'))
+    )
 
     // 브랜드 필터가 있으면 브랜드 전용 조회
     if (brand && !sido && !sigungu && !keyword) {
