@@ -16,10 +16,17 @@ export interface Property {
   sigungu?: string
   eupmyeondong?: string
   location?: { lat: number; lng: number }
+  latitude?: number
+  longitude?: number
   area_exclusive?: number
+  price?: number
+  floor?: number
+  total_floors?: number
   built_year?: number
   floors?: number
+  building_name?: string
   thumbnail?: string
+  image_url?: string | null
   images?: string[]
   complex_id?: string
   created_at: string

@@ -5,6 +5,8 @@ import type { RegionTrend } from '@/types/region'
 
 const getBaseUrl = () => {
   if (typeof window !== 'undefined') return '' // 클라이언트
+  // Vercel 환경 감지
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`
   return process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000' // 서버
 }
 
