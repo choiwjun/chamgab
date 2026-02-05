@@ -123,6 +123,15 @@ jobs:
           cd ml-api
           python scripts/collect_poi_data.py --all-regions
 
+      - name: Collect business statistics
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SBIZ_API_KEY: ${{ secrets.SBIZ_API_KEY }}
+        run: |
+          cd ml-api
+          python scripts/collect_business_statistics.py --months 3
+
   train-model:
     name: ML 모델 학습
     runs-on: ubuntu-latest
