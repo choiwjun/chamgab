@@ -130,7 +130,7 @@ jobs:
           SBIZ_API_KEY: ${{ secrets.SBIZ_API_KEY }}
         run: |
           cd ml-api
-          python scripts/collect_business_statistics.py --months 3
+          python scripts/collect_business_statistics.py --months 12
 
   train-model:
     name: ML 모델 학습
