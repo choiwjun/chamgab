@@ -10,6 +10,9 @@ import {
   PeakHoursAnalysis,
   DemographicsAnalysis,
   WeekendAnalysis,
+  ProfileAnalysis,
+  CompetitionAnalysis,
+  GrowthPotential,
 } from '@/components/business'
 import {
   predictBusinessSuccess,
@@ -205,6 +208,15 @@ function BusinessAnalysisResultContent() {
 
             {/* 주말/평일 비교 */}
             <WeekendAnalysis districtCode={districtCode!} />
+
+            {/* 상권 프로필 */}
+            <ProfileAnalysis districtCode={districtCode!} />
+
+            {/* 경쟁 분석 */}
+            <CompetitionAnalysis districtCode={districtCode!} />
+
+            {/* 성장 가능성 */}
+            <GrowthPotential districtCode={districtCode!} />
           </div>
         </div>
 

@@ -1319,3 +1319,443 @@ async def get_weekend_analysis(code: str):
             status_code=500,
             detail=f"데이터 조회 중 오류 발생: {str(e)}"
         )
+
+
+class DistrictProfileResponse(BaseModel):
+    """상권 프로필 응답"""
+    district_type: str
+    description: str
+    primary_customer: str
+    lifestyle: str
+    success_factors: List[str]
+    best_industries: List[str]
+
+
+@router.get("/districts/{code}/profile", response_model=DistrictProfileResponse)
+async def get_district_profile(code: str):
+    """
+    상권 프로필 분석
+
+    Args:
+        code: 상권 코드
+
+    Returns:
+        상권 특성 및 성공 요인
+    """
+    # 캐시 키 생성
+    cache_key = f"district_profile:{code}"
+
+    # 캐시 조회
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    # Supabase에서 데이터 조회
+    client = get_supabase_client()
+
+    try:
+        # district_characteristics와 foot_traffic_statistics 조회
+        char_result = client.table('district_characteristics') \
+            .select('*') \
+            .eq('commercial_district_code', code) \
+            .execute()
+
+        traffic_result = client.table('foot_traffic_statistics') \
+            .select('*') \
+            .eq('commercial_district_code', code) \
+            .execute()
+
+        if not char_result.data or len(char_result.data) == 0:
+            raise HTTPException(
+                status_code=404,
+                detail=f"상권을 찾을 수 없습니다: {code}"
+            )
+
+        char_data = char_result.data[0]
+        traffic_data = traffic_result.data[0] if traffic_result.data else {}
+
+        # 상권 유형 판별
+        district_type = char_data.get('district_type', '복합상권')
+        primary_age = char_data.get('primary_age_group', '20-30대')
+
+        # 설명 생성
+        description_map = {
+            "대학상권": "트렌디한 카페와 음식점이 밀집된 젊은 상권",
+            "오피스상권": "직장인 대상 점심/저녁 수요가 높은 비즈니스 상권",
+            "주거상권": "주민 대상 생활 밀착형 업종이 강세인 주거지역",
+            "역세권": "유동인구가 많고 접근성이 우수한 역 주변 상권",
+            "복합상권": "다양한 업종과 고객층이 공존하는 복합 상권"
+        }
+        description = description_map.get(district_type, "다양한 특성을 가진 상권")
+
+        # 주 고객 프로필
+        customer_map = {
+            "10-20대": "학생 및 청년층",
+            "20-30대": "MZ세대 직장인",
+            "30-40대": "가족 단위 고객",
+            "40-50대": "중장년층",
+            "50대 이상": "시니어층"
+        }
+        primary_customer = customer_map.get(primary_age, "다양한 연령층")
+
+        # 라이프스타일
+        lifestyle_map = {
+            "10-20대": "SNS 활발, 트렌드 민감, 가성비 추구",
+            "20-30대": "워라밸 중시, 경험 소비, 프리미엄 선호",
+            "30-40대": "가족 중심, 안정 추구, 품질 중시",
+            "40-50대": "실속 추구, 건강 관심, 편의성 중시",
+            "50대 이상": "여유로운 라이프, 건강 우선, 친목 활동"
+        }
+        lifestyle = lifestyle_map.get(primary_age, "다양한 라이프스타일")
+
+        # 성공 요인
+        success_factors_map = {
+            "대학상권": [
+                "SNS 마케팅 필수",
+                "인스타그램 감성 인테리어",
+                "합리적인 가격대",
+                "독특한 콘셉트"
+            ],
+            "오피스상권": [
+                "점심 시간 회전율 중시",
+                "배달 서비스 필수",
+                "빠른 서빙",
+                "단골 고객 확보"
+            ],
+            "주거상권": [
+                "주민 밀착형 서비스",
+                "장기 신뢰 관계",
+                "생활 편의 제공",
+                "안정적인 운영"
+            ],
+            "역세권": [
+                "높은 회전율 대응",
+                "접근성 최대화",
+                "테이크아웃 강화",
+                "피크 타임 집중"
+            ]
+        }
+        success_factors = success_factors_map.get(
+            district_type,
+            ["고객 니즈 파악", "차별화된 서비스", "꾸준한 품질 관리"]
+        )
+
+        # 추천 업종
+        best_industries_map = {
+            "대학상권": ["커피전문점", "치킨전문점", "분식/김밥", "패스트푸드"],
+            "오피스상권": ["한식음식점", "도시락/밥집", "커피전문점", "편의점"],
+            "주거상권": ["슈퍼마켓", "편의점", "한식음식점", "분식/김밥"],
+            "역세권": ["커피전문점", "베이커리", "편의점", "패스트푸드"]
+        }
+        best_industries = best_industries_map.get(
+            district_type,
+            ["커피전문점", "한식음식점", "편의점"]
+        )
+
+        response = DistrictProfileResponse(
+            district_type=district_type,
+            description=description,
+            primary_customer=primary_customer,
+            lifestyle=lifestyle,
+            success_factors=success_factors,
+            best_industries=best_industries
+        )
+
+        # 캐시 저장
+        cache.set(cache_key, response)
+
+        return response
+
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
+        raise HTTPException(
+            status_code=500,
+            detail=f"데이터 조회 중 오류 발생: {str(e)}"
+        )
+
+
+class AlternativeDistrict(BaseModel):
+    """대안 상권"""
+    code: str
+    name: str
+    distance: float  # km
+    store_count: int
+    success_rate: float
+    reason: str
+
+
+class CompetitionAnalysisResponse(BaseModel):
+    """경쟁 분석 응답"""
+    competition_level: str  # "높음", "중간", "낮음"
+    total_stores: int
+    franchise_ratio: float
+    density_score: int  # 0-10
+    alternatives: List[AlternativeDistrict]
+    recommendation: str
+
+
+@router.get("/districts/{code}/competition", response_model=CompetitionAnalysisResponse)
+async def get_competition_analysis(code: str):
+    """
+    경쟁 밀집도 분석
+
+    Args:
+        code: 상권 코드
+
+    Returns:
+        경쟁 분석 및 대안 상권
+    """
+    # 캐시 키 생성
+    cache_key = f"competition:{code}"
+
+    # 캐시 조회
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    # Supabase에서 데이터 조회
+    client = get_supabase_client()
+
+    try:
+        # store_statistics 조회
+        result = client.table('store_statistics') \
+            .select('*') \
+            .eq('commercial_district_code', code) \
+            .execute()
+
+        if not result.data or len(result.data) == 0:
+            raise HTTPException(
+                status_code=404,
+                detail=f"상권을 찾을 수 없습니다: {code}"
+            )
+
+        data = result.data[0]
+
+        total_stores = data.get('store_count', 0) or 0
+        franchise_count = data.get('franchise_count', 0) or 0
+
+        # 프랜차이즈 비율 계산
+        franchise_ratio = (franchise_count / total_stores * 100) if total_stores > 0 else 0
+
+        # 밀집도 점수 계산 (0-10)
+        # 점포수 기준: 0-50(낮음), 51-150(중간), 151+(높음)
+        if total_stores < 50:
+            density_score = int((total_stores / 50) * 3)
+            competition_level = "낮음"
+        elif total_stores < 150:
+            density_score = 3 + int(((total_stores - 50) / 100) * 4)
+            competition_level = "중간"
+        else:
+            density_score = 7 + min(int(((total_stores - 150) / 100) * 3), 3)
+            competition_level = "높음"
+
+        # 대안 상권 생성 (실제로는 주변 상권 검색)
+        # 샘플 데이터
+        alternatives = [
+            AlternativeDistrict(
+                code="1168053600",
+                name="본오동",
+                distance=0.8,
+                store_count=42,
+                success_rate=72.0,
+                reason="낮은 경쟁도, 높은 성공률"
+            ),
+            AlternativeDistrict(
+                code="1168053700",
+                name="간석동",
+                distance=1.2,
+                store_count=68,
+                success_rate=65.0,
+                reason="적절한 경쟁 환경"
+            )
+        ]
+
+        # 추천 메시지
+        if competition_level == "높음":
+            recommendation = "높은 경쟁도. 차별화 전략 필수 또는 대안 상권 검토"
+        elif competition_level == "중간":
+            recommendation = "적절한 경쟁 환경. 틈새 시장 공략 가능"
+        else:
+            recommendation = "낮은 경쟁도. 시장 선점 기회"
+
+        response = CompetitionAnalysisResponse(
+            competition_level=competition_level,
+            total_stores=total_stores,
+            franchise_ratio=round(franchise_ratio, 1),
+            density_score=density_score,
+            alternatives=alternatives,
+            recommendation=recommendation
+        )
+
+        # 캐시 저장
+        cache.set(cache_key, response)
+
+        return response
+
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
+        raise HTTPException(
+            status_code=500,
+            detail=f"데이터 조회 중 오류 발생: {str(e)}"
+        )
+
+
+class GrowthSignal(BaseModel):
+    """성장 시그널"""
+    type: str  # "positive", "negative", "neutral"
+    message: str
+
+
+class GrowthPrediction(BaseModel):
+    """성장 예측"""
+    sales: int
+    growth_rate: float
+    confidence: int  # 0-100
+
+
+class GrowthPotentialResponse(BaseModel):
+    """성장 가능성 응답"""
+    growth_score: int  # 0-100
+    trend: str  # "상승", "하락", "보합"
+    sales_growth_rate: float
+    prediction_3months: GrowthPrediction
+    signals: List[GrowthSignal]
+    recommendation: str
+
+
+@router.get("/districts/{code}/growth-potential", response_model=GrowthPotentialResponse)
+async def get_growth_potential(code: str):
+    """
+    성장 가능성 분석
+
+    Args:
+        code: 상권 코드
+
+    Returns:
+        성장 가능성 및 예측
+    """
+    # 캐시 키 생성
+    cache_key = f"growth_potential:{code}"
+
+    # 캐시 조회
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    # Supabase에서 데이터 조회
+    client = get_supabase_client()
+
+    try:
+        # sales_statistics와 business_statistics 조회
+        sales_result = client.table('sales_statistics') \
+            .select('*') \
+            .eq('commercial_district_code', code) \
+            .execute()
+
+        business_result = client.table('business_statistics') \
+            .select('*') \
+            .eq('commercial_district_code', code) \
+            .execute()
+
+        if not sales_result.data or len(sales_result.data) == 0:
+            raise HTTPException(
+                status_code=404,
+                detail=f"상권을 찾을 수 없습니다: {code}"
+            )
+
+        sales_data = sales_result.data[0]
+        business_data = business_result.data[0] if business_result.data else {}
+
+        # 매출 증가율
+        sales_growth_rate = sales_data.get('sales_growth_rate', 0) or 0
+        monthly_avg_sales = sales_data.get('monthly_avg_sales', 0) or 0
+        survival_rate = business_data.get('survival_rate', 70) or 70
+
+        # 트렌드 판별
+        if sales_growth_rate > 3:
+            trend = "상승"
+        elif sales_growth_rate < -3:
+            trend = "하락"
+        else:
+            trend = "보합"
+
+        # 성장 점수 계산 (0-100)
+        # 매출 증가율(50점) + 생존율(30점) + 기타(20점)
+        growth_from_sales = min(max((sales_growth_rate + 10) / 20 * 50, 0), 50)
+        growth_from_survival = (survival_rate / 100) * 30
+        growth_from_others = 15  # 기본 점수
+
+        growth_score = int(growth_from_sales + growth_from_survival + growth_from_others)
+
+        # 3개월 예측
+        predicted_sales = int(monthly_avg_sales * (1 + sales_growth_rate / 100))
+        predicted_growth = sales_growth_rate * 1.1  # 약간 증가 가정
+        confidence = 78 if abs(sales_growth_rate) < 10 else 65
+
+        prediction_3months = GrowthPrediction(
+            sales=predicted_sales,
+            growth_rate=round(predicted_growth, 2),
+            confidence=confidence
+        )
+
+        # 성장 시그널
+        signals = []
+
+        if sales_growth_rate > 5:
+            signals.append(GrowthSignal(
+                type="positive",
+                message=f"매출 지속 증가 중 (+{sales_growth_rate:.1f}%)"
+            ))
+        elif sales_growth_rate < -5:
+            signals.append(GrowthSignal(
+                type="negative",
+                message=f"매출 감소 추세 ({sales_growth_rate:.1f}%)"
+            ))
+        else:
+            signals.append(GrowthSignal(
+                type="neutral",
+                message="매출 안정세 유지"
+            ))
+
+        if survival_rate > 75:
+            signals.append(GrowthSignal(
+                type="positive",
+                message=f"높은 생존율 ({survival_rate:.1f}%)"
+            ))
+        elif survival_rate < 60:
+            signals.append(GrowthSignal(
+                type="negative",
+                message=f"낮은 생존율 ({survival_rate:.1f}%)"
+            ))
+
+        # 추천 메시지
+        if growth_score >= 70:
+            recommendation = "지금이 진입 적기"
+        elif growth_score >= 50:
+            recommendation = "신중한 검토 후 진입"
+        else:
+            recommendation = "시장 상황 개선 후 재검토 권장"
+
+        response = GrowthPotentialResponse(
+            growth_score=growth_score,
+            trend=trend,
+            sales_growth_rate=round(sales_growth_rate, 2),
+            prediction_3months=prediction_3months,
+            signals=signals,
+            recommendation=recommendation
+        )
+
+        # 캐시 저장
+        cache.set(cache_key, response)
+
+        return response
+
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
+        raise HTTPException(
+            status_code=500,
+            detail=f"데이터 조회 중 오류 발생: {str(e)}"
+        )

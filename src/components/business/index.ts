@@ -1,3 +1,6 @@
 export { default as PeakHoursAnalysis } from './PeakHoursAnalysis'
 export { default as DemographicsAnalysis } from './DemographicsAnalysis'
 export { default as WeekendAnalysis } from './WeekendAnalysis'
+export { default as ProfileAnalysis } from './ProfileAnalysis'
+export { default as CompetitionAnalysis } from './CompetitionAnalysis'
+export { default as GrowthPotential } from './GrowthPotential'
