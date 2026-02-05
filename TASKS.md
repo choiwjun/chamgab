@@ -647,9 +647,284 @@ P1-R1 완료 후:
 | **P2**  | 핵심 기능 (Resource 4, Screen 3)      | 7개 + 3 검증  |
 | **P3**  | 참값 분석 (ML + Resource 4, Screen 3) | 10개 + 3 검증 |
 | **P4+** | 확장 기능                             | 완료          |
+| **P5**  | 상권분석 (ML + Resource 2, Screen 4)  | 18개 + 4 검증 |
 
-**총 태스크**: ~42개 (검증 포함)
-**ML 피처 총 개수**: 43개
+**총 태스크**: ~60개 (검증 포함)
+**ML 피처 총 개수**: 72개 (기존 57개 + 상권 15개)
+
+---
+
+## Phase 5: 상권분석 🏪
+
+> **목표**: AI 기반 창업 성공 예측 및 상권 분석 서비스
+> **데이터**: 개폐업 통계, 매출 정보, 점포수, 유동인구
+
+### P5-R1: 상권 데이터 인프라 (Backend) ✅
+
+#### P5-R1-T1: Supabase 테이블 생성 ✅
+
+- [x] `business_statistics` 테이블 (개폐업 통계)
+- [x] `sales_statistics` 테이블 (매출 정보)
+- [x] `store_statistics` 테이블 (점포수 통계)
+- [x] RLS 정책 설정
+- [x] 인덱스 최적화
+
+**파일**: `supabase/migrations/015_create_commercial_analysis_tables.sql`
+
+#### P5-R1-T2: 데이터 수집 스크립트 ✅
+
+- [x] 소상공인진흥공단 API 연동
+- [x] 개폐업 정보 수집
+- [x] 매출 정보 수집
+- [x] 점포수 통계 수집
+- [x] 중복 데이터 처리 (UPSERT)
+
+**파일**: `ml-api/scripts/collect_business_statistics.py`
+
+#### P5-R1-T3: GitHub Actions 워크플로우 ✅
+
+- [x] 상권 통계 수집 스텝 추가
+- [x] 12개월 데이터 수집 설정
+- [x] 에러 핸들링 및 로깅
+
+**파일**: `.github/workflows/full-collection-now.yml`
+
+### P5-ML: 창업 성공 예측 모델 (ML)
+
+#### P5-ML-T1: Feature Engineering
+
+- [ ] RED: Feature 테스트 작성
+- [ ] GREEN: 상권분석 피처 추가 (`ml-api/scripts/feature_engineering.py`)
+  - [ ] 생존율 피처 (survival_rate)
+  - [ ] 매출 피처 (monthly_avg_sales, sales_growth_rate)
+  - [ ] 경쟁 피처 (store_count, density_level)
+  - [ ] 복합 피처 (success_score, competition_ratio)
+- [ ] REFACTOR: 피처 정규화 및 인코딩
+
+**예상 피처 수**: +15개 (기존 57개 → 72개)
+
+#### P5-ML-T2: 창업 성공 예측 모델 학습
+
+- [ ] RED: 모델 테스트 작성
+- [ ] GREEN: XGBoost Classifier 모델 구현
+  - [ ] 입력: 지역, 업종, 생존율, 매출, 경쟁, 유동인구
+  - [ ] 출력: 성공 확률 (0-100%)
+  - [ ] 목표 정확도: 75%+
+- [ ] GREEN: SHAP Explainer 생성
+- [ ] REFACTOR: 하이퍼파라미터 튜닝
+
+**파일**: `ml-api/scripts/train_business_model.py`
+
+#### P5-ML-T3: 모델 평가 및 검증
+
+- [ ] RED: 평가 테스트 작성
+- [ ] GREEN: Cross-validation (5-fold)
+- [ ] GREEN: 메트릭 계산 (Accuracy, Precision, Recall, F1)
+- [ ] REFACTOR: 모델 성능 개선
+
+**목표 메트릭**:
+
+- Accuracy: 75%+
+- Precision: 70%+
+- Recall: 70%+
+
+### P5-R2: 상권분석 API (Backend)
+
+#### P5-R2-T1: 기본 API 엔드포인트
+
+- [ ] RED: API 테스트 작성
+- [ ] GREEN: `GET /api/commercial/districts` - 상권 목록 조회
+- [ ] GREEN: `GET /api/commercial/industries` - 업종 목록 조회
+- [ ] GREEN: `GET /api/commercial/districts/{code}` - 상권 상세 정보
+- [ ] REFACTOR: 응답 캐싱 (Redis, 1시간)
+
+**파일**: `ml-api/app/routers/commercial.py`
+
+#### P5-R2-T2: 창업 성공 예측 API
+
+- [ ] RED: 예측 API 테스트 작성
+- [ ] GREEN: `POST /api/business/predict` - 성공 확률 예측
+  - [ ] 입력: district_code, industry_code
+  - [ ] 출력: BusinessAnalysisResult
+  - [ ] ML 모델 추론
+  - [ ] SHAP 값 계산
+- [ ] REFACTOR: 응답 시간 최적화 (<500ms)
+
+**파일**: `ml-api/app/routers/business_analysis.py`
+
+#### P5-R2-T3: 지역 비교 및 통계 API
+
+- [ ] RED: 비교 API 테스트 작성
+- [ ] GREEN: `POST /api/business/compare` - 지역 비교
+- [ ] GREEN: `GET /api/industries/{code}/statistics` - 업종 통계
+- [ ] GREEN: `GET /api/business/trends` - 트렌드 조회
+- [ ] REFACTOR: 벌크 쿼리 최적화
+
+**파일**: `ml-api/app/routers/business_analysis.py`
+
+### P5-S1: 상권분석 메인 화면 (Frontend)
+
+> **URL**: `/business-analysis`
+> **목적**: 지역과 업종 선택
+
+#### P5-S1-T1: 검색 컴포넌트
+
+- [ ] RED: 컴포넌트 테스트 작성
+- [ ] GREEN: `RegionSelect.tsx` - 지역 선택 드롭다운
+- [ ] GREEN: `IndustrySelect.tsx` - 업종 선택 드롭다운
+- [ ] GREEN: 자동완성 기능
+- [ ] REFACTOR: 접근성 개선 (ARIA)
+
+**파일**: `src/components/business/RegionSelect.tsx`
+
+#### P5-S1-T2: 메인 페이지 구현
+
+- [ ] RED: 페이지 테스트 작성
+- [ ] GREEN: 검색 폼 구현
+- [ ] GREEN: 인기 검색 지역 표시
+- [ ] GREEN: 최근 분석 이력 (로컬 스토리지)
+- [ ] REFACTOR: 반응형 레이아웃
+
+**파일**: `src/app/business-analysis/page.tsx`
+
+#### P5-S1-V: 검증
+
+- [ ] E2E 테스트 (Playwright)
+- [ ] 접근성 테스트 (Lighthouse)
+- [ ] 성능 테스트 (<2초 로딩)
+
+### P5-S2: 분석 결과 화면 (Frontend)
+
+> **URL**: `/business-analysis/result`
+> **목적**: 창업 성공 확률 및 상세 분석
+
+#### P5-S2-T1: 결과 요약 카드
+
+- [ ] RED: 컴포넌트 테스트 작성
+- [ ] GREEN: `SuccessProbabilityCard.tsx` - 성공 확률 표시
+- [ ] GREEN: `MetricsCard.tsx` - 핵심 지표 카드
+- [ ] GREEN: 프로그레스 바 애니메이션
+- [ ] REFACTOR: 스켈레톤 로딩
+
+**파일**: `src/components/business/SuccessProbabilityCard.tsx`
+
+#### P5-S2-T2: 트렌드 차트
+
+- [ ] RED: 차트 테스트 작성
+- [ ] GREEN: `SalesTrendChart.tsx` - 매출 추이 (Recharts)
+- [ ] GREEN: `OpenCloseChart.tsx` - 개폐업 추이
+- [ ] GREEN: 인터랙티브 툴팁
+- [ ] REFACTOR: 차트 성능 최적화
+
+**파일**: `src/components/business/SalesTrendChart.tsx`
+
+#### P5-S2-T3: AI 분석 의견
+
+- [ ] RED: 컴포넌트 테스트 작성
+- [ ] GREEN: `InsightsPanel.tsx` - AI 의견 표시
+- [ ] GREEN: 추천/비추천 아이콘
+- [ ] GREEN: 보고서 다운로드 (PDF)
+- [ ] REFACTOR: 다국어 지원 준비
+
+**파일**: `src/components/business/InsightsPanel.tsx`
+
+#### P5-S2-T4: 결과 페이지 통합
+
+- [ ] RED: 페이지 테스트 작성
+- [ ] GREEN: TanStack Query로 데이터 패칭
+- [ ] GREEN: 에러 바운더리
+- [ ] GREEN: 공유 기능 (URL, SNS)
+- [ ] REFACTOR: SEO 최적화 (메타 태그)
+
+**파일**: `src/app/business-analysis/result/page.tsx`
+
+#### P5-S2-V: 검증
+
+- [ ] E2E 테스트
+- [ ] 차트 렌더링 테스트
+- [ ] API 에러 핸들링 테스트
+
+### P5-S3: 지역 비교 화면 (Frontend)
+
+> **URL**: `/business-analysis/compare`
+> **목적**: 여러 지역의 동일 업종 비교
+
+#### P5-S3-T1: 비교 테이블
+
+- [ ] RED: 컴포넌트 테스트 작성
+- [ ] GREEN: `ComparisonTable.tsx` - 지표별 비교 테이블
+- [ ] GREEN: 정렬 기능
+- [ ] GREEN: 레이더 차트
+- [ ] REFACTOR: 모바일 최적화
+
+**파일**: `src/components/business/ComparisonTable.tsx`
+
+#### P5-S3-T2: 비교 페이지 구현
+
+- [ ] RED: 페이지 테스트 작성
+- [ ] GREEN: 최대 3개 지역 비교
+- [ ] GREEN: 종합 점수 랭킹
+- [ ] GREEN: 지역 추가/제거 기능
+- [ ] REFACTOR: 상태 관리 (Zustand)
+
+**파일**: `src/app/business-analysis/compare/page.tsx`
+
+#### P5-S3-V: 검증
+
+- [ ] E2E 테스트
+- [ ] 반응형 테스트
+
+### P5-S4: 업종별 통계 화면 (Frontend)
+
+> **URL**: `/business-analysis/industry/[code]`
+> **목적**: 특정 업종의 전국 통계
+
+#### P5-S4-T1: 업종 통계 컴포넌트
+
+- [ ] RED: 컴포넌트 테스트 작성
+- [ ] GREEN: `IndustryOverview.tsx` - 업종 개요
+- [ ] GREEN: `IndustryTrendChart.tsx` - 트렌드 차트
+- [ ] GREEN: `RegionalStatistics.tsx` - 지역별 현황
+- [ ] REFACTOR: 데이터 가상화 (react-window)
+
+**파일**: `src/components/business/IndustryOverview.tsx`
+
+#### P5-S4-T2: 업종 페이지 구현
+
+- [ ] RED: 페이지 테스트 작성
+- [ ] GREEN: 동적 라우팅 ([code])
+- [ ] GREEN: ISR 캐싱 (1시간)
+- [ ] GREEN: 페이지네이션
+- [ ] REFACTOR: SEO 최적화
+
+**파일**: `src/app/business-analysis/industry/[code]/page.tsx`
+
+#### P5-S4-V: 검증
+
+- [ ] E2E 테스트
+- [ ] ISR 캐싱 검증
+- [ ] 성능 테스트
+
+### P5-Integration: 통합 및 배포
+
+#### P5-Integration-T1: End-to-End 테스트
+
+- [ ] 전체 플로우 테스트 (검색 → 결과 → 비교)
+- [ ] 에러 시나리오 테스트
+- [ ] 성능 테스트 (Lighthouse 90+)
+
+#### P5-Integration-T2: 문서화
+
+- [ ] API 문서 (OpenAPI/Swagger)
+- [ ] 사용자 가이드 (`docs/business-analysis-guide.md`)
+- [ ] README 업데이트
+
+#### P5-Integration-T3: 배포
+
+- [ ] Vercel Preview 배포
+- [ ] Railway ML API 배포
+- [ ] Supabase 마이그레이션 실행
+- [ ] 모니터링 설정 (Sentry)
 
 ---
 
