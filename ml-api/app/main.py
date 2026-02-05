@@ -19,7 +19,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
-from app.api import predict, factors, similar, health, commercial, chamgab
+from app.api import predict, factors, similar, health, commercial, chamgab, integrated
 from app.api import collect, analyze, scheduler
 from app.core.config import settings
 from app.core.scheduler import data_scheduler
@@ -109,6 +109,9 @@ app.include_router(commercial.router, tags=["Commercial"])
 
 # 참값 분석 라우터
 app.include_router(chamgab.router, tags=["Chamgab"])
+
+# 통합 분석 라우터
+app.include_router(integrated.router, tags=["Integrated"])
 
 
 @app.get("/")
