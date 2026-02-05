@@ -12,7 +12,7 @@ import { useAuth } from '@/hooks/useAuth'
 export function Header() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isSearchExpanded, setIsSearchExpanded] = useState(false)
-  const { user, isAuthenticated } = useAuth()
+  const { isAuthenticated } = useAuth()
 
   return (
     <header className="sticky top-0 z-50 bg-editorial-bg/95 backdrop-blur-sm border-b border-editorial-dark/5">

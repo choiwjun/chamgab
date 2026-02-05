@@ -12,7 +12,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
-from app.api import predict, factors, similar, health
+from app.api import predict, factors, similar, health, commercial
 from app.api import collect, analyze, scheduler
 from app.core.config import settings
 from app.core.scheduler import data_scheduler
@@ -96,6 +96,9 @@ app.include_router(similar.router, prefix="/api", tags=["Similar"])
 app.include_router(collect.router, prefix="/api", tags=["Collection"])
 app.include_router(analyze.router, prefix="/api", tags=["Analysis"])
 app.include_router(scheduler.router, prefix="/api", tags=["Scheduler"])
+
+# 상권분석 라우터
+app.include_router(commercial.router, tags=["Commercial"])
 
 
 @app.get("/")

@@ -28,7 +28,14 @@
       "Bash(git remote add:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_9509edadbb5939b61c80c0dc263d26d4607c0aa0 npx supabase projects list:*)",
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_9509edadbb5939b61c80c0dc263d26d4607c0aa0 npx supabase link:*)",
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_9509edadbb5939b61c80c0dc263d26d4607c0aa0 npx supabase migration list:*)",
+      "Read(//tmp/claude/c--Users-wj941-Downloads-chamgab/tasks/**)",
+      "Bash(python -m scripts.train_model:*)",
+      "Bash(python scripts/test_api.py:*)",
+      "Bash(python scripts/verify_api_key.py:*)"
     ]
   }
 }

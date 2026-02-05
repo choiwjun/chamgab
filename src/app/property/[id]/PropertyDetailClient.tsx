@@ -3,11 +3,9 @@
 // @TASK P3-S4 - 매물 상세 클라이언트 컴포넌트
 import { useState, useEffect } from 'react'
 import { Heart, GitCompare, MapPin, Calendar, Ruler, Building } from 'lucide-react'
-import { ImageGallery } from '@/components/property/ImageGallery'
 import { ChamgabCard } from '@/components/property/ChamgabCard'
 import { PriceFactors } from '@/components/property/PriceFactors'
 import { SimilarTransactions } from '@/components/property/SimilarTransactions'
-import { formatPrice } from '@/lib/format'
 
 interface Property {
   id: string
@@ -24,18 +22,47 @@ interface Property {
   images?: string[]
   complex_id?: string | null
   created_at: string
-  complexes?: any
+  complexes?: { brand?: string }
 }
 
 interface PropertyDetailClientProps {
   property: Property
 }
 
+interface Analysis {
+  chamgab_price: number
+  min_price: number
+  max_price: number
+  confidence: number
+  analyzed_at: string
+  expires_at: string
+  id?: string
+}
+
+interface Factor {
+  id: string
+  rank: number
+  factor_name: string
+  factor_name_ko: string
+  contribution: number
+  direction: 'positive' | 'negative'
+}
+
+interface Transaction {
+  id: string
+  transaction_date: string
+  price: number
+  area_exclusive?: number
+  floor?: number
+  dong?: string
+  similarity?: number
+}
+
 export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
   const [isFavorite, setIsFavorite] = useState(false)
-  const [analysis, setAnalysis] = useState<any>(null)
-  const [factors, setFactors] = useState<any[]>([])
-  const [similarTransactions, setSimilarTransactions] = useState<any[]>([])
+  const [analysis, setAnalysis] = useState<Analysis | null>(null)
+  const [factors, setFactors] = useState<Factor[]>([])
+  const [similarTransactions, setSimilarTransactions] = useState<Transaction[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   // 데이터 로드
@@ -172,7 +199,7 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
             </span>
           </div>
           <ChamgabCard
-            analysis={analysis}
+            analysis={analysis || undefined}
             isLoading={isLoading}
             onRequestAnalysis={() => {
               // 분석 요청 로직
