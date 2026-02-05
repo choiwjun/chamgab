@@ -14,6 +14,7 @@ import {
   CompetitionAnalysis,
   GrowthPotential,
 } from '@/components/business'
+import { IndustryRecommendation } from '@/components/business/IndustryRecommendation'
 import {
   predictBusinessSuccess,
   getDistrictCharacteristics,
@@ -217,6 +218,9 @@ function BusinessAnalysisResultContent() {
 
             {/* 성장 가능성 */}
             <GrowthPotential districtCode={districtCode!} />
+
+            {/* AI 업종 추천 */}
+            <IndustryRecommendation districtCode={districtCode!} />
           </div>
         </div>
 
