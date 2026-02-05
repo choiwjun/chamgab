@@ -174,7 +174,12 @@ class TrainingDataPreparer:
         output_dir.mkdir(parents=True, exist_ok=True)
 
         output_file = Path(__file__).parent.parent / output_path
-        features.to_parquet(output_file, index=False)
+
+        # 확장자에 따라 저장 형식 결정
+        if output_path.endswith('.csv'):
+            features.to_csv(output_file, index=False)
+        else:
+            features.to_parquet(output_file, index=False)
 
         print(f"\n저장 완료: {output_file}")
         print(f"총 {len(features)}건, {len(features.columns)}개 피처")

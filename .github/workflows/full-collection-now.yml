@@ -150,23 +150,18 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
           cd ml-api
-          python scripts/prepare_training_data.py --full
+          python scripts/prepare_training_data.py --full --output data/training_data.csv
 
       - name: Train XGBoost model
         run: |
           cd ml-api
-          python scripts/train_model.py \
-            --data-path data/training_data.parquet \
-            --output-path models/ \
-            --model-name price_predictor \
-            --full-training
+          python scripts/train_model.py --csv data/training_data.csv
 
       - name: Generate SHAP analysis
         run: |
           cd ml-api
-          python scripts/generate_shap.py \
-            --model-path models/price_predictor.joblib \
-            --output-path models/shap_values.joblib
+          echo "SHAP analysis is generated during training"
+          ls -la app/models/ || echo "Models directory check"
 
       - name: Upload model to Supabase
         env:
