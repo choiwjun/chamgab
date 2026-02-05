@@ -12,6 +12,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
 import httpx
+from lxml import etree
 from supabase import create_client
 
 # 로깅 설정
@@ -117,21 +118,61 @@ class TransactionCollector:
             'numOfRows': 1000,
         }
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=15.0) as client:
             try:
                 response = await client.get(url, params=params)
                 response.raise_for_status()
 
-                # XML 파싱 (실제로는 xmltodict 사용)
-                # 여기서는 간단히 JSON 응답 가정
-                data = response.json() if response.headers.get('content-type', '').startswith('application/json') else []
-
+                # XML 파싱
+                data = self._parse_xml_response(response.text, region_code, region_name)
                 logger.info(f"수집 완료: {region_name} {deal_ymd} - {len(data)}건")
                 return data
 
+            except httpx.TimeoutException:
+                logger.warning(f"타임아웃: {region_name} {deal_ymd}")
+                return []
             except Exception as e:
                 logger.error(f"수집 실패: {region_name} {deal_ymd} - {e}")
                 return []
+
+    def _parse_xml_response(
+        self,
+        xml_text: str,
+        region_code: str,
+        region_name: str
+    ) -> List[Dict[str, Any]]:
+        """XML 응답 파싱"""
+        try:
+            root = etree.fromstring(xml_text.encode('utf-8'))
+            items = root.findall('.//item')
+
+            transactions = []
+            for item in items:
+                tx = {
+                    'id': f"{region_code}_{self._get_text(item, '년')}_{self._get_text(item, '월')}_{self._get_text(item, '일')}_{self._get_text(item, '아파트')}_{self._get_text(item, '층')}",
+                    'sigungu': region_name,
+                    'sigungu_code': region_code,
+                    'apt_name': self._get_text(item, '아파트'),
+                    'dong': self._get_text(item, '법정동'),
+                    'area_sqm': float(self._get_text(item, '전용면적') or 0),
+                    'floor': int(self._get_text(item, '층') or 0),
+                    'year_built': int(self._get_text(item, '건축년도') or 0),
+                    'price': int(self._get_text(item, '거래금액', '').replace(',', '').strip() or 0),
+                    'deal_year': int(self._get_text(item, '년') or 0),
+                    'deal_month': int(self._get_text(item, '월') or 0),
+                    'deal_day': int(self._get_text(item, '일') or 0),
+                }
+                transactions.append(tx)
+
+            return transactions
+        except Exception as e:
+            logger.error(f"XML 파싱 오류: {e}")
+            return []
+
+    def _get_text(self, element, tag: str, default: str = '') -> str:
+        """XML 요소에서 텍스트 추출"""
+        child = element.find(tag)
+        return child.text.strip() if child is not None and child.text else default
 
     async def save_to_supabase(self, transactions: List[Dict[str, Any]]) -> int:
         """Supabase에 저장"""
