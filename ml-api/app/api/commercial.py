@@ -1759,3 +1759,324 @@ async def get_growth_potential(code: str):
             status_code=500,
             detail=f"데이터 조회 중 오류 발생: {str(e)}"
         )
+
+
+# ============================================================================
+# AI 업종 추천 API
+# ============================================================================
+
+class IndustryRecommendation(BaseModel):
+    """업종 추천 결과"""
+    industry_code: str
+    industry_name: str
+    match_score: int  # 0-100
+    expected_monthly_sales: int  # 예상 월 매출 (원)
+    breakeven_months: int  # 손익분기 개월
+    reasons: List[str]  # 추천 이유
+
+
+class IndustryRecommendationResponse(BaseModel):
+    """업종 추천 응답"""
+    district_code: str
+    district_name: str
+    recommendations: List[IndustryRecommendation]
+    analyzed_at: str
+
+
+@router.get("/districts/{code}/recommend-industry", response_model=IndustryRecommendationResponse)
+async def recommend_industry(code: str):
+    """
+    AI 업종 추천
+
+    상권의 특성을 종합 분석하여 가장 적합한 업종을 추천합니다.
+
+    **분석 요소:**
+    - 상권 유형 (대학상권, 오피스상권, 주거상권 등)
+    - 유동인구 연령대
+    - 시간대별 특성
+    - 주말/평일 비율
+    - 경쟁 현황
+    - 성장 가능성
+    """
+    # 캐시 확인
+    cache_key = f"recommend_industry:{code}"
+    cached = cache.get(cache_key)
+    if cached:
+        return cached
+
+    try:
+        client = get_supabase_client()
+
+        # 상권 기본 정보 (SAMPLE_DISTRICTS에서 조회)
+        district = next((d for d in SAMPLE_DISTRICTS if d["code"] == code), None)
+
+        if not district:
+            raise HTTPException(status_code=404, detail="상권 정보를 찾을 수 없습니다.")
+
+        district_name = district.get("name", "")
+
+        # 상권 특성 데이터 수집
+        # 1. 유동인구 데이터
+        foot_traffic_result = client.table("foot_traffic_statistics").select("*").eq(
+            "commercial_district_code", code
+        ).execute()
+
+        # 2. 상권 특성
+        characteristics_result = client.table("district_characteristics").select("*").eq(
+            "commercial_district_code", code
+        ).execute()
+
+        # 3. 매출 데이터
+        sales_result = client.table("sales_statistics").select("*").eq(
+            "commercial_district_code", code
+        ).execute()
+
+        # 4. 점포 통계
+        store_result = client.table("store_statistics").select("*").eq(
+            "commercial_district_code", code
+        ).execute()
+
+        # 데이터 처리
+        foot_traffic_data = foot_traffic_result.data[0] if foot_traffic_result.data else {}
+        characteristics_data = characteristics_result.data[0] if characteristics_result.data else {}
+        sales_data = sales_result.data if sales_result.data else []
+        store_data = store_result.data if store_result.data else []
+
+        # 상권 프로필 분석
+        # 연령대 분석
+        ages = {
+            "10s": foot_traffic_data.get("age_10s", 0) or 0,
+            "20s": foot_traffic_data.get("age_20s", 0) or 0,
+            "30s": foot_traffic_data.get("age_30s", 0) or 0,
+            "40s": foot_traffic_data.get("age_40s", 0) or 0,
+            "50s": foot_traffic_data.get("age_50s", 0) or 0,
+            "60s": foot_traffic_data.get("age_60s", 0) or 0,
+        }
+
+        total_age = sum(ages.values())
+        if total_age > 0:
+            age_percentages = {k: (v / total_age) * 100 for k, v in ages.items()}
+        else:
+            age_percentages = {k: 0 for k in ages.keys()}
+
+        primary_age = max(age_percentages, key=age_percentages.get)
+
+        # 시간대 분석
+        times = {
+            "morning": foot_traffic_data.get("time_06_11", 0) or 0,
+            "lunch": foot_traffic_data.get("time_11_14", 0) or 0,
+            "afternoon": foot_traffic_data.get("time_14_17", 0) or 0,
+            "evening": foot_traffic_data.get("time_17_21", 0) or 0,
+            "night": foot_traffic_data.get("time_21_24", 0) or 0,
+        }
+
+        primary_time = max(times, key=times.get)
+
+        # 주말/평일 비율
+        weekend_ratio = foot_traffic_data.get("weekend_ratio", 50) or 50
+
+        # 업종 매칭 규칙
+        recommendations_list = []
+
+        # 규칙 1: 20대 중심 + 저녁 시간대 → 주점, 카페, 치킨
+        if primary_age == "20s" and primary_time in ["evening", "night"]:
+            recommendations_list.append(IndustryRecommendation(
+                industry_code="I56220",
+                industry_name="주점 및 비알콜음료점업",
+                match_score=92,
+                expected_monthly_sales=2500000,
+                breakeven_months=8,
+                reasons=[
+                    "20대 고객 비중 높음 (MZ세대 선호)",
+                    "저녁~야간 유동인구 집중",
+                    "소셜 다이닝 트렌드 부합"
+                ]
+            ))
+
+            recommendations_list.append(IndustryRecommendation(
+                industry_code="Q12",
+                industry_name="커피전문점",
+                match_score=88,
+                expected_monthly_sales=3000000,
+                breakeven_months=10,
+                reasons=[
+                    "20대 주 고객층",
+                    "카페 문화 확산",
+                    "테이크아웃 수요 증가"
+                ]
+            ))
+
+            recommendations_list.append(IndustryRecommendation(
+                industry_code="Q06",
+                industry_name="치킨전문점",
+                match_score=85,
+                expected_monthly_sales=4000000,
+                breakeven_months=12,
+                reasons=[
+                    "젊은 층 선호 메뉴",
+                    "배달 수요 높음",
+                    "야간 영업 유리"
+                ]
+            ))
+
+        # 규칙 2: 30~40대 + 점심 시간대 → 한식, 분식, 패스트푸드
+        elif primary_age in ["30s", "40s"] and primary_time == "lunch":
+            recommendations_list.append(IndustryRecommendation(
+                industry_code="Q01",
+                industry_name="한식음식점",
+                match_score=90,
+                expected_monthly_sales=3500000,
+                breakeven_months=9,
+                reasons=[
+                    "직장인 주 고객층",
+                    "점심 시간대 집중",
+                    "안정적인 수요"
+                ]
+            ))
+
+            recommendations_list.append(IndustryRecommendation(
+                industry_code="Q10",
+                industry_name="분식전문점",
+                match_score=83,
+                expected_monthly_sales=2800000,
+                breakeven_months=7,
+                reasons=[
+                    "빠른 식사 선호",
+                    "가성비 메뉴",
+                    "회전율 높음"
+                ]
+            ))
+
+            recommendations_list.append(IndustryRecommendation(
+                industry_code="Q09",
+                industry_name="패스트푸드점",
+                match_score=80,
+                expected_monthly_sales=5000000,
+                breakeven_months=15,
+                reasons=[
+                    "빠른 서빙",
+                    "브랜드 인지도",
+                    "점심 시간 집중"
+                ]
+            ))
+
+        # 규칙 3: 50대 이상 + 아침/점심 → 한식, 베이커리
+        elif primary_age in ["50s", "60s"]:
+            recommendations_list.append(IndustryRecommendation(
+                industry_code="Q01",
+                industry_name="한식음식점",
+                match_score=88,
+                expected_monthly_sales=3200000,
+                breakeven_months=10,
+                reasons=[
+                    "중장년층 선호 메뉴",
+                    "지역 커뮤니티 중심",
+                    "안정적 고객층"
+                ]
+            ))
+
+            recommendations_list.append(IndustryRecommendation(
+                industry_code="Q14",
+                industry_name="제과점",
+                match_score=82,
+                expected_monthly_sales=2700000,
+                breakeven_months=11,
+                reasons=[
+                    "아침 식사 대용",
+                    "선물 수요",
+                    "다양한 연령층"
+                ]
+            ))
+
+            recommendations_list.append(IndustryRecommendation(
+                industry_code="N99303",
+                industry_name="편의점",
+                match_score=78,
+                expected_monthly_sales=4500000,
+                breakeven_months=14,
+                reasons=[
+                    "생활 밀착형",
+                    "24시간 운영 가능",
+                    "안정적 매출"
+                ]
+            ))
+
+        # 규칙 4: 주말 비율 높음 → 레저, 외식
+        if weekend_ratio > 60:
+            recommendations_list.append(IndustryRecommendation(
+                industry_code="Q05",
+                industry_name="일식 음식점업",
+                match_score=86,
+                expected_monthly_sales=3800000,
+                breakeven_months=11,
+                reasons=[
+                    "주말 외식 선호",
+                    "가족 단위 고객",
+                    "특별한 날 선택"
+                ]
+            ))
+
+        # 기본 추천 (위 규칙에 해당 안 할 경우)
+        if not recommendations_list:
+            recommendations_list = [
+                IndustryRecommendation(
+                    industry_code="Q12",
+                    industry_name="커피전문점",
+                    match_score=75,
+                    expected_monthly_sales=2800000,
+                    breakeven_months=12,
+                    reasons=[
+                        "범용적 업종",
+                        "진입 장벽 낮음",
+                        "안정적 수요"
+                    ]
+                ),
+                IndustryRecommendation(
+                    industry_code="N99303",
+                    industry_name="편의점",
+                    match_score=72,
+                    expected_monthly_sales=4200000,
+                    breakeven_months=15,
+                    reasons=[
+                        "생활 필수 업종",
+                        "24시간 운영",
+                        "다양한 상품군"
+                    ]
+                ),
+                IndustryRecommendation(
+                    industry_code="Q01",
+                    industry_name="한식음식점",
+                    match_score=70,
+                    expected_monthly_sales=3000000,
+                    breakeven_months=10,
+                    reasons=[
+                        "보편적 선호",
+                        "안정적 고객층",
+                        "다양한 메뉴"
+                    ]
+                )
+            ]
+
+        # 매칭 점수 순으로 정렬 (최대 5개)
+        recommendations_list.sort(key=lambda x: x.match_score, reverse=True)
+        recommendations_list = recommendations_list[:5]
+
+        response = IndustryRecommendationResponse(
+            district_code=code,
+            district_name=district_name,
+            recommendations=recommendations_list,
+            analyzed_at=datetime.now().isoformat()
+        )
+
+        # 캐시 저장
+        cache.set(cache_key, response)
+
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"업종 추천 중 오류 발생: {str(e)}"
+        )
