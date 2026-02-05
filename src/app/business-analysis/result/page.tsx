@@ -3,18 +3,7 @@
 import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Share2, Download } from 'lucide-react'
-import { SuccessProbabilityCard } from '@/components/business/SuccessProbabilityCard'
-import { DistrictCharacteristicsCard } from '@/components/business/DistrictCharacteristicsCard'
-import { MetricsCard } from '@/components/business/MetricsCard'
-import {
-  PeakHoursAnalysis,
-  DemographicsAnalysis,
-  WeekendAnalysis,
-  ProfileAnalysis,
-  CompetitionAnalysis,
-  GrowthPotential,
-} from '@/components/business'
-import { IndustryRecommendation } from '@/components/business/IndustryRecommendation'
+import dynamic from 'next/dynamic'
 import {
   predictBusinessSuccess,
   getDistrictCharacteristics,
@@ -30,6 +19,59 @@ import type {
   DistrictBasic,
   Industry,
 } from '@/types/commercial'
+
+// 코드 스플리팅: 큰 컴포넌트들을 lazy load
+const SuccessProbabilityCard = dynamic(
+  () => import('@/components/business/SuccessProbabilityCard'),
+  { loading: () => <div className="h-64 animate-pulse rounded bg-gray-100" /> }
+)
+
+const DistrictCharacteristicsCard = dynamic(
+  () => import('@/components/business/DistrictCharacteristicsCard'),
+  { loading: () => <div className="h-96 animate-pulse rounded bg-gray-100" /> }
+)
+
+const MetricsCard = dynamic(() => import('@/components/business/MetricsCard'), {
+  loading: () => <div className="h-32 animate-pulse rounded bg-gray-100" />,
+})
+
+const PeakHoursAnalysis = dynamic(
+  () => import('@/components/business/PeakHoursAnalysis'),
+  { loading: () => <div className="h-96 animate-pulse rounded bg-gray-100" /> }
+)
+
+const DemographicsAnalysis = dynamic(
+  () => import('@/components/business/DemographicsAnalysis'),
+  { loading: () => <div className="h-96 animate-pulse rounded bg-gray-100" /> }
+)
+
+const WeekendAnalysis = dynamic(
+  () => import('@/components/business/WeekendAnalysis'),
+  { loading: () => <div className="h-80 animate-pulse rounded bg-gray-100" /> }
+)
+
+const ProfileAnalysis = dynamic(
+  () => import('@/components/business/ProfileAnalysis'),
+  { loading: () => <div className="h-96 animate-pulse rounded bg-gray-100" /> }
+)
+
+const CompetitionAnalysis = dynamic(
+  () => import('@/components/business/CompetitionAnalysis'),
+  { loading: () => <div className="h-96 animate-pulse rounded bg-gray-100" /> }
+)
+
+const GrowthPotential = dynamic(
+  () => import('@/components/business/GrowthPotential'),
+  { loading: () => <div className="h-96 animate-pulse rounded bg-gray-100" /> }
+)
+
+const IndustryRecommendation = dynamic(
+  () =>
+    import('@/components/business/IndustryRecommendation').then(
+      (mod) => mod.IndustryRecommendation
+    ),
+  { loading: () => <div className="h-96 animate-pulse rounded bg-gray-100" /> }
+)
 
 function BusinessAnalysisResultContent() {
   const router = useRouter()
