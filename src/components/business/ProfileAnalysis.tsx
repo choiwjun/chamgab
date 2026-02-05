@@ -1,4 +1,5 @@
 'use client'
+const API_URL = process.env.NEXT_PUBLIC_ML_API_URL || '${API_URL}'
 
 import { useQuery } from '@tanstack/react-query'
 import { Store, Users, TrendingUp, CheckCircle2 } from 'lucide-react'
@@ -23,7 +24,7 @@ export default function ProfileAnalysis({
     queryKey: ['profile', districtCode],
     queryFn: async () => {
       const response = await fetch(
-        `http://localhost:8002/api/commercial/districts/${districtCode}/profile`
+        `${API_URL}/api/commercial/districts/${districtCode}/profile`
       )
       if (!response.ok) {
         throw new Error('Failed to fetch profile data')

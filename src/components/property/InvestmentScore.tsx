@@ -12,6 +12,8 @@ import {
   BarChart3,
 } from 'lucide-react'
 
+const API_URL = process.env.NEXT_PUBLIC_ML_API_URL || 'http://localhost:8002'
+
 interface ROIData {
   period: string
   roi_percent: number
@@ -58,7 +60,7 @@ export function InvestmentScore({ propertyId }: InvestmentScoreProps) {
     queryKey: ['investment-score', propertyId],
     queryFn: async () => {
       const response = await fetch(
-        `http://localhost:8002/api/chamgab/${propertyId}/investment-score`
+        `${API_URL}/api/chamgab/${propertyId}/investment-score`
       )
       if (!response.ok) {
         throw new Error('Failed to fetch investment score')

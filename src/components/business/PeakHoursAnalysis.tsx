@@ -1,4 +1,5 @@
 'use client'
+const API_URL = process.env.NEXT_PUBLIC_ML_API_URL || 'http://localhost:8002'
 
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -35,7 +36,7 @@ export default function PeakHoursAnalysis({
     queryKey: ['peak-hours', districtCode],
     queryFn: async () => {
       const response = await fetch(
-        `http://localhost:8002/api/commercial/districts/${districtCode}/peak-hours`
+        `${API_URL}/api/commercial/districts/${districtCode}/peak-hours`
       )
       if (!response.ok) {
         throw new Error('Failed to fetch peak hours data')

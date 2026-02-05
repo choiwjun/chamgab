@@ -1,4 +1,5 @@
 'use client'
+const API_URL = process.env.NEXT_PUBLIC_ML_API_URL || '${API_URL}'
 
 import { useQuery } from '@tanstack/react-query'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
@@ -57,7 +58,7 @@ export default function DemographicsAnalysis({
     queryKey: ['demographics', districtCode],
     queryFn: async () => {
       const response = await fetch(
-        `http://localhost:8002/api/commercial/districts/${districtCode}/demographics`
+        `${API_URL}/api/commercial/districts/${districtCode}/demographics`
       )
       if (!response.ok) {
         throw new Error('Failed to fetch demographics data')

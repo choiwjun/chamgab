@@ -1,4 +1,5 @@
 'use client'
+const API_URL = process.env.NEXT_PUBLIC_ML_API_URL || '${API_URL}'
 
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -41,7 +42,7 @@ export default function GrowthPotential({
     queryKey: ['growth-potential', districtCode],
     queryFn: async () => {
       const response = await fetch(
-        `http://localhost:8002/api/commercial/districts/${districtCode}/growth-potential`
+        `${API_URL}/api/commercial/districts/${districtCode}/growth-potential`
       )
       if (!response.ok) {
         throw new Error('Failed to fetch growth potential data')

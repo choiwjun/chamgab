@@ -1,4 +1,5 @@
 'use client'
+const API_URL = process.env.NEXT_PUBLIC_ML_API_URL || '${API_URL}'
 
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, MapPin, TrendingDown } from 'lucide-react'
@@ -32,7 +33,7 @@ export default function CompetitionAnalysis({
     queryKey: ['competition', districtCode],
     queryFn: async () => {
       const response = await fetch(
-        `http://localhost:8002/api/commercial/districts/${districtCode}/competition`
+        `${API_URL}/api/commercial/districts/${districtCode}/competition`
       )
       if (!response.ok) {
         throw new Error('Failed to fetch competition data')
