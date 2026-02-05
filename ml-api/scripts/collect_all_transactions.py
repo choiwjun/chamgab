@@ -120,6 +120,9 @@ class TransactionCollector:
 
         async with httpx.AsyncClient(timeout=15.0) as client:
             try:
+                # API 호출 제한 방지를 위한 딜레이
+                await asyncio.sleep(0.5)
+
                 response = await client.get(url, params=params)
                 response.raise_for_status()
 
@@ -128,6 +131,13 @@ class TransactionCollector:
                 logger.info(f"수집 완료: {region_name} {deal_ymd} - {len(data)}건")
                 return data
 
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 429:
+                    logger.warning(f"API 호출 제한: {region_name} {deal_ymd} - 재시도 대기")
+                    await asyncio.sleep(2.0)
+                    return []
+                logger.error(f"수집 실패: {region_name} {deal_ymd} - {e}")
+                return []
             except httpx.TimeoutException:
                 logger.warning(f"타임아웃: {region_name} {deal_ymd}")
                 return []
