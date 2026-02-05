@@ -148,19 +148,22 @@ class TransactionCollector:
 
             transactions = []
             for item in items:
+                # 거래일자 조합
+                year = int(self._get_text(item, '년') or 0)
+                month = int(self._get_text(item, '월') or 0)
+                day = int(self._get_text(item, '일') or 0)
+                transaction_date = f"{year:04d}-{month:02d}-{day:02d}" if year else None
+
+                # 가격 (만원 → 원)
+                price_str = self._get_text(item, '거래금액', '').replace(',', '').strip()
+                price = int(price_str) * 10000 if price_str else 0
+
                 tx = {
-                    'id': f"{region_code}_{self._get_text(item, '년')}_{self._get_text(item, '월')}_{self._get_text(item, '일')}_{self._get_text(item, '아파트')}_{self._get_text(item, '층')}",
-                    'sigungu': region_name,
-                    'sigungu_code': region_code,
-                    'apt_name': self._get_text(item, '아파트'),
-                    'dong': self._get_text(item, '법정동'),
-                    'area_sqm': float(self._get_text(item, '전용면적') or 0),
+                    'transaction_date': transaction_date,
+                    'price': price,
+                    'area_exclusive': float(self._get_text(item, '전용면적') or 0),
                     'floor': int(self._get_text(item, '층') or 0),
-                    'year_built': int(self._get_text(item, '건축년도') or 0),
-                    'price': int(self._get_text(item, '거래금액', '').replace(',', '').strip() or 0),
-                    'deal_year': int(self._get_text(item, '년') or 0),
-                    'deal_month': int(self._get_text(item, '월') or 0),
-                    'deal_day': int(self._get_text(item, '일') or 0),
+                    'dong': self._get_text(item, '법정동'),
                 }
                 transactions.append(tx)
 
@@ -180,9 +183,8 @@ class TransactionCollector:
             return 0
 
         try:
-            result = self.supabase.table('transactions').upsert(
-                transactions,
-                on_conflict='id'
+            result = self.supabase.table('transactions').insert(
+                transactions
             ).execute()
             return len(result.data) if result.data else 0
         except Exception as e:
