@@ -100,7 +100,7 @@ class TransactionCollector:
             os.environ['SUPABASE_SERVICE_KEY']
         )
         self.api_key = os.environ['DATA_GO_KR_API_KEY']
-        self.base_url = "http://openapi.molit.go.kr/OpenAPI_ToolInstall498/service/rest/RTMSOBJSvc"
+        self.base_url = "https://apis.data.go.kr/1613000/RTMSDataSvcAptTrade"
 
     async def collect_apartment_trades(
         self,
@@ -109,7 +109,7 @@ class TransactionCollector:
         deal_ymd: str
     ) -> List[Dict[str, Any]]:
         """아파트 매매 실거래가 수집"""
-        url = f"{self.base_url}/getRTMSDataSvcAptTradeDev"
+        url = f"{self.base_url}/getRTMSDataSvcAptTrade"
         params = {
             'serviceKey': self.api_key,
             'LAWD_CD': region_code,
