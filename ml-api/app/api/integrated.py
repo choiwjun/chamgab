@@ -348,3 +348,273 @@ async def get_integrated_analysis(
         integrated_score=integrated_score,
         analyzed_at=datetime.now().isoformat(),
     )
+
+
+# ============================================================
+# P6-R3-T2: 통합 알림 API
+# ============================================================
+
+class AlertType(BaseModel):
+    """알림 유형"""
+    price_change: bool = False  # 가격 변동 알림
+    district_growth: bool = False  # 상권 성장 알림
+    opportunity: bool = False  # 복합 기회 알림
+
+
+class AlertSubscriptionRequest(BaseModel):
+    """알림 구독 요청"""
+    user_id: str
+    property_id: Optional[str] = None
+    district_code: Optional[str] = None
+    alert_types: AlertType
+    threshold: Optional[float] = 5.0  # 변동률 임계값 (%)
+
+
+class AlertSubscriptionResponse(BaseModel):
+    """알림 구독 응답"""
+    subscription_id: str
+    user_id: str
+    property_id: Optional[str]
+    district_code: Optional[str]
+    alert_types: AlertType
+    threshold: float
+    status: str
+    created_at: str
+
+
+class Alert(BaseModel):
+    """알림 데이터"""
+    alert_id: str
+    alert_type: str  # price_change, district_growth, opportunity
+    title: str
+    message: str
+    severity: str  # info, warning, critical
+    data: Dict[str, Any]
+    created_at: str
+
+
+# 간단한 인메모리 저장소 (실제로는 DB 사용)
+ALERT_SUBSCRIPTIONS: Dict[str, Dict[str, Any]] = {}
+GENERATED_ALERTS: List[Dict[str, Any]] = []
+
+
+def detect_price_change(property_id: str, threshold: float) -> Optional[Alert]:
+    """
+    가격 변동 감지
+
+    Args:
+        property_id: 매물 ID
+        threshold: 변동률 임계값 (%)
+
+    Returns:
+        Alert 또는 None
+    """
+    # 실제로는 DB에서 과거 가격 데이터를 조회하여 비교
+    # 여기서는 샘플 데이터로 시뮬레이션
+    import random
+    import uuid
+
+    property_data = SAMPLE_PROPERTIES.get(property_id)
+    if not property_data:
+        return None
+
+    # 가격 변동 시뮬레이션 (random)
+    price_change_percent = random.uniform(-10, 10)
+
+    if abs(price_change_percent) >= threshold:
+        severity = "critical" if abs(price_change_percent) >= 10 else "warning"
+        direction = "상승" if price_change_percent > 0 else "하락"
+
+        return Alert(
+            alert_id=str(uuid.uuid4()),
+            alert_type="price_change",
+            title=f"가격 변동 알림 - {property_data['name']}",
+            message=f"매물 가격이 {abs(price_change_percent):.1f}% {direction}했습니다.",
+            severity=severity,
+            data={
+                "property_id": property_id,
+                "property_name": property_data["name"],
+                "change_percent": price_change_percent,
+                "direction": direction,
+            },
+            created_at=datetime.now().isoformat(),
+        )
+
+    return None
+
+
+def detect_district_growth(district_code: str, threshold: float) -> Optional[Alert]:
+    """
+    상권 성장 감지
+
+    Args:
+        district_code: 상권 코드
+        threshold: 성장률 임계값 (%)
+
+    Returns:
+        Alert 또는 None
+    """
+    # 실제로는 DB에서 과거 상권 데이터를 조회하여 성장률 계산
+    # 여기서는 샘플 데이터로 시뮬레이션
+    import random
+    import uuid
+
+    district = next((d for d in SAMPLE_DISTRICTS if d["code"] == district_code), None)
+    if not district:
+        return None
+
+    # 성장률 시뮬레이션
+    growth_rate = random.uniform(-5, 15)
+
+    if growth_rate >= threshold:
+        severity = "critical" if growth_rate >= 10 else "info"
+
+        return Alert(
+            alert_id=str(uuid.uuid4()),
+            alert_type="district_growth",
+            title=f"상권 성장 알림 - {district['name']}",
+            message=f"상권이 {growth_rate:.1f}% 성장했습니다. 투자 기회를 확인하세요.",
+            severity=severity,
+            data={
+                "district_code": district_code,
+                "district_name": district["name"],
+                "growth_rate": growth_rate,
+                "avg_monthly_sales": district["avg_monthly_sales"],
+                "success_probability": district["success_probability"],
+            },
+            created_at=datetime.now().isoformat(),
+        )
+
+    return None
+
+
+def detect_opportunity(
+    property_id: str, district_code: Optional[str] = None
+) -> Optional[Alert]:
+    """
+    복합 기회 알림 감지
+    - 아파트 가격 하락 + 주변 상권 성장 = 투자 기회
+
+    Args:
+        property_id: 매물 ID
+        district_code: 상권 코드 (옵션)
+
+    Returns:
+        Alert 또는 None
+    """
+    import random
+    import uuid
+
+    property_data = SAMPLE_PROPERTIES.get(property_id)
+    if not property_data:
+        return None
+
+    # 복합 조건 시뮬레이션
+    price_decreased = random.choice([True, False])
+    district_growing = random.choice([True, False])
+
+    if price_decreased and district_growing:
+        return Alert(
+            alert_id=str(uuid.uuid4()),
+            alert_type="opportunity",
+            title="🎯 투자 기회 알림",
+            message=f"{property_data['name']} 지역에 투자 기회가 발생했습니다. 가격은 하락했으나 주변 상권이 성장하고 있습니다.",
+            severity="critical",
+            data={
+                "property_id": property_id,
+                "property_name": property_data["name"],
+                "price_status": "하락",
+                "district_status": "성장",
+                "investment_score": property_data["investment_score"],
+            },
+            created_at=datetime.now().isoformat(),
+        )
+
+    return None
+
+
+@router.post("/alerts/subscribe", response_model=AlertSubscriptionResponse)
+async def subscribe_alerts(request: AlertSubscriptionRequest):
+    """
+    통합 알림 구독 API
+
+    - 가격 변동 알림
+    - 상권 성장 알림
+    - 복합 기회 알림
+    """
+    import uuid
+
+    # 구독 ID 생성
+    subscription_id = str(uuid.uuid4())
+
+    # 구독 정보 저장
+    ALERT_SUBSCRIPTIONS[subscription_id] = {
+        "subscription_id": subscription_id,
+        "user_id": request.user_id,
+        "property_id": request.property_id,
+        "district_code": request.district_code,
+        "alert_types": request.alert_types.model_dump(),
+        "threshold": request.threshold,
+        "status": "active",
+        "created_at": datetime.now().isoformat(),
+    }
+
+    return AlertSubscriptionResponse(
+        subscription_id=subscription_id,
+        user_id=request.user_id,
+        property_id=request.property_id,
+        district_code=request.district_code,
+        alert_types=request.alert_types,
+        threshold=request.threshold,
+        status="active",
+        created_at=datetime.now().isoformat(),
+    )
+
+
+@router.get("/alerts/{user_id}", response_model=List[Alert])
+async def get_user_alerts(
+    user_id: str,
+    limit: int = Query(10, ge=1, le=100, description="조회할 알림 개수"),
+):
+    """
+    사용자 알림 조회 API
+
+    - 구독한 매물/상권의 알림 조회
+    - 최신순 정렬
+    """
+    # 사용자의 구독 정보 조회
+    user_subscriptions = [
+        sub for sub in ALERT_SUBSCRIPTIONS.values() if sub["user_id"] == user_id
+    ]
+
+    if not user_subscriptions:
+        return []
+
+    # 각 구독에 대해 알림 생성
+    alerts = []
+
+    for sub in user_subscriptions:
+        alert_types = sub["alert_types"]
+        threshold = sub["threshold"]
+
+        # 가격 변동 알림
+        if alert_types.get("price_change") and sub.get("property_id"):
+            alert = detect_price_change(sub["property_id"], threshold)
+            if alert:
+                alerts.append(alert)
+
+        # 상권 성장 알림
+        if alert_types.get("district_growth") and sub.get("district_code"):
+            alert = detect_district_growth(sub["district_code"], threshold)
+            if alert:
+                alerts.append(alert)
+
+        # 복합 기회 알림
+        if alert_types.get("opportunity") and sub.get("property_id"):
+            alert = detect_opportunity(sub["property_id"], sub.get("district_code"))
+            if alert:
+                alerts.append(alert)
+
+    # 최신순 정렬 및 제한
+    alerts.sort(key=lambda x: x.created_at, reverse=True)
+    return alerts[:limit]
