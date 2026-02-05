@@ -117,7 +117,7 @@ class TrainingDataPreparer:
                 "year_built": year_built,
                 "building_age": building_age,
                 "price_per_sqm": round(max(price_per_sqm, 30000), 0),
-                "total_price": round(max(total_price, 1), 2),
+                "price": round(max(total_price, 1), 2),
                 "transaction_date": f"2023{random.randint(1, 12):02d}",
             })
 
