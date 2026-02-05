@@ -137,8 +137,12 @@ export function CompareTable() {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
-          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-600">매물 정보를 불러오는 중...</p>
+          <div className="mb-6 flex justify-center">
+            <div className="h-px w-12 bg-editorial-gold animate-pulse" />
+          </div>
+          <p className="text-sm tracking-widest uppercase text-editorial-ink/50">
+            Loading Properties
+          </p>
         </div>
       </div>
     )
@@ -148,10 +152,11 @@ export function CompareTable() {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
-          <p className="text-gray-600 mb-4">비교할 매물을 추가해주세요</p>
+          <div className="w-16 h-px bg-editorial-gold mx-auto mb-8" />
+          <p className="font-serif text-xl text-editorial-dark mb-6">비교할 매물을 추가해주세요</p>
           <button
             onClick={handleAddProperty}
-            className="px-6 py-2.5 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+            className="bg-editorial-dark px-8 py-3 text-sm tracking-widest uppercase text-white hover:bg-editorial-gold transition-colors"
           >
             매물 추가하기
           </button>
@@ -162,7 +167,7 @@ export function CompareTable() {
 
   return (
     <div className="w-full overflow-x-auto pb-4">
-      <div className="flex gap-4 min-w-max px-4 sm:px-0">
+      <div className="flex gap-6 min-w-max">
         <AnimatePresence mode="popLayout">
           {properties.map((property) => (
             <PropertyColumn

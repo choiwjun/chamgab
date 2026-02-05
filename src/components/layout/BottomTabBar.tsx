@@ -1,4 +1,4 @@
-// @TASK P1-S0-T1 - 모바일 하단 탭 바
+// @TASK P1-S0-T1 - 모바일 하단 탭 바 (Editorial Luxury 스타일)
 // @SPEC specs/shared/components.yaml#bottom_tab_bar
 
 'use client'
@@ -30,14 +30,9 @@ export function BottomTabBar() {
   const pathname = usePathname()
   const { isAuthenticated, unreadNotificationCount } = useAuth()
 
-  // 데스크톱에서는 표시하지 않음
-  if (typeof window !== 'undefined' && window.innerWidth >= 768) {
-    return null
-  }
-
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200 md:hidden"
+      className="fixed bottom-0 left-0 right-0 z-40 bg-editorial-bg/95 backdrop-blur-sm border-t border-editorial-dark/5 md:hidden"
       aria-label="하단 네비게이션"
     >
       <div className="flex items-center justify-around h-16 px-2">
@@ -55,8 +50,8 @@ export function BottomTabBar() {
               className={`
                 relative flex flex-col items-center justify-center flex-1 h-full
                 transition-colors
-                ${isDisabled ? 'opacity-50' : ''}
-                ${isActive ? 'text-[#1E3A5F]' : 'text-gray-600 hover:text-gray-900'}
+                ${isDisabled ? 'opacity-40' : ''}
+                ${isActive ? 'text-editorial-dark' : 'text-editorial-ink/40 hover:text-editorial-ink/60'}
               `}
               aria-label={tab.label}
               aria-current={isActive ? 'page' : undefined}
@@ -65,7 +60,7 @@ export function BottomTabBar() {
               {isActive && (
                 <motion.div
                   layoutId="activeTab"
-                  className="absolute top-0 left-1/2 -translate-x-1/2 w-12 h-1 bg-[#1E3A5F] rounded-b-full"
+                  className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-editorial-gold"
                   transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                 />
               )}
@@ -73,12 +68,13 @@ export function BottomTabBar() {
               {/* 아이콘 + 뱃지 */}
               <div className="relative">
                 <Icon
-                  className={`w-6 h-6 ${isActive ? 'fill-current' : ''}`}
+                  className="w-5 h-5"
+                  strokeWidth={isActive ? 2 : 1.5}
                   aria-hidden="true"
                 />
                 {tab.showBadge && isAuthenticated && unreadNotificationCount > 0 && (
                   <span
-                    className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1"
+                    className="absolute -top-1 -right-1.5 min-w-[16px] h-[16px] bg-editorial-gold text-white text-[9px] font-medium rounded-full flex items-center justify-center px-1"
                     aria-label={`${unreadNotificationCount}개의 읽지 않은 알림`}
                   >
                     {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
@@ -87,7 +83,7 @@ export function BottomTabBar() {
               </div>
 
               {/* 라벨 */}
-              <span className={`text-[10px] mt-1 font-medium ${isActive ? 'font-semibold' : ''}`}>
+              <span className={`text-[10px] mt-1 tracking-wide ${isActive ? 'font-medium' : ''}`}>
                 {tab.label}
               </span>
             </Link>

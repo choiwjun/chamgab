@@ -33,18 +33,27 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          DATA_GO_KR_API_KEY: ${{ secrets.DATA_GO_KR_API_KEY }}
+          MOLIT_API_KEY: ${{ secrets.DATA_GO_KR_API_KEY }}
+          REB_API_KEY: ${{ secrets.REB_API_KEY }}
         run: |
           cd ml-api
           python -c "
-          from app.collectors.transaction_collector import TransactionCollector
+          from app.services.collector_service import CollectorService
+          from datetime import datetime
           import asyncio
 
           async def main():
-              collector = TransactionCollector()
-              # 최근 3개월 데이터 수집
-              result = await collector.collect_recent_transactions(months=3)
-              print(f'Collected {result} transactions')
+              collector = CollectorService()
+              now = datetime.now()
+              year = now.year
+              # 최근 3개월
+              months = [(now.month - i - 1) % 12 + 1 for i in range(3)]
+              job_id = f'daily_{now.strftime(\"%Y%m%d\")}'
+
+              # 주요 지역만 수집 (전국은 시간이 오래 걸림)
+              key_regions = ['11680', '11650', '11710', '41135', '41117']  # 강남, 서초, 송파, 분당, 영통
+              result = await collector.collect_regions(key_regions, year, months, job_id)
+              print(f'Collected MOLIT: {result[\"molit_count\"]}, R-ONE: {result[\"rone_count\"]}')
 
           asyncio.run(main())
           "
@@ -78,13 +87,14 @@ jobs:
         run: |
           cd ml-api
           python -c "
-          from app.collectors.reb_collector import REBCollector
+          from app.services.market_service import MarketService
           import asyncio
 
           async def main():
-              collector = REBCollector()
-              result = await collector.collect_price_index()
-              print(f'Collected REB index: {result}')
+              service = MarketService()
+              # 시장 지표 수집 (캐시 갱신)
+              result = await service.get_market_indicators()
+              print(f'Market indicators: {result}')
 
           asyncio.run(main())
           "
@@ -114,17 +124,24 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          SBIZ_API_KEY: ${{ secrets.SBIZ_API_KEY }}
+          PUBLIC_DATA_API_KEY: ${{ secrets.SBIZ_API_KEY }}
         run: |
           cd ml-api
           python -c "
-          from app.collectors.footfall_collector import FootfallCollector
+          from app.services.footfall_service import FootfallService
           import asyncio
 
           async def main():
-              collector = FootfallCollector()
-              result = await collector.collect_footfall_data()
-              print(f'Collected footfall data: {result}')
+              service = FootfallService()
+              # 주요 지역 유동인구 피처 확인
+              test_locations = [
+                  (37.5172, 127.0473, '강남역'),
+                  (37.4979, 127.0276, '서초역'),
+                  (37.5138, 127.1004, '잠실역'),
+              ]
+              for lat, lng, name in test_locations:
+                  features = service.get_footfall_features(lat, lng, radius=500)
+                  print(f'{name}: footfall_score={features.footfall_score}')
 
           asyncio.run(main())
           "

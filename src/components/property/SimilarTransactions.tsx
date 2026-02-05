@@ -32,11 +32,11 @@ export function SimilarTransactions({
 
   if (isLoading) {
     return (
-      <div className="rounded-xl border border-gray-200 bg-white p-6">
-        <div className="mb-4 h-6 w-40 animate-pulse rounded bg-gray-200" />
+      <div className="border border-editorial-dark/5 bg-white p-6">
+        <div className="mb-4 h-6 w-40 animate-pulse bg-editorial-sand" />
         <div className="space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="h-12 animate-pulse rounded bg-gray-100" />
+            <div key={i} className="h-12 animate-pulse bg-editorial-sand/50" />
           ))}
         </div>
       </div>
@@ -82,7 +82,7 @@ export function SimilarTransactions({
   const SortButton = ({ field, label }: { field: SortField; label: string }) => (
     <button
       onClick={() => handleSort(field)}
-      className="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-700"
+      className="flex items-center gap-1 text-xs tracking-wide text-editorial-ink/50 hover:text-editorial-dark transition-colors"
     >
       {label}
       {sortField === field ? (
@@ -98,17 +98,17 @@ export function SimilarTransactions({
   )
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-6">
-      <h3 className="mb-4 text-lg font-bold text-gray-900">
+    <div>
+      <h3 className="font-serif text-lg text-editorial-dark mb-5">
         유사 거래 내역 ({transactions.length}건)
       </h3>
 
       {/* 테이블 헤더 */}
-      <div className="mb-2 grid grid-cols-5 gap-2 border-b border-gray-200 pb-2">
+      <div className="mb-3 grid grid-cols-5 gap-2 border-b border-editorial-dark/10 pb-3">
         <SortButton field="date" label="거래일" />
         <SortButton field="price" label="거래가" />
         <SortButton field="area" label="면적" />
-        <div className="text-xs font-medium text-gray-500">층/동</div>
+        <div className="text-xs tracking-wide text-editorial-ink/50">층/동</div>
         <SortButton field="similarity" label="유사도" />
       </div>
 
@@ -117,33 +117,33 @@ export function SimilarTransactions({
         {sortedTransactions.map((tx) => (
           <div
             key={tx.id}
-            className="grid grid-cols-5 gap-2 rounded-lg bg-gray-50 p-3 text-sm"
+            className="grid grid-cols-5 gap-2 border border-editorial-dark/5 p-3 text-sm hover:border-editorial-gold/30 transition-colors"
           >
-            <div className="text-gray-600">
+            <div className="text-editorial-ink/60 text-xs">
               {new Date(tx.transaction_date).toLocaleDateString('ko-KR', {
                 year: '2-digit',
                 month: 'short',
                 day: 'numeric',
               })}
             </div>
-            <div className="font-semibold text-gray-900">
+            <div className="font-serif text-editorial-dark">
               {formatPrice(tx.price)}
             </div>
-            <div className="text-gray-600">
+            <div className="text-editorial-ink/60 text-xs">
               {tx.area_exclusive?.toFixed(1)}㎡
             </div>
-            <div className="text-gray-600">
+            <div className="text-editorial-ink/60 text-xs">
               {tx.floor}층 {tx.dong && `/ ${tx.dong}`}
             </div>
             <div>
               {tx.similarity && (
                 <span
-                  className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                  className={`px-2 py-0.5 text-xs ${
                     tx.similarity >= 90
-                      ? 'bg-green-100 text-green-700'
+                      ? 'bg-green-50 text-green-700 border border-green-200'
                       : tx.similarity >= 80
-                      ? 'bg-blue-100 text-blue-700'
-                      : 'bg-gray-100 text-gray-700'
+                      ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                      : 'bg-editorial-sand/50 text-editorial-ink/60 border border-editorial-dark/10'
                   }`}
                 >
                   {tx.similarity}%
@@ -155,9 +155,12 @@ export function SimilarTransactions({
       </div>
 
       {transactions.length === 0 && (
-        <p className="py-8 text-center text-gray-500">
-          유사 거래 내역이 없습니다
-        </p>
+        <div className="py-12 text-center">
+          <div className="w-12 h-px bg-editorial-gold mx-auto mb-4" />
+          <p className="text-sm text-editorial-ink/50">
+            유사 거래 내역이 없습니다
+          </p>
+        </div>
       )}
     </div>
   )

@@ -1,9 +1,10 @@
-// 단지 목록 컴포넌트 (무한 스크롤)
+// 단지 목록 컴포넌트 (Editorial Luxury 스타일 + 무한 스크롤)
 
 'use client'
 
 import { useEffect, useRef } from 'react'
 import { useInfiniteQuery } from '@tanstack/react-query'
+import { Building2 } from 'lucide-react'
 import { ComplexCard } from './ComplexCard'
 import type { Complex } from '@/types/complex'
 
@@ -83,11 +84,11 @@ export function ComplexList({ sigungu, keyword }: ComplexListProps) {
   // 로딩 상태
   if (isLoading) {
     return (
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {Array.from({ length: 6 }).map((_, i) => (
           <div
             key={i}
-            className="h-48 animate-pulse rounded-lg border border-gray-200 bg-gray-100"
+            className="h-48 animate-pulse border border-editorial-dark/5 bg-editorial-sand/30"
           />
         ))}
       </div>
@@ -97,8 +98,8 @@ export function ComplexList({ sigungu, keyword }: ComplexListProps) {
   // 에러 상태
   if (isError) {
     return (
-      <div className="rounded-lg border border-red-200 bg-red-50 p-8 text-center">
-        <p className="text-red-600">
+      <div className="border border-editorial-dark/10 bg-white p-12 text-center">
+        <p className="text-editorial-ink/70">
           단지 목록을 불러오는 중 오류가 발생했습니다.
         </p>
       </div>
@@ -111,12 +112,12 @@ export function ComplexList({ sigungu, keyword }: ComplexListProps) {
   // 결과 없음
   if (allComplexes.length === 0) {
     return (
-      <div className="rounded-lg border border-gray-200 bg-white p-12 text-center">
-        <div className="mb-4 text-6xl">🏢</div>
-        <h3 className="mb-2 text-xl font-semibold text-gray-900">
+      <div className="border border-editorial-dark/10 bg-white p-16 text-center">
+        <Building2 className="mx-auto h-12 w-12 text-editorial-ink/20 mb-6" />
+        <h3 className="font-serif text-xl text-editorial-dark mb-2">
           검색 결과가 없습니다
         </h3>
-        <p className="text-gray-600">다른 지역을 검색해보세요</p>
+        <p className="text-sm text-editorial-ink/50">다른 지역을 검색해보세요</p>
       </div>
     )
   }
@@ -124,31 +125,42 @@ export function ComplexList({ sigungu, keyword }: ComplexListProps) {
   return (
     <div>
       {/* 검색 결과 개수 */}
-      <div className="mb-4 text-sm text-gray-600">
-        총{' '}
-        <span className="font-semibold text-primary">
+      <div className="mb-8 flex items-center gap-3">
+        <span className="text-sm tracking-wide text-editorial-ink/50">
+          총
+        </span>
+        <span className="font-serif text-2xl text-editorial-gold">
           {totalCount.toLocaleString()}
         </span>
-        개 단지
+        <span className="text-sm tracking-wide text-editorial-ink/50">
+          개 단지
+        </span>
       </div>
 
       {/* 단지 그리드 */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {allComplexes.map((complex, index) => (
           <ComplexCard key={complex.id} complex={complex} index={index} />
         ))}
       </div>
 
       {/* Intersection Observer 타겟 */}
-      <div ref={observerTarget} className="py-8 text-center">
+      <div ref={observerTarget} className="py-12 text-center">
         {isFetchingNextPage && (
-          <div className="flex items-center justify-center gap-2">
-            <div className="border-3 h-6 w-6 animate-spin rounded-full border-primary border-t-transparent" />
-            <span className="text-gray-600">더 많은 단지를 불러오는 중...</span>
+          <div className="flex flex-col items-center gap-3">
+            <div className="h-px w-8 bg-editorial-gold animate-pulse" />
+            <span className="text-xs tracking-widest uppercase text-editorial-ink/40">
+              Loading more
+            </span>
           </div>
         )}
         {!hasNextPage && allComplexes.length > 0 && (
-          <p className="text-gray-500">모든 단지를 확인했습니다</p>
+          <div className="flex flex-col items-center gap-2">
+            <div className="h-px w-16 bg-editorial-dark/10" />
+            <p className="text-xs tracking-widest uppercase text-editorial-ink/30">
+              End of Results
+            </p>
+          </div>
         )}
       </div>
     </div>

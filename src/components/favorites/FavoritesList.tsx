@@ -123,11 +123,11 @@ export function FavoritesList({ initialData = [], userId }: FavoritesListProps) 
   // 로딩 스켈레톤
   if (isLoading && favorites.length === 0) {
     return (
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {[...Array(6)].map((_, i) => (
           <div
             key={i}
-            className="h-80 animate-pulse rounded-lg border border-gray-200 bg-gray-100"
+            className="h-52 animate-pulse border border-editorial-dark/5 bg-editorial-sand/30"
           />
         ))}
       </div>
@@ -137,12 +137,12 @@ export function FavoritesList({ initialData = [], userId }: FavoritesListProps) 
   // 에러
   if (error) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center">
+      <div className="flex min-h-[50vh] items-center justify-center">
         <div className="text-center">
-          <p className="mb-4 text-red-600">{error}</p>
+          <p className="mb-6 text-editorial-ink/70">{error}</p>
           <button
             onClick={() => fetchFavorites(1)}
-            className="rounded-lg bg-primary px-4 py-2 text-white hover:bg-primary/90"
+            className="border border-editorial-dark bg-editorial-dark px-6 py-2.5 text-sm tracking-wide text-white hover:bg-editorial-gold hover:border-editorial-gold transition-colors"
           >
             다시 시도
           </button>
@@ -159,12 +159,16 @@ export function FavoritesList({ initialData = [], userId }: FavoritesListProps) 
   return (
     <div>
       {/* 정렬 옵션 */}
-      <div className="mb-6 flex items-center justify-between">
-        <p className="text-sm text-gray-600">총 {favorites.length}개</p>
+      <div className="mb-8 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className="text-sm tracking-wide text-editorial-ink/50">총</span>
+          <span className="font-serif text-2xl text-editorial-gold">{favorites.length}</span>
+          <span className="text-sm tracking-wide text-editorial-ink/50">개</span>
+        </div>
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value as 'created_at' | 'price')}
-          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          className="border border-editorial-dark/10 bg-white px-4 py-2 text-sm text-editorial-dark focus:border-editorial-gold focus:outline-none transition-colors"
         >
           <option value="created_at">최신순</option>
           <option value="price">가격순</option>
@@ -173,7 +177,7 @@ export function FavoritesList({ initialData = [], userId }: FavoritesListProps) 
 
       {/* 리스트 */}
       <AnimatePresence>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {favorites.map((favorite, index) => (
             <FavoriteCard
               key={favorite.id}
@@ -188,13 +192,13 @@ export function FavoritesList({ initialData = [], userId }: FavoritesListProps) 
 
       {/* 더 보기 버튼 */}
       {hasMore && (
-        <div className="mt-8 text-center">
+        <div className="mt-12 text-center">
           <button
             onClick={handleLoadMore}
             disabled={isLoading}
-            className="rounded-lg bg-gray-100 px-6 py-3 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-200 disabled:opacity-50"
+            className="border border-editorial-dark/20 px-8 py-3 text-sm tracking-widest uppercase text-editorial-dark hover:bg-editorial-dark hover:text-white transition-colors disabled:opacity-50"
           >
-            {isLoading ? '로딩 중...' : '더 보기'}
+            {isLoading ? 'Loading...' : 'Load More'}
           </button>
         </div>
       )}

@@ -1,14 +1,13 @@
-// @TASK P4-S6-T3 - 관심 매물 카드 컴포넌트
+// @TASK P4-S6-T3 - 관심 매물 카드 컴포넌트 (Editorial Luxury 스타일)
 // @SPEC specs/screens/favorites.yaml
 
 'use client'
 
 import Link from 'next/link'
-import Image from 'next/image'
-import { MapPin, Trash2, Bell, BellOff } from 'lucide-react'
+import { MapPin, Trash2, Bell, BellOff, ArrowUpRight, Maximize2, Calendar } from 'lucide-react'
 import { motion } from 'framer-motion'
 import type { Favorite } from '@/types/favorite'
-import { formatArea, formatCurrency } from '@/lib/format'
+import { formatArea } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useState } from 'react'
 
@@ -36,9 +35,8 @@ export function FavoriteCard({
     return null
   }
 
-  const thumbnail =
-    property.thumbnail ||
-    'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="192"%3E%3Crect width="320" height="192" fill="%23f3f4f6"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="14" fill="%239ca3af"%3ENo Image%3C/text%3E%3C/svg%3E'
+  const region = property.address?.split(' ')[0] || '서울'
+  const subRegion = property.address?.split(' ')[1] || ''
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.preventDefault()
@@ -71,96 +69,103 @@ export function FavoriteCard({
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
+      initial={{ opacity: 0, y: 30 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true }}
       exit={{ opacity: 0, x: -100 }}
-      transition={{ delay: index * 0.05, duration: 0.3 }}
+      transition={{ delay: index * 0.08, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
       className={cn('group relative', className)}
     >
       <Link
         href={`/property/${property.id}`}
-        className="block overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm transition-all hover:border-primary hover:shadow-md"
+        className="block h-full bg-white border border-editorial-dark/5 hover:border-editorial-gold/50 transition-all duration-300 relative"
       >
-        {/* 이미지 */}
-        <div className="relative h-48 w-full overflow-hidden bg-gray-100">
-          <Image
-            src={thumbnail}
-            alt={property.name}
-            fill
-            unoptimized={!property.thumbnail}
-            className="object-cover transition-transform group-hover:scale-105"
-            sizes="(max-width: 768px) 280px, 320px"
-          />
-        </div>
+        {/* 상단 골드 라인 - 호버 시 */}
+        <div className="absolute top-0 left-0 w-0 h-0.5 bg-editorial-gold group-hover:w-full transition-all duration-500" />
 
-        {/* 정보 */}
-        <div className="p-4">
-          {/* 이름 */}
-          <h3 className="mb-2 text-base font-semibold text-gray-900 line-clamp-1 group-hover:text-primary">
+        <div className="p-6">
+          {/* 지역 태그 + 액션 버튼 */}
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-xs tracking-[0.15em] uppercase text-editorial-gold">
+              {region} {subRegion}
+            </span>
+            <ArrowUpRight className="w-4 h-4 text-editorial-ink/20 group-hover:text-editorial-gold transition-colors" />
+          </div>
+
+          {/* 아파트명 */}
+          <h3 className="font-serif text-xl text-editorial-dark leading-tight mb-2 group-hover:text-editorial-gold transition-colors line-clamp-2">
             {property.name}
           </h3>
 
           {/* 주소 */}
-          <div className="mb-3 flex items-start gap-1">
-            <MapPin className="mt-0.5 h-4 w-4 flex-shrink-0 text-gray-400" />
-            <p className="text-sm text-gray-600 line-clamp-2">
+          <div className="flex items-start gap-1.5 mb-6">
+            <MapPin className="w-3.5 h-3.5 text-editorial-ink/30 mt-0.5 flex-shrink-0" />
+            <p className="text-sm text-editorial-ink/50 line-clamp-1">
               {property.address}
             </p>
           </div>
 
+          {/* 구분선 */}
+          <div className="h-px bg-editorial-dark/5 mb-4" />
+
           {/* 상세 정보 */}
-          <div className="flex items-center gap-2 text-xs text-gray-500">
+          <div className="flex items-center gap-6 mb-4">
             {property.area_exclusive && (
-              <span>{formatArea(property.area_exclusive)}</span>
+              <div className="flex items-center gap-2">
+                <Maximize2 className="w-4 h-4 text-editorial-ink/30" />
+                <span className="text-sm text-editorial-ink/70">
+                  {formatArea(property.area_exclusive)}
+                </span>
+              </div>
             )}
             {property.built_year && (
-              <>
-                <span>•</span>
-                <span>{property.built_year}년</span>
-              </>
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-editorial-ink/30" />
+                <span className="text-sm text-editorial-ink/70">
+                  {property.built_year}년
+                </span>
+              </div>
             )}
           </div>
 
           {/* 저장 날짜 */}
-          <div className="mt-3 text-xs text-gray-400">
+          <div className="text-xs text-editorial-ink/40">
             저장일: {new Date(favorite.created_at).toLocaleDateString('ko-KR')}
           </div>
         </div>
       </Link>
 
       {/* 액션 버튼 (절대 위치) */}
-      <div className="absolute right-2 top-2 flex gap-2">
+      <div className="absolute right-4 top-4 flex gap-2">
         {/* 알림 토글 */}
         <motion.button
-          whileHover={{ scale: 1.1 }}
-          whileTap={{ scale: 0.9 }}
+          whileTap={{ scale: 0.95 }}
           onClick={handleToggleNotify}
           disabled={isTogglingNotify}
           className={cn(
-            'flex h-9 w-9 items-center justify-center rounded-full shadow-md transition-colors',
+            'flex h-8 w-8 items-center justify-center border transition-colors',
             favorite.notify_enabled
-              ? 'bg-primary text-white hover:bg-primary/90'
-              : 'bg-white text-gray-600 hover:bg-gray-100'
+              ? 'bg-editorial-gold border-editorial-gold text-white'
+              : 'bg-white border-editorial-dark/10 text-editorial-ink/50 hover:border-editorial-gold hover:text-editorial-gold'
           )}
           title={favorite.notify_enabled ? '알림 끄기' : '알림 켜기'}
         >
           {favorite.notify_enabled ? (
-            <Bell className="h-4 w-4" />
+            <Bell className="h-3.5 w-3.5" />
           ) : (
-            <BellOff className="h-4 w-4" />
+            <BellOff className="h-3.5 w-3.5" />
           )}
         </motion.button>
 
         {/* 삭제 버튼 */}
         <motion.button
-          whileHover={{ scale: 1.1 }}
-          whileTap={{ scale: 0.9 }}
+          whileTap={{ scale: 0.95 }}
           onClick={handleDelete}
           disabled={isDeleting}
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-red-500 shadow-md transition-colors hover:bg-red-50"
+          className="flex h-8 w-8 items-center justify-center bg-white border border-editorial-dark/10 text-editorial-ink/40 hover:border-red-300 hover:text-red-500 transition-colors"
           title="삭제"
         >
-          <Trash2 className="h-4 w-4" />
+          <Trash2 className="h-3.5 w-3.5" />
         </motion.button>
       </div>
     </motion.div>

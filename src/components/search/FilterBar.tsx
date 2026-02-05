@@ -1,10 +1,11 @@
-// @TASK P2-S2-T2 - 필터 바 컴포넌트
+// @TASK P2-S2-T2 - 필터 바 컴포넌트 (Editorial Luxury 스타일)
 // @SPEC specs/screens/search-list.yaml
 
 'use client'
 
 import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { SlidersHorizontal, X } from 'lucide-react'
 import { RegionFilter } from './RegionFilter'
 import { PriceRangeSlider } from './PriceRangeSlider'
 import type { PropertyQueryParams } from '@/types/property'
@@ -43,24 +44,17 @@ export function FilterBar({ initialFilters }: FilterBarProps) {
   ).length
 
   return (
-    <div>
+    <div className="border-t border-editorial-dark/5 pt-6">
       {/* 필터 토글 버튼 (모바일) */}
-      <div className="mb-4 flex items-center gap-2 md:hidden">
+      <div className="mb-4 flex items-center gap-3 md:hidden">
         <button
           onClick={() => setIsFilterOpen(!isFilterOpen)}
-          className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          className="flex items-center gap-2 border border-editorial-dark/10 bg-white px-4 py-2.5 text-sm tracking-wide text-editorial-dark hover:bg-editorial-sand/30 transition-colors"
         >
-          <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
-            />
-          </svg>
-          필터
+          <SlidersHorizontal className="h-4 w-4" />
+          <span>필터</span>
           {activeFilterCount > 0 && (
-            <span className="rounded-full bg-primary px-2 py-0.5 text-xs text-white">
+            <span className="ml-1 min-w-[20px] h-5 bg-editorial-gold text-white text-xs flex items-center justify-center px-1.5">
               {activeFilterCount}
             </span>
           )}
@@ -69,8 +63,9 @@ export function FilterBar({ initialFilters }: FilterBarProps) {
         {activeFilterCount > 0 && (
           <button
             onClick={handleReset}
-            className="text-sm text-gray-500 hover:text-gray-700"
+            className="flex items-center gap-1 text-sm text-editorial-ink/50 hover:text-editorial-dark transition-colors"
           >
+            <X className="h-3.5 w-3.5" />
             초기화
           </button>
         )}
@@ -78,7 +73,7 @@ export function FilterBar({ initialFilters }: FilterBarProps) {
 
       {/* 필터 컴포넌트 */}
       <div
-        className={`grid gap-4 md:grid-cols-3 ${isFilterOpen ? 'block' : 'hidden md:grid'}`}
+        className={`grid gap-6 md:grid-cols-3 ${isFilterOpen ? 'block' : 'hidden md:grid'}`}
       >
         {/* 지역 필터 */}
         <RegionFilter
@@ -86,20 +81,20 @@ export function FilterBar({ initialFilters }: FilterBarProps) {
           sigungu={initialFilters.sigungu}
           onSidoChange={(value) => {
             handleFilterChange('sido', value)
-            handleFilterChange('sigungu', undefined) // 시도 변경 시 시군구 초기화
+            handleFilterChange('sigungu', undefined)
           }}
           onSigunguChange={(value) => handleFilterChange('sigungu', value)}
         />
 
         {/* 매물 타입 */}
         <div>
-          <label className="mb-2 block text-sm font-medium text-gray-700">
+          <label className="mb-2 block text-xs tracking-widest uppercase text-editorial-ink/50">
             매물 종류
           </label>
           <select
             value={initialFilters.property_type || ''}
             onChange={(e) => handleFilterChange('property_type', e.target.value || undefined)}
-            className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+            className="w-full border border-editorial-dark/10 bg-white px-4 py-2.5 text-sm text-editorial-dark focus:border-editorial-gold focus:outline-none transition-colors"
           >
             <option value="">전체</option>
             <option value="apt">아파트</option>
@@ -113,13 +108,13 @@ export function FilterBar({ initialFilters }: FilterBarProps) {
 
         {/* 정렬 */}
         <div>
-          <label className="mb-2 block text-sm font-medium text-gray-700">
+          <label className="mb-2 block text-xs tracking-widest uppercase text-editorial-ink/50">
             정렬
           </label>
           <select
             value={initialFilters.sort || 'created_at'}
             onChange={(e) => handleFilterChange('sort', e.target.value)}
-            className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+            className="w-full border border-editorial-dark/10 bg-white px-4 py-2.5 text-sm text-editorial-dark focus:border-editorial-gold focus:outline-none transition-colors"
           >
             <option value="created_at">최신순</option>
             <option value="area_exclusive">면적순</option>
@@ -129,7 +124,7 @@ export function FilterBar({ initialFilters }: FilterBarProps) {
       </div>
 
       {/* 가격 범위 슬라이더 */}
-      <div className={`mt-4 ${isFilterOpen ? 'block' : 'hidden md:block'}`}>
+      <div className={`mt-6 ${isFilterOpen ? 'block' : 'hidden md:block'}`}>
         <PriceRangeSlider
           minPrice={initialFilters.min_price}
           maxPrice={initialFilters.max_price}

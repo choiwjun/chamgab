@@ -94,121 +94,152 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20">
-      {/* 이미지 갤러리 */}
-      <div className="bg-white px-4 py-4">
-        <ImageGallery
-          images={property.images || []}
-          alt={property.name}
-        />
-      </div>
-
-      {/* 기본 정보 */}
-      <div className="bg-white px-4 py-6">
-        <div className="mb-2 flex items-center gap-2">
-          <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
-            {propertyTypeKo[property.property_type] || property.property_type}
-          </span>
-          {property.complexes?.brand && (
-            <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600">
-              {property.complexes.brand}
+    <div className="min-h-screen bg-editorial-bg pb-24">
+      {/* 헤더 섹션 - No Image, Editorial Style */}
+      <div className="bg-white border-b border-editorial-dark/5">
+        <div className="px-6 py-8">
+          {/* 섹션 레이블 */}
+          <div className="mb-6 flex items-center gap-3">
+            <span className="w-8 h-px bg-editorial-gold" />
+            <span className="text-xs tracking-[0.2em] uppercase text-editorial-ink/50">
+              Property Detail
             </span>
-          )}
-        </div>
+          </div>
 
-        <h1 className="mb-2 text-2xl font-bold text-gray-900">{property.name}</h1>
+          {/* 타입 배지 */}
+          <div className="mb-4 flex items-center gap-3">
+            <span className="border border-editorial-gold/30 bg-editorial-gold/5 px-3 py-1.5 text-xs tracking-wider uppercase text-editorial-gold">
+              {propertyTypeKo[property.property_type] || property.property_type}
+            </span>
+            {property.complexes?.brand && (
+              <span className="border border-editorial-dark/10 px-3 py-1.5 text-xs tracking-wide text-editorial-ink/60">
+                {property.complexes.brand}
+              </span>
+            )}
+          </div>
 
-        <div className="mb-4 flex items-center gap-1 text-gray-500">
-          <MapPin className="h-4 w-4" />
-          <span className="text-sm">{property.address}</span>
+          {/* 매물명 */}
+          <h1 className="font-serif text-2xl md:text-3xl text-editorial-dark mb-3">
+            {property.name}
+          </h1>
+
+          {/* 주소 */}
+          <div className="flex items-center gap-2 text-editorial-ink/60">
+            <MapPin className="h-4 w-4" />
+            <span className="text-sm tracking-wide">{property.address}</span>
+          </div>
         </div>
 
         {/* 상세 정보 그리드 */}
-        <div className="grid grid-cols-3 gap-4 rounded-lg bg-gray-50 p-4">
+        <div className="border-t border-editorial-dark/5 grid grid-cols-3 divide-x divide-editorial-dark/5">
           {property.area_exclusive && (
-            <div className="text-center">
-              <Ruler className="mx-auto mb-1 h-5 w-5 text-gray-400" />
-              <p className="text-sm font-semibold text-gray-900">
+            <div className="px-4 py-5 text-center">
+              <Ruler className="mx-auto mb-2 h-4 w-4 text-editorial-gold" />
+              <p className="text-lg font-serif text-editorial-dark">
                 {property.area_exclusive}㎡
               </p>
-              <p className="text-xs text-gray-500">전용면적</p>
+              <p className="text-xs tracking-wide uppercase text-editorial-ink/50 mt-1">전용면적</p>
             </div>
           )}
           {property.built_year && (
-            <div className="text-center">
-              <Calendar className="mx-auto mb-1 h-5 w-5 text-gray-400" />
-              <p className="text-sm font-semibold text-gray-900">
-                {property.built_year}년
+            <div className="px-4 py-5 text-center">
+              <Calendar className="mx-auto mb-2 h-4 w-4 text-editorial-gold" />
+              <p className="text-lg font-serif text-editorial-dark">
+                {property.built_year}
               </p>
-              <p className="text-xs text-gray-500">준공년도</p>
+              <p className="text-xs tracking-wide uppercase text-editorial-ink/50 mt-1">준공년도</p>
             </div>
           )}
           {property.floors && (
-            <div className="text-center">
-              <Building className="mx-auto mb-1 h-5 w-5 text-gray-400" />
-              <p className="text-sm font-semibold text-gray-900">
-                {property.floors}층
+            <div className="px-4 py-5 text-center">
+              <Building className="mx-auto mb-2 h-4 w-4 text-editorial-gold" />
+              <p className="text-lg font-serif text-editorial-dark">
+                {property.floors}F
               </p>
-              <p className="text-xs text-gray-500">층수</p>
+              <p className="text-xs tracking-wide uppercase text-editorial-ink/50 mt-1">층수</p>
             </div>
           )}
         </div>
       </div>
 
       {/* 참값 분석 카드 */}
-      <div className="mt-2 bg-white px-4 py-6">
-        <ChamgabCard
-          analysis={analysis}
-          isLoading={isLoading}
-          onRequestAnalysis={() => {
-            // 분석 요청 로직
-          }}
-        />
+      <div className="mt-px bg-white border-b border-editorial-dark/5">
+        <div className="px-6 py-8">
+          <div className="flex items-center gap-3 mb-6">
+            <span className="w-8 h-px bg-editorial-gold" />
+            <span className="text-xs tracking-[0.2em] uppercase text-editorial-ink/50">
+              AI Analysis
+            </span>
+          </div>
+          <ChamgabCard
+            analysis={analysis}
+            isLoading={isLoading}
+            onRequestAnalysis={() => {
+              // 분석 요청 로직
+            }}
+          />
+        </div>
       </div>
 
       {/* 가격 요인 */}
       {factors.length > 0 && (
-        <div className="mt-2 bg-white px-4 py-6">
-          <PriceFactors
-            factors={factors}
-            maxVisible={5}
-            isPremium={false}
-            isLoading={isLoading}
-            onUpgrade={() => {
-              // 업그레이드 로직
-            }}
-          />
+        <div className="mt-px bg-white border-b border-editorial-dark/5">
+          <div className="px-6 py-8">
+            <div className="flex items-center gap-3 mb-6">
+              <span className="w-8 h-px bg-editorial-gold" />
+              <span className="text-xs tracking-[0.2em] uppercase text-editorial-ink/50">
+                Price Factors
+              </span>
+            </div>
+            <PriceFactors
+              factors={factors}
+              maxVisible={5}
+              isPremium={false}
+              isLoading={isLoading}
+              onUpgrade={() => {
+                // 업그레이드 로직
+              }}
+            />
+          </div>
         </div>
       )}
 
       {/* 유사 거래 */}
       {similarTransactions.length > 0 && (
-        <div className="mt-2 bg-white px-4 py-6">
-          <SimilarTransactions
-            transactions={similarTransactions}
-            isLoading={isLoading}
-          />
+        <div className="mt-px bg-white border-b border-editorial-dark/5">
+          <div className="px-6 py-8">
+            <div className="flex items-center gap-3 mb-6">
+              <span className="w-8 h-px bg-editorial-gold" />
+              <span className="text-xs tracking-[0.2em] uppercase text-editorial-ink/50">
+                Similar Transactions
+              </span>
+            </div>
+            <SimilarTransactions
+              transactions={similarTransactions}
+              isLoading={isLoading}
+            />
+          </div>
         </div>
       )}
 
       {/* 하단 CTA 버튼 */}
-      <div className="fixed bottom-0 left-0 right-0 border-t border-gray-200 bg-white px-4 py-3">
-        <div className="flex gap-3">
+      <div className="fixed bottom-0 left-0 right-0 border-t border-editorial-dark/10 bg-white px-6 py-4">
+        <div className="flex gap-3 max-w-2xl mx-auto">
           <button
             onClick={toggleFavorite}
-            className={`flex h-12 w-12 items-center justify-center rounded-lg border ${
+            className={`flex h-12 w-12 items-center justify-center border transition-colors ${
               isFavorite
-                ? 'border-red-200 bg-red-50 text-red-500'
-                : 'border-gray-200 bg-white text-gray-400'
+                ? 'border-editorial-gold bg-editorial-gold/10 text-editorial-gold'
+                : 'border-editorial-dark/10 bg-white text-editorial-ink/40 hover:border-editorial-gold hover:text-editorial-gold'
             }`}
           >
-            <Heart className={`h-6 w-6 ${isFavorite ? 'fill-current' : ''}`} />
+            <Heart className={`h-5 w-5 ${isFavorite ? 'fill-current' : ''}`} />
           </button>
-          <button className="flex h-12 w-12 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-400">
-            <GitCompare className="h-6 w-6" />
+          <button className="flex h-12 w-12 items-center justify-center border border-editorial-dark/10 bg-white text-editorial-ink/40 hover:border-editorial-gold hover:text-editorial-gold transition-colors">
+            <GitCompare className="h-5 w-5" />
           </button>
-          <button className="flex-1 rounded-lg bg-primary py-3 font-semibold text-white hover:bg-primary/90">
-            문의하기
+          <button className="flex-1 bg-editorial-dark py-3 text-sm tracking-widest uppercase text-white hover:bg-editorial-gold transition-colors">
+            Contact
           </button>
         </div>
       </div>

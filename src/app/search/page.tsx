@@ -1,6 +1,5 @@
-// @TASK P2-S2-T1 - 검색 페이지 라우트
+// @TASK P2-S2-T1 - 검색 페이지 라우트 (Editorial Luxury 스타일)
 // @SPEC specs/screens/search-list.yaml
-// @TEST tests/app/search/page.test.tsx
 
 import { Suspense } from 'react'
 import { SearchPageContent } from '@/components/search/SearchPageContent'
@@ -12,13 +11,17 @@ export const metadata = {
 
 export default function SearchPage() {
   return (
-    <main className="min-h-screen bg-gray-50">
+    <main className="min-h-screen bg-editorial-bg">
       <Suspense
         fallback={
           <div className="flex min-h-screen items-center justify-center">
             <div className="text-center">
-              <div className="mb-4 h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-              <p className="text-gray-600">검색 중...</p>
+              <div className="mb-6 flex justify-center">
+                <div className="h-px w-12 bg-editorial-gold animate-pulse" />
+              </div>
+              <p className="text-sm tracking-widest uppercase text-editorial-ink/50">
+                Loading
+              </p>
             </div>
           </div>
         }

@@ -1,13 +1,12 @@
 'use client'
 
-// @TASK P2-S1-T4, P2-S2-T3 - 매물 카드 (홈/검색 화면 공유)
+// @TASK P2-S1-T4, P2-S2-T3 - 매물 카드 (Editorial Luxury 스타일 - 이미지 없는 버전)
 // @SPEC specs/screens/home.yaml#popular_properties
 // @SPEC specs/screens/search-list.yaml
 
 import Link from 'next/link'
-import Image from 'next/image'
-import { MapPin } from 'lucide-react'
 import { motion } from 'framer-motion'
+import { MapPin, Maximize2, Calendar, ArrowUpRight } from 'lucide-react'
 import type { Property } from '@/types/property'
 import { formatArea } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -16,65 +15,80 @@ interface PropertyCardProps {
   property: Property
   className?: string
   index?: number
+  variant?: 'default' | 'compact'
 }
 
-export function PropertyCard({ property, className, index = 0 }: PropertyCardProps) {
-  // Placeholder: 회색 배경 이미지 (실제 서비스에서는 Supabase Storage 이미지 사용)
-  const thumbnail =
-    property.thumbnail ||
-    'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="192"%3E%3Crect width="320" height="192" fill="%23f3f4f6"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="14" fill="%239ca3af"%3ENo Image%3C/text%3E%3C/svg%3E'
+export function PropertyCard({
+  property,
+  className,
+  index = 0,
+  variant = 'default'
+}: PropertyCardProps) {
+  // 지역 추출
+  const region = property.address?.split(' ')[0] || '서울'
+  const subRegion = property.address?.split(' ')[1] || ''
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.05, duration: 0.3 }}
-      className={cn('group', className)}
+      initial={{ opacity: 0, y: 30 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true }}
+      transition={{ delay: index * 0.08, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+      className={cn('group flex-shrink-0', className)}
+      style={{ width: variant === 'compact' ? '280px' : '320px' }}
     >
       <Link
         href={`/property/${property.id}`}
-        className="block overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm transition-all hover:border-primary hover:shadow-md"
+        className="block h-full bg-white border border-editorial-dark/5 hover:border-editorial-gold/50 transition-all duration-300 relative"
       >
-      {/* 이미지 */}
-      <div className="relative h-48 w-full overflow-hidden bg-gray-100">
-        <Image
-          src={thumbnail}
-          alt={property.name}
-          fill
-          unoptimized={!property.thumbnail}
-          className="object-cover transition-transform group-hover:scale-105"
-          sizes="(max-width: 768px) 280px, 320px"
-        />
-      </div>
+        {/* 상단 골드 라인 - 호버 시 */}
+        <div className="absolute top-0 left-0 w-0 h-0.5 bg-editorial-gold group-hover:w-full transition-all duration-500" />
 
-      {/* 정보 */}
-      <div className="p-4">
-        {/* 이름 */}
-        <h3 className="mb-2 text-base font-semibold text-gray-900 line-clamp-1 group-hover:text-primary">
-          {property.name}
-        </h3>
+        <div className="p-6">
+          {/* 지역 태그 */}
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-xs tracking-[0.15em] uppercase text-editorial-gold">
+              {region} {subRegion}
+            </span>
+            <ArrowUpRight className="w-4 h-4 text-editorial-ink/20 group-hover:text-editorial-gold transition-colors" />
+          </div>
 
-        {/* 주소 */}
-        <div className="mb-3 flex items-start gap-1">
-          <MapPin className="mt-0.5 h-4 w-4 flex-shrink-0 text-gray-400" />
-          <p className="text-sm text-gray-600 line-clamp-2">
-            {property.address}
-          </p>
+          {/* 아파트명 */}
+          <h3 className="font-serif text-xl text-editorial-dark leading-tight mb-2 group-hover:text-editorial-gold transition-colors line-clamp-2">
+            {property.name}
+          </h3>
+
+          {/* 주소 */}
+          <div className="flex items-start gap-1.5 mb-6">
+            <MapPin className="w-3.5 h-3.5 text-editorial-ink/30 mt-0.5 flex-shrink-0" />
+            <p className="text-sm text-editorial-ink/50 line-clamp-1">
+              {property.address}
+            </p>
+          </div>
+
+          {/* 구분선 */}
+          <div className="h-px bg-editorial-dark/5 mb-4" />
+
+          {/* 상세 정보 */}
+          <div className="flex items-center gap-6">
+            {property.area_exclusive && (
+              <div className="flex items-center gap-2">
+                <Maximize2 className="w-4 h-4 text-editorial-ink/30" />
+                <span className="text-sm text-editorial-ink/70">
+                  {formatArea(property.area_exclusive)}
+                </span>
+              </div>
+            )}
+            {property.built_year && (
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-editorial-ink/30" />
+                <span className="text-sm text-editorial-ink/70">
+                  {property.built_year}년
+                </span>
+              </div>
+            )}
+          </div>
         </div>
-
-        {/* 상세 정보 */}
-        <div className="flex items-center gap-2 text-xs text-gray-500">
-          {property.area_exclusive && (
-            <span>{formatArea(property.area_exclusive)}</span>
-          )}
-          {property.built_year && (
-            <>
-              <span>•</span>
-              <span>{property.built_year}년</span>
-            </>
-          )}
-        </div>
-      </div>
       </Link>
     </motion.div>
   )

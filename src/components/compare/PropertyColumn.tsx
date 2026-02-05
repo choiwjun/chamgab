@@ -1,11 +1,10 @@
 'use client'
 
-// @TASK P4-S4-T2 - 매물 비교 컬럼 컴포넌트
+// @TASK P4-S4-T2 - 매물 비교 컬럼 컴포넌트 (Editorial Luxury 스타일)
 // @SPEC Phase 4 비교하기 화면 요구사항
 
-import Image from 'next/image'
 import Link from 'next/link'
-import { X, MapPin } from 'lucide-react'
+import { X, MapPin, ArrowUpRight } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { formatCurrency, formatArea } from '@/lib/format'
 import type { CompareProperty } from '@/stores/compareStore'
@@ -18,98 +17,93 @@ interface PropertyColumnProps {
 }
 
 export function PropertyColumn({ property, factors, onRemove }: PropertyColumnProps) {
-  const thumbnail =
-    property.thumbnail ||
-    'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="240" height="160"%3E%3Crect width="240" height="160" fill="%23f3f4f6"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="12" fill="%239ca3af"%3ENo Image%3C/text%3E%3C/svg%3E'
-
-  // 가격요인 Top 3
   const topFactors = factors?.slice(0, 3) || []
+  const region = property.address?.split(' ')[0] || '서울'
 
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.95 }}
-      transition={{ duration: 0.2 }}
-      className="relative flex-shrink-0 w-full sm:w-64 md:w-72 border border-gray-200 rounded-lg bg-white overflow-hidden"
+      transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+      className="relative flex-shrink-0 w-full sm:w-72 md:w-80 border border-editorial-dark/5 bg-white group"
     >
+      {/* 상단 골드 라인 */}
+      <div className="absolute top-0 left-0 w-full h-0.5 bg-editorial-gold" />
+
       {/* 삭제 버튼 */}
       <button
         onClick={onRemove}
-        className="absolute top-2 right-2 z-10 p-1.5 rounded-full bg-white/90 hover:bg-white shadow-sm transition-colors"
+        className="absolute top-4 right-4 z-10 p-1.5 border border-editorial-dark/10 bg-white hover:border-red-300 hover:text-red-500 transition-colors"
         aria-label="매물 제거"
       >
-        <X className="w-4 h-4 text-gray-600" />
+        <X className="w-3.5 h-3.5" />
       </button>
 
-      {/* 이미지 */}
-      <Link href={`/property/${property.id}`} className="block">
-        <div className="relative h-40 w-full bg-gray-100">
-          <Image
-            src={thumbnail}
-            alt={property.name}
-            fill
-            unoptimized={!property.thumbnail}
-            className="object-cover"
-            sizes="(max-width: 640px) 100vw, 288px"
-          />
-        </div>
-      </Link>
-
       {/* 정보 */}
-      <div className="p-4 space-y-3">
+      <div className="p-6">
+        {/* 지역 태그 */}
+        <div className="flex items-center justify-between mb-4">
+          <span className="text-xs tracking-[0.15em] uppercase text-editorial-gold">
+            {region}
+          </span>
+        </div>
+
         {/* 매물명 */}
         <Link
           href={`/property/${property.id}`}
-          className="block hover:text-primary transition-colors"
+          className="block group/link"
         >
-          <h3 className="font-semibold text-sm text-gray-900 line-clamp-1">
+          <h3 className="font-serif text-lg text-editorial-dark leading-tight mb-2 group-hover/link:text-editorial-gold transition-colors line-clamp-2">
             {property.name}
           </h3>
         </Link>
 
         {/* 주소 */}
-        <div className="flex items-start gap-1">
-          <MapPin className="w-3.5 h-3.5 text-gray-400 flex-shrink-0 mt-0.5" />
-          <p className="text-xs text-gray-600 line-clamp-2">{property.address}</p>
+        <div className="flex items-start gap-1.5 mb-6">
+          <MapPin className="w-3.5 h-3.5 text-editorial-ink/30 flex-shrink-0 mt-0.5" />
+          <p className="text-sm text-editorial-ink/50 line-clamp-1">{property.address}</p>
         </div>
 
+        {/* 구분선 */}
+        <div className="h-px bg-editorial-dark/5 mb-4" />
+
         {/* 비교 항목 */}
-        <div className="space-y-2 text-xs">
+        <div className="space-y-3 text-sm">
           {/* 참값 */}
-          <div className="flex justify-between items-center py-1.5 border-t border-gray-100">
-            <span className="text-gray-600">참값</span>
-            <span className="font-semibold text-primary">
+          <div className="flex justify-between items-center">
+            <span className="text-xs tracking-wide uppercase text-editorial-ink/50">참값</span>
+            <span className="font-serif text-lg text-editorial-gold">
               {formatCurrency(property.chamgab_price)}
             </span>
           </div>
 
           {/* 실거래가 */}
-          <div className="flex justify-between items-center py-1.5 border-t border-gray-100">
-            <span className="text-gray-600">실거래가</span>
-            <span className="font-medium text-gray-900">
+          <div className="flex justify-between items-center py-2 border-t border-editorial-dark/5">
+            <span className="text-xs tracking-wide text-editorial-ink/50">실거래가</span>
+            <span className="text-editorial-dark">
               {formatCurrency(property.latest_price)}
             </span>
           </div>
 
           {/* 전용면적 */}
-          <div className="flex justify-between items-center py-1.5 border-t border-gray-100">
-            <span className="text-gray-600">전용면적</span>
-            <span className="text-gray-900">{formatArea(property.area_exclusive)}</span>
+          <div className="flex justify-between items-center py-2 border-t border-editorial-dark/5">
+            <span className="text-xs tracking-wide text-editorial-ink/50">전용면적</span>
+            <span className="text-editorial-dark">{formatArea(property.area_exclusive)}</span>
           </div>
 
           {/* 건축년도 */}
-          <div className="flex justify-between items-center py-1.5 border-t border-gray-100">
-            <span className="text-gray-600">건축년도</span>
-            <span className="text-gray-900">
+          <div className="flex justify-between items-center py-2 border-t border-editorial-dark/5">
+            <span className="text-xs tracking-wide text-editorial-ink/50">건축년도</span>
+            <span className="text-editorial-dark">
               {property.built_year ? `${property.built_year}년` : '-'}
             </span>
           </div>
 
           {/* 층수 */}
-          <div className="flex justify-between items-center py-1.5 border-t border-gray-100">
-            <span className="text-gray-600">층수</span>
-            <span className="text-gray-900">
+          <div className="flex justify-between items-center py-2 border-t border-editorial-dark/5">
+            <span className="text-xs tracking-wide text-editorial-ink/50">층수</span>
+            <span className="text-editorial-dark">
               {property.floors ? `${property.floors}층` : '-'}
             </span>
           </div>
@@ -117,15 +111,17 @@ export function PropertyColumn({ property, factors, onRemove }: PropertyColumnPr
 
         {/* 가격요인 Top 3 */}
         {topFactors.length > 0 && (
-          <div className="pt-2 border-t border-gray-200">
-            <h4 className="text-xs font-semibold text-gray-700 mb-2">가격요인 Top 3</h4>
-            <div className="space-y-1.5">
+          <div className="mt-6 pt-4 border-t border-editorial-dark/10">
+            <h4 className="text-xs tracking-widest uppercase text-editorial-ink/50 mb-3">
+              Price Factors
+            </h4>
+            <div className="space-y-2">
               {topFactors.map((factor) => (
-                <div key={factor.id} className="flex items-center justify-between text-xs">
-                  <span className="text-gray-600">{factor.factor_name_ko}</span>
+                <div key={factor.id} className="flex items-center justify-between text-sm">
+                  <span className="text-editorial-ink/70">{factor.factor_name_ko}</span>
                   <span
                     className={
-                      factor.direction === 'positive' ? 'text-green-600' : 'text-red-600'
+                      factor.direction === 'positive' ? 'text-editorial-sage' : 'text-red-500'
                     }
                   >
                     {factor.direction === 'positive' ? '+' : ''}
@@ -136,6 +132,15 @@ export function PropertyColumn({ property, factors, onRemove }: PropertyColumnPr
             </div>
           </div>
         )}
+
+        {/* CTA */}
+        <Link
+          href={`/property/${property.id}`}
+          className="mt-6 flex items-center justify-center gap-2 py-3 border border-editorial-dark/10 text-xs tracking-widest uppercase text-editorial-dark hover:bg-editorial-dark hover:text-white transition-colors"
+        >
+          <span>상세 보기</span>
+          <ArrowUpRight className="w-3.5 h-3.5" />
+        </Link>
       </div>
     </motion.div>
   )

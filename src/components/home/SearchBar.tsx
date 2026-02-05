@@ -1,6 +1,6 @@
 'use client'
 
-// @TASK P2-S1-T2 - 검색바 with 자동완성
+// @TASK P2-S1-T2 - 검색바 (Editorial Luxury 스타일)
 // @SPEC specs/screens/home.yaml#search_bar
 
 import { useState, useEffect, useRef } from 'react'
@@ -86,31 +86,37 @@ export function SearchBar() {
   const getIconByType = (type: string) => {
     switch (type) {
       case 'region':
-        return <MapPin className="h-4 w-4 text-gray-400" />
+        return <MapPin className="h-4 w-4 text-editorial-ink/40" />
       case 'complex':
       case 'property':
-        return <Home className="h-4 w-4 text-gray-400" />
+        return <Home className="h-4 w-4 text-editorial-ink/40" />
       default:
-        return <Search className="h-4 w-4 text-gray-400" />
+        return <Search className="h-4 w-4 text-editorial-ink/40" />
     }
   }
 
   return (
     <div ref={containerRef} className="relative w-full max-w-2xl">
       <form onSubmit={handleSubmit} className="relative">
-        <div className="relative flex items-center rounded-lg bg-white shadow-lg">
-          <Search className="absolute left-4 h-5 w-5 text-gray-400" />
+        <div className="relative flex items-center border-b-2 border-editorial-dark/20 focus-within:border-editorial-gold transition-colors duration-300">
+          <Search className="absolute left-0 h-5 w-5 text-editorial-ink/40" />
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="아파트, 지역명으로 검색"
-            className="w-full rounded-lg border-none py-4 pl-12 pr-4 text-lg text-gray-900 placeholder-gray-400 outline-none focus:ring-2 focus:ring-primary"
+            placeholder="아파트명, 지역으로 검색"
+            className="w-full bg-transparent py-4 pl-8 pr-4 text-lg text-editorial-dark placeholder-editorial-ink/40 outline-none"
             aria-label="매물 검색"
             aria-autocomplete="list"
             aria-controls="search-suggestions"
             aria-expanded={isOpen}
           />
+          <button
+            type="submit"
+            className="px-6 py-2 bg-editorial-dark text-white text-sm tracking-wide hover:bg-editorial-gold transition-colors duration-300"
+          >
+            검색
+          </button>
         </div>
 
         {/* 자동완성 드롭다운 */}
@@ -118,10 +124,10 @@ export function SearchBar() {
           <div
             id="search-suggestions"
             role="listbox"
-            className="absolute z-50 mt-2 w-full rounded-lg border border-gray-200 bg-white shadow-xl"
+            className="absolute z-50 mt-2 w-full border border-editorial-dark/10 bg-white shadow-lg"
           >
             {isLoading && (
-              <div className="px-4 py-3 text-sm text-gray-500">검색 중...</div>
+              <div className="px-4 py-3 text-sm text-editorial-ink/50">검색 중...</div>
             )}
 
             {!isLoading &&
@@ -132,15 +138,15 @@ export function SearchBar() {
                   role="option"
                   aria-selected={false}
                   onClick={() => handleSuggestionClick(suggestion)}
-                  className="flex w-full items-center gap-3 border-b border-gray-100 px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-gray-50"
+                  className="flex w-full items-center gap-3 border-b border-editorial-dark/5 px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-editorial-sand/50"
                 >
                   {getIconByType(suggestion.type)}
                   <div className="flex-1">
-                    <p className="text-sm font-medium text-gray-900">
+                    <p className="text-sm text-editorial-dark">
                       {suggestion.name}
                     </p>
                     {suggestion.description && (
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs text-editorial-ink/50">
                         {suggestion.description}
                       </p>
                     )}

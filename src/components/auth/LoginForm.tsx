@@ -104,17 +104,17 @@ export function LoginForm({ redirectUrl = '/' }: LoginFormProps) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* 소셜 로그인 버튼 */}
       <div className="space-y-3">
         <button
           type="button"
           onClick={() => handleSocialLogin('google')}
           disabled={!!socialLoading}
-          className="flex w-full items-center justify-center gap-3 rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex w-full items-center justify-center gap-3 border border-editorial-dark/10 bg-white px-4 py-3.5 text-sm tracking-wide text-editorial-dark transition-colors hover:border-editorial-dark/30 hover:bg-editorial-sand/20 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {socialLoading === 'google' ? (
-            <Loader2 className="h-5 w-5 animate-spin" />
+            <Loader2 className="h-5 w-5 animate-spin text-editorial-ink/50" />
           ) : (
             <svg className="h-5 w-5" viewBox="0 0 24 24">
               <path
@@ -142,7 +142,7 @@ export function LoginForm({ redirectUrl = '/' }: LoginFormProps) {
           type="button"
           onClick={() => handleSocialLogin('kakao')}
           disabled={!!socialLoading}
-          className="flex w-full items-center justify-center gap-3 rounded-lg bg-[#FEE500] px-4 py-3 text-sm font-medium text-[#191919] transition hover:bg-[#FDD800] disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex w-full items-center justify-center gap-3 bg-[#FEE500] px-4 py-3.5 text-sm tracking-wide text-[#191919] transition-colors hover:bg-[#FDD800] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {socialLoading === 'kakao' ? (
             <Loader2 className="h-5 w-5 animate-spin" />
@@ -161,7 +161,7 @@ export function LoginForm({ redirectUrl = '/' }: LoginFormProps) {
           type="button"
           onClick={() => handleSocialLogin('naver')}
           disabled={!!socialLoading}
-          className="flex w-full items-center justify-center gap-3 rounded-lg bg-[#03C75A] px-4 py-3 text-sm font-medium text-white transition hover:bg-[#02B350] disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex w-full items-center justify-center gap-3 bg-[#03C75A] px-4 py-3.5 text-sm tracking-wide text-white transition-colors hover:bg-[#02B350] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {socialLoading === 'naver' ? (
             <Loader2 className="h-5 w-5 animate-spin" />
@@ -180,63 +180,63 @@ export function LoginForm({ redirectUrl = '/' }: LoginFormProps) {
       {/* 구분선 */}
       <div className="relative">
         <div className="absolute inset-0 flex items-center">
-          <span className="w-full border-t border-gray-300" />
+          <span className="w-full border-t border-editorial-dark/10" />
         </div>
-        <div className="relative flex justify-center text-sm">
-          <span className="bg-gray-50 px-4 text-gray-500">또는</span>
+        <div className="relative flex justify-center">
+          <span className="bg-editorial-bg px-6 text-xs tracking-widest uppercase text-editorial-ink/40">or</span>
         </div>
       </div>
 
       {/* 이메일 로그인 폼 */}
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
         <div>
           <label
             htmlFor="email"
-            className="block text-sm font-medium text-gray-700"
+            className="block text-xs tracking-widest uppercase text-editorial-ink/60 mb-2"
           >
-            이메일
+            Email
           </label>
           <input
             {...register('email')}
             type="email"
             id="email"
             placeholder="email@example.com"
-            className="mt-1 block w-full rounded-lg border border-gray-300 px-4 py-3 text-sm placeholder-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            className="block w-full border border-editorial-dark/10 bg-white px-4 py-3.5 text-sm text-editorial-dark placeholder-editorial-ink/30 focus:border-editorial-gold focus:outline-none transition-colors"
           />
           {errors.email && (
-            <p className="mt-1 text-sm text-red-500">{errors.email.message}</p>
+            <p className="mt-2 text-xs text-red-600">{errors.email.message}</p>
           )}
         </div>
 
         <div>
           <label
             htmlFor="password"
-            className="block text-sm font-medium text-gray-700"
+            className="block text-xs tracking-widest uppercase text-editorial-ink/60 mb-2"
           >
-            비밀번호
+            Password
           </label>
-          <div className="relative mt-1">
+          <div className="relative">
             <input
               {...register('password')}
               type={showPassword ? 'text' : 'password'}
               id="password"
               placeholder="비밀번호 입력"
-              className="block w-full rounded-lg border border-gray-300 px-4 py-3 pr-10 text-sm placeholder-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              className="block w-full border border-editorial-dark/10 bg-white px-4 py-3.5 pr-12 text-sm text-editorial-dark placeholder-editorial-ink/30 focus:border-editorial-gold focus:outline-none transition-colors"
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-editorial-ink/40 hover:text-editorial-dark transition-colors"
             >
               {showPassword ? (
-                <EyeOff className="h-5 w-5" />
+                <EyeOff className="h-4 w-4" />
               ) : (
-                <Eye className="h-5 w-5" />
+                <Eye className="h-4 w-4" />
               )}
             </button>
           </div>
           {errors.password && (
-            <p className="mt-1 text-sm text-red-500">
+            <p className="mt-2 text-xs text-red-600">
               {errors.password.message}
             </p>
           )}
@@ -244,7 +244,7 @@ export function LoginForm({ redirectUrl = '/' }: LoginFormProps) {
 
         {/* 에러 메시지 */}
         {error && (
-          <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">
+          <div className="border-l-2 border-red-500 bg-red-50 px-4 py-3 text-sm text-red-700">
             {error}
           </div>
         )}
@@ -253,15 +253,15 @@ export function LoginForm({ redirectUrl = '/' }: LoginFormProps) {
         <button
           type="submit"
           disabled={isLoading}
-          className="flex w-full items-center justify-center rounded-lg bg-primary px-4 py-3 font-medium text-white transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex w-full items-center justify-center bg-editorial-dark px-4 py-3.5 text-sm tracking-widest uppercase text-white transition-colors hover:bg-editorial-gold disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isLoading ? (
             <>
-              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-              로그인 중...
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Processing...
             </>
           ) : (
-            '로그인'
+            'Sign In'
           )}
         </button>
       </form>
@@ -270,7 +270,7 @@ export function LoginForm({ redirectUrl = '/' }: LoginFormProps) {
       <div className="text-center">
         <a
           href="/auth/forgot-password"
-          className="text-sm text-gray-500 hover:text-gray-700 hover:underline"
+          className="text-xs tracking-wide text-editorial-ink/50 hover:text-editorial-gold transition-colors"
         >
           비밀번호를 잊으셨나요?
         </a>

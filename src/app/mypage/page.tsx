@@ -1,4 +1,4 @@
-// @TASK P4-S4 - 마이페이지
+// @TASK P4-S4 - 마이페이지 (Editorial Luxury 스타일)
 import { Metadata } from 'next'
 import { MyPageContent } from '@/components/mypage/MyPageContent'
 
@@ -9,8 +9,8 @@ export const metadata: Metadata = {
 
 export default function MyPage() {
   return (
-    <div className="min-h-screen bg-gray-50">
+    <main className="min-h-screen bg-editorial-bg">
       <MyPageContent />
-    </div>
+    </main>
   )
 }

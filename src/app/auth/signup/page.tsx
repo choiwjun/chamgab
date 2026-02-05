@@ -10,16 +10,20 @@ export const metadata: Metadata = {
 
 export default function SignupPage() {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 px-4 py-12">
-      <div className="w-full max-w-md space-y-8">
+    <main className="flex min-h-screen flex-col items-center justify-center bg-editorial-bg px-6 py-12">
+      <div className="w-full max-w-md">
         {/* 로고 */}
-        <div className="text-center">
+        <div className="text-center mb-12">
           <Link href="/" className="inline-block">
-            <h1 className="text-chamgab-large font-bold text-primary">참값</h1>
+            <h1 className="font-display text-4xl text-editorial-gold italic tracking-tight">
+              참값
+            </h1>
           </Link>
-          <h2 className="mt-4 text-2xl font-bold text-gray-900">회원가입</h2>
-          <p className="mt-2 text-sm text-gray-600">
-            참값과 함께 부동산의 진짜 가치를 찾아보세요
+          <div className="mt-4 flex justify-center">
+            <div className="w-12 h-px bg-editorial-gold/50" />
+          </div>
+          <p className="mt-4 text-sm text-editorial-ink/50 tracking-wide">
+            AI가 분석하는 부동산의 진짜 가치
           </p>
         </div>
 
@@ -27,16 +31,16 @@ export default function SignupPage() {
         <SignupForm />
 
         {/* 하단 링크 */}
-        <div className="text-center text-sm">
-          <span className="text-gray-600">이미 계정이 있으신가요? </span>
+        <div className="text-center text-sm mt-8">
+          <span className="text-editorial-ink/50">이미 계정이 있으신가요? </span>
           <Link
             href="/auth/login"
-            className="font-medium text-primary hover:underline"
+            className="text-editorial-gold hover:text-editorial-dark transition-colors"
           >
             로그인
           </Link>
         </div>
       </div>
-    </div>
+    </main>
   )
 }
