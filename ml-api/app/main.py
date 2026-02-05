@@ -5,8 +5,15 @@
 - 유사 거래 검색
 - 전국 아파트 데이터 자동 수집 및 분석
 """
+import os
 import pickle
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+env_path = Path(__file__).parent.parent / ".env"
+if env_path.exists():
+    load_dotenv(env_path)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

@@ -5,15 +5,20 @@
 - GET /api/commercial/districts - 상권 목록 조회
 - GET /api/commercial/industries - 업종 목록 조회
 - GET /api/commercial/districts/{code} - 상권 상세 정보
+- GET /api/commercial/districts/{code}/peak-hours - 시간대별 분석
+- GET /api/commercial/districts/{code}/demographics - 연령대별 분석
+- GET /api/commercial/districts/{code}/weekend-analysis - 주말/평일 비교
 
 캐싱:
 - 응답 캐싱 (1시간) - 데이터 변경 빈도가 낮으므로
 """
-from typing import Optional, List
+from typing import Optional, List, Dict
 from functools import lru_cache
 from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
+
+from app.core.database import get_supabase_client
 
 
 router = APIRouter(prefix="/api/commercial", tags=["commercial"])
@@ -947,3 +952,370 @@ async def get_district_characteristics(code: str):
     cache.set(cache_key, result)
 
     return result
+
+
+# ============================================================================
+# Phase 6: 고도화 API 엔드포인트
+# ============================================================================
+
+from typing import Dict, List
+from pydantic import BaseModel
+from fastapi import HTTPException
+from app.core.database import get_supabase_client
+
+
+class TimeSlotScore(BaseModel):
+    """시간대별 점수"""
+    time: str  # "06-11시"
+    traffic: int
+    score: int  # 0-10
+
+
+class PeakHoursResponse(BaseModel):
+    """시간대별 분석 응답"""
+    peak_hours: Dict[str, TimeSlotScore]
+    best_time: str
+    recommendation: str
+
+
+@router.get("/districts/{code}/peak-hours", response_model=PeakHoursResponse)
+async def get_peak_hours(code: str):
+    """
+    시간대별 유동인구 분석
+
+    Args:
+        code: 상권 코드
+
+    Returns:
+        시간대별 유동인구 및 점수
+    """
+    # 캐시 키 생성
+    cache_key = f"peak_hours:{code}"
+
+    # 캐시 조회
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    # Supabase에서 데이터 조회
+    client = get_supabase_client()
+
+    try:
+        result = client.table('foot_traffic_statistics') \
+            .select('*') \
+            .eq('commercial_district_code', code) \
+            .execute()
+
+        if not result.data or len(result.data) == 0:
+            raise HTTPException(
+                status_code=404,
+                detail=f"상권을 찾을 수 없습니다: {code}"
+            )
+
+        data = result.data[0]
+
+        # 시간대별 점수 계산
+        times = {
+            "morning": {
+                "time": "06-11시",
+                "traffic": data.get('time_06_11', 0) or 0,
+                "score": 0
+            },
+            "lunch": {
+                "time": "11-14시",
+                "traffic": data.get('time_11_14', 0) or 0,
+                "score": 0
+            },
+            "afternoon": {
+                "time": "14-17시",
+                "traffic": data.get('time_14_17', 0) or 0,
+                "score": 0
+            },
+            "evening": {
+                "time": "17-21시",
+                "traffic": data.get('time_17_21', 0) or 0,
+                "score": 0
+            },
+            "night": {
+                "time": "21-24시",
+                "traffic": data.get('time_21_24', 0) or 0,
+                "score": 0
+            }
+        }
+
+        # 점수 정규화 (0-10)
+        max_traffic = max(t['traffic'] for t in times.values())
+        if max_traffic > 0:
+            for key in times:
+                times[key]['score'] = int((times[key]['traffic'] / max_traffic) * 10)
+
+        # 최고 시간대 찾기
+        best_time = max(times.items(), key=lambda x: x[1]['score'])[0]
+
+        # 응답 생성
+        response = PeakHoursResponse(
+            peak_hours={
+                key: TimeSlotScore(**value)
+                for key, value in times.items()
+            },
+            best_time=best_time,
+            recommendation=f"{times[best_time]['time']} 집중 운영 추천"
+        )
+
+        # 캐시 저장
+        cache.set(cache_key, response)
+
+        return response
+
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
+        raise HTTPException(
+            status_code=500,
+            detail=f"데이터 조회 중 오류 발생: {str(e)}"
+        )
+
+
+class AgeGroupScore(BaseModel):
+    """연령대별 점수"""
+    count: int
+    percentage: float
+    score: int
+
+
+class PersonaInfo(BaseModel):
+    """페르소나 정보"""
+    name: str
+    age: str
+    lifestyle: str
+
+
+class IndustryMatch(BaseModel):
+    """업종 매칭"""
+    code: str
+    name: str
+    match_score: int
+
+
+class DemographicsResponse(BaseModel):
+    """연령대별 분석 응답"""
+    demographics: Dict[str, AgeGroupScore]
+    primary_target: str
+    persona: PersonaInfo
+    suggested_industries: List[IndustryMatch]
+
+
+@router.get("/districts/{code}/demographics", response_model=DemographicsResponse)
+async def get_demographics(code: str):
+    """
+    연령대별 유동인구 분석
+
+    Args:
+        code: 상권 코드
+
+    Returns:
+        연령대별 유동인구 및 타겟 분석
+    """
+    # 캐시 키 생성
+    cache_key = f"demographics:{code}"
+
+    # 캐시 조회
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    # Supabase에서 데이터 조회
+    client = get_supabase_client()
+
+    try:
+        result = client.table('foot_traffic_statistics') \
+            .select('*') \
+            .eq('commercial_district_code', code) \
+            .execute()
+
+        if not result.data or len(result.data) == 0:
+            raise HTTPException(
+                status_code=404,
+                detail=f"상권을 찾을 수 없습니다: {code}"
+            )
+
+        data = result.data[0]
+
+        # 연령대별 데이터
+        ages = {
+            "10s": data.get('age_10s', 0) or 0,
+            "20s": data.get('age_20s', 0) or 0,
+            "30s": data.get('age_30s', 0) or 0,
+            "40s": data.get('age_40s', 0) or 0,
+            "50s": data.get('age_50s', 0) or 0,
+            "60s": data.get('age_60s', 0) or 0
+        }
+
+        total = sum(ages.values())
+
+        # 비율 및 점수 계산
+        demographics = {}
+        for age, count in ages.items():
+            percentage = (count / total * 100) if total > 0 else 0
+            score = int((percentage / 100) * 10) if percentage > 0 else 0
+            demographics[age] = AgeGroupScore(
+                count=count,
+                percentage=round(percentage, 1),
+                score=score
+            )
+
+        # 주 타겟 찾기
+        if total > 0:
+            primary_target = max(demographics.items(), key=lambda x: x[1].percentage)[0]
+        else:
+            primary_target = "20s"
+
+        # 페르소나 생성
+        persona_map = {
+            "10s": PersonaInfo(name="10대 학생", age="13-19세", lifestyle="학업, SNS"),
+            "20s": PersonaInfo(name="MZ세대 직장인", age="20-29세", lifestyle="SNS 활발, 트렌드 민감"),
+            "30s": PersonaInfo(name="30대 직장인", age="30-39세", lifestyle="가족, 안정 추구"),
+            "40s": PersonaInfo(name="40대 가장", age="40-49세", lifestyle="가족 중심"),
+            "50s": PersonaInfo(name="50대 중년", age="50-59세", lifestyle="안정 중시"),
+            "60s": PersonaInfo(name="60대 이상", age="60세+", lifestyle="여유, 건강")
+        }
+
+        # 업종 추천
+        industry_mapping = {
+            "10s": [IndustryMatch(code="Q07", name="패스트푸드", match_score=90)],
+            "20s": [
+                IndustryMatch(code="Q12", name="커피전문점", match_score=95),
+                IndustryMatch(code="Q06", name="치킨전문점", match_score=88)
+            ],
+            "30s": [
+                IndustryMatch(code="Q01", name="한식음식점", match_score=85),
+                IndustryMatch(code="Q12", name="커피전문점", match_score=82)
+            ],
+            "40s": [
+                IndustryMatch(code="Q01", name="한식음식점", match_score=88),
+                IndustryMatch(code="Q03", name="중식음식점", match_score=75)
+            ],
+            "50s": [
+                IndustryMatch(code="Q01", name="한식음식점", match_score=90),
+                IndustryMatch(code="Q11", name="일반음식점", match_score=80)
+            ],
+            "60s": [
+                IndustryMatch(code="Q01", name="한식음식점", match_score=92),
+                IndustryMatch(code="Q11", name="일반음식점", match_score=85)
+            ]
+        }
+
+        response = DemographicsResponse(
+            demographics=demographics,
+            primary_target=primary_target,
+            persona=persona_map.get(primary_target, persona_map["20s"]),
+            suggested_industries=industry_mapping.get(primary_target, [])
+        )
+
+        # 캐시 저장
+        cache.set(cache_key, response)
+
+        return response
+
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
+        raise HTTPException(
+            status_code=500,
+            detail=f"데이터 조회 중 오류 발생: {str(e)}"
+        )
+
+
+class WeekendAnalysisResponse(BaseModel):
+    """주말/평일 비교 응답"""
+    weekday_avg: int
+    weekend_avg: int
+    weekend_ratio: float
+    advantage: str  # "weekend" or "weekday"
+    difference_percent: float
+    recommendation: str
+
+
+@router.get("/districts/{code}/weekend-analysis", response_model=WeekendAnalysisResponse)
+async def get_weekend_analysis(code: str):
+    """
+    주말/평일 비교 분석
+
+    Args:
+        code: 상권 코드
+
+    Returns:
+        주말/평일 유동인구 비교
+    """
+    # 캐시 키 생성
+    cache_key = f"weekend_analysis:{code}"
+
+    # 캐시 조회
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    # Supabase에서 데이터 조회
+    client = get_supabase_client()
+
+    try:
+        # foot_traffic_statistics에서 데이터 조회
+        traffic_result = client.table('foot_traffic_statistics') \
+            .select('*') \
+            .eq('commercial_district_code', code) \
+            .execute()
+
+        if not traffic_result.data or len(traffic_result.data) == 0:
+            raise HTTPException(
+                status_code=404,
+                detail=f"상권을 찾을 수 없습니다: {code}"
+            )
+
+        traffic_data = traffic_result.data[0]
+
+        weekday_avg = traffic_data.get('weekday_avg', 0) or 0
+        weekend_avg = traffic_data.get('weekend_avg', 0) or 0
+
+        # 주말 비율 계산
+        total_avg = weekday_avg + weekend_avg
+        if total_avg > 0:
+            weekend_ratio = round((weekend_avg / total_avg) * 100, 1)
+        else:
+            weekend_ratio = 50.0
+
+        # 우위 판단
+        advantage = "weekend" if weekend_avg > weekday_avg else "weekday"
+
+        # 차이 비율 계산
+        if weekday_avg > 0:
+            difference_percent = round(abs((weekend_avg - weekday_avg) / weekday_avg) * 100, 1)
+        else:
+            difference_percent = 0.0
+
+        # 추천 메시지 생성
+        if advantage == "weekend":
+            recommendation = "주말 특별 프로모션 추천"
+        else:
+            recommendation = "평일 고객 유치 전략 강화 추천"
+
+        response = WeekendAnalysisResponse(
+            weekday_avg=weekday_avg,
+            weekend_avg=weekend_avg,
+            weekend_ratio=weekend_ratio,
+            advantage=advantage,
+            difference_percent=difference_percent,
+            recommendation=recommendation
+        )
+
+        # 캐시 저장
+        cache.set(cache_key, response)
+
+        return response
+
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
+        raise HTTPException(
+            status_code=500,
+            detail=f"데이터 조회 중 오류 발생: {str(e)}"
+        )
