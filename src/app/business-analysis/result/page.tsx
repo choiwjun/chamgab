@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Share2, Download } from 'lucide-react'
 import { SuccessProbabilityCard } from '@/components/business/SuccessProbabilityCard'
@@ -22,7 +22,7 @@ import type {
   Industry,
 } from '@/types/commercial'
 
-export default function BusinessAnalysisResultPage() {
+function BusinessAnalysisResultContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const districtCode = searchParams.get('district')
@@ -188,5 +188,22 @@ export default function BusinessAnalysisResultPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function BusinessAnalysisResultPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-16 h-16 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+            <p className="text-gray-600">분석 중입니다...</p>
+          </div>
+        </div>
+      }
+    >
+      <BusinessAnalysisResultContent />
+    </Suspense>
   )
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft, Plus, X } from 'lucide-react'
 import { ComparisonTable } from '@/components/business/ComparisonTable'
@@ -9,7 +9,7 @@ import { IndustrySelect } from '@/components/business/IndustrySelect'
 import { compareRegions, getIndustries, APIError } from '@/lib/api/commercial'
 import type { RegionComparisonResult, Industry } from '@/types/commercial'
 
-export default function CompareRegionsPage() {
+function CompareRegionsContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -211,5 +211,22 @@ export default function CompareRegionsPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function CompareRegionsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-16 h-16 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+            <p className="text-gray-600">로딩 중...</p>
+          </div>
+        </div>
+      }
+    >
+      <CompareRegionsContent />
+    </Suspense>
   )
 }
