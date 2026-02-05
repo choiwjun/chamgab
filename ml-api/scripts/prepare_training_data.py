@@ -112,7 +112,7 @@ class TrainingDataPreparer:
 
             data.append({
                 "sigungu": region,
-                "area_sqm": round(area, 2),
+                "area_exclusive": round(area, 2),
                 "floor": floor,
                 "year_built": year_built,
                 "building_age": building_age,
@@ -135,9 +135,9 @@ class TrainingDataPreparer:
             features["building_age"] = datetime.now().year - features["year_built"]
 
         # 면적 구간
-        if "area_sqm" in features.columns:
+        if "area_exclusive" in features.columns:
             features["area_category"] = pd.cut(
-                features["area_sqm"],
+                features["area_exclusive"],
                 bins=[0, 60, 85, 115, 150, float("inf")],
                 labels=["초소형", "소형", "중형", "대형", "초대형"]
             )
