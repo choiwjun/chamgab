@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     CORS_ORIGINS: List[str] = [
         "http://localhost:3000",
         "https://*.vercel.app",
+        "https://*.hf.space",
     ]
 
     # Database

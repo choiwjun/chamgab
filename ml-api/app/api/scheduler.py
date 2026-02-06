@@ -2,11 +2,11 @@
 """
 스케줄러 관리 API
 
-자동 수집 스케줄러 제어
+자동 수집-학습 통합 스케줄러 제어
 - GET /api/scheduler/status: 스케줄러 상태
 - POST /api/scheduler/start: 스케줄러 시작
 - POST /api/scheduler/stop: 스케줄러 중지
-- POST /api/scheduler/run: 즉시 실행
+- POST /api/scheduler/run: 즉시 실행 (수집/학습)
 """
 from typing import Optional
 from fastapi import APIRouter, HTTPException, BackgroundTasks
@@ -17,6 +17,8 @@ from app.core.scheduler import data_scheduler
 
 router = APIRouter(prefix="/scheduler", tags=["Scheduler"])
 
+VALID_JOB_TYPES = ["daily", "weekly", "monthly", "train_business", "train_all"]
+
 
 class SchedulerStatusResponse(BaseModel):
     """스케줄러 상태"""
@@ -24,13 +26,14 @@ class SchedulerStatusResponse(BaseModel):
     jobs: list
     last_collection_job: Optional[str]
     last_analysis_job: Optional[str]
+    last_training_job: Optional[str]
 
 
 class RunNowRequest(BaseModel):
     """즉시 실행 요청"""
     job_type: str = Field(
         ...,
-        description="작업 유형 (daily/weekly/monthly)"
+        description="작업 유형 (daily/weekly/monthly/train_business/train_all)"
     )
 
 
@@ -44,6 +47,7 @@ async def get_scheduler_status():
         jobs=data_scheduler.get_jobs(),
         last_collection_job=data_scheduler.last_collection_job,
         last_analysis_job=data_scheduler.last_analysis_job,
+        last_training_job=data_scheduler.last_training_job,
     )
 
 
@@ -85,11 +89,13 @@ async def run_job_now(
     - daily: 일간 수집 (주요 도시)
     - weekly: 주간 수집 (수도권) + 분석
     - monthly: 월간 수집 (전국)
+    - train_business: 상권 모델 즉시 학습
+    - train_all: 전체 모델 즉시 학습 (아파트 + 상권)
     """
-    if request.job_type not in ["daily", "weekly", "monthly"]:
+    if request.job_type not in VALID_JOB_TYPES:
         raise HTTPException(
             status_code=400,
-            detail="job_type은 daily, weekly, monthly 중 하나여야 합니다"
+            detail=f"job_type은 {', '.join(VALID_JOB_TYPES)} 중 하나여야 합니다"
         )
 
     background_tasks.add_task(data_scheduler.run_now, request.job_type)

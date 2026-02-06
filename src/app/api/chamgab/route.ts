@@ -6,10 +6,12 @@ export const dynamic = 'force-dynamic'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-)
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+  )
+}
 
 const ML_API_URL = process.env.ML_API_URL || 'http://localhost:8000'
 
@@ -19,6 +21,7 @@ const ML_API_URL = process.env.ML_API_URL || 'http://localhost:8000'
  */
 export async function POST(request: NextRequest) {
   try {
+    const supabase = getSupabase()
     const body = await request.json()
     const { property_id } = body
 
@@ -46,7 +49,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // ML API 호출 (또는 Mock)
+    // ML API 호출
     let prediction
     try {
       const mlResponse = await fetch(`${ML_API_URL}/predict`, {
@@ -55,17 +58,15 @@ export async function POST(request: NextRequest) {
         body: JSON.stringify({ property_id, features: {} }),
       })
 
-      if (mlResponse.ok) {
-        prediction = await mlResponse.json()
+      if (!mlResponse.ok) {
+        throw new Error('ML API response not ok')
       }
-    } catch {
-      // ML API 연결 실패 시 Mock 데이터
-      prediction = {
-        chamgab_price: 850000000 + Math.floor(Math.random() * 200000000),
-        min_price: 800000000,
-        max_price: 950000000,
-        confidence: 0.85 + Math.random() * 0.1,
-      }
+
+      prediction = await mlResponse.json()
+    } catch (mlError) {
+      // ML API 연결 실패
+      console.error('[Chamgab API] ML API error:', mlError)
+      return NextResponse.json({ error: 'ML API unavailable' }, { status: 503 })
     }
 
     // 분석 결과 저장
@@ -82,17 +83,8 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (error) {
-      // DB 저장 실패 시에도 결과 반환
-      return NextResponse.json({
-        analysis: {
-          id: 'temp-' + Date.now(),
-          property_id,
-          ...prediction,
-          analyzed_at: new Date().toISOString(),
-          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-        saved: false,
-      })
+      console.error('[Chamgab API] DB save error:', error.message)
+      return NextResponse.json({ error: 'Database error' }, { status: 503 })
     }
 
     return NextResponse.json({ analysis: newAnalysis, saved: true })

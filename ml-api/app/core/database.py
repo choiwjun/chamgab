@@ -84,12 +84,27 @@ def find_complex_by_name(name: str, sigungu: str) -> Optional[dict]:
     return result.data[0] if result.data else None
 
 
-def get_all_transactions() -> list[dict]:
-    """모든 트랜잭션 조회 (학습용)"""
+def get_all_transactions(page_size: int = 1000) -> list[dict]:
+    """모든 트랜잭션 조회 (학습용, 페이지네이션 적용)"""
     client = get_supabase_client()
 
-    result = client.table("transactions").select(
-        "*, properties(*), complexes(*)"
-    ).execute()
+    all_data: list[dict] = []
+    offset = 0
 
-    return result.data if result.data else []
+    while True:
+        result = client.table("transactions").select(
+            "*, properties(*), complexes(*)"
+        ).range(offset, offset + page_size - 1).execute()
+
+        if not result.data:
+            break
+
+        all_data.extend(result.data)
+
+        # 마지막 페이지면 종료
+        if len(result.data) < page_size:
+            break
+
+        offset += page_size
+
+    return all_data

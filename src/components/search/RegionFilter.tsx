@@ -15,7 +15,10 @@ interface RegionFilterProps {
   onSigunguChange: (sigungu: string | undefined) => void
 }
 
-async function fetchRegions(level: 1 | 2, parentCode?: string): Promise<Region[]> {
+async function fetchRegions(
+  level: 1 | 2,
+  parentCode?: string
+): Promise<Region[]> {
   const params = new URLSearchParams({ level: String(level) })
   if (parentCode) {
     params.set('parent_code', parentCode)
@@ -80,10 +83,14 @@ export function RegionFilter({
     <div className="grid grid-cols-2 gap-2">
       {/* 시도 선택 */}
       <div>
-        <label className="mb-2 block text-sm font-medium text-gray-700">
+        <label
+          htmlFor="region-sido"
+          className="mb-2 block text-sm font-medium text-gray-700"
+        >
           시·도
         </label>
         <select
+          id="region-sido"
           value={sido || ''}
           onChange={(e) => handleSidoChange(e.target.value)}
           disabled={isSidoLoading}
@@ -100,10 +107,14 @@ export function RegionFilter({
 
       {/* 시군구 선택 */}
       <div>
-        <label className="mb-2 block text-sm font-medium text-gray-700">
+        <label
+          htmlFor="region-sigungu"
+          className="mb-2 block text-sm font-medium text-gray-700"
+        >
           시·군·구
         </label>
         <select
+          id="region-sigungu"
           value={sigungu || ''}
           onChange={(e) => onSigunguChange(e.target.value || undefined)}
           disabled={!selectedSidoCode || isSigunguLoading}

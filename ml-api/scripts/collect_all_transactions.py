@@ -15,6 +15,9 @@ import httpx
 from lxml import etree
 from supabase import create_client
 
+# 로그 디렉토리 사전 생성 (FileHandler 초기화 전에 필요)
+os.makedirs('logs', exist_ok=True)
+
 # 로깅 설정
 logging.basicConfig(
     level=logging.INFO,
@@ -193,8 +196,9 @@ class TransactionCollector:
             return 0
 
         try:
-            result = self.supabase.table('transactions').insert(
-                transactions
+            result = self.supabase.table('transactions').upsert(
+                transactions,
+                on_conflict="id"
             ).execute()
             return len(result.data) if result.data else 0
         except Exception as e:

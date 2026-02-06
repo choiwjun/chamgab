@@ -16,10 +16,7 @@ const signupSchema = z
     password: z
       .string()
       .min(8, '비밀번호는 8자 이상이어야 합니다.')
-      .regex(
-        /^(?=.*[A-Za-z])(?=.*\d).+$/,
-        '영문과 숫자를 포함해야 합니다.'
-      ),
+      .regex(/^(?=.*[A-Za-z])(?=.*\d).+$/, '영문과 숫자를 포함해야 합니다.'),
     passwordConfirm: z.string(),
     agreeService: z.boolean().refine((val) => val === true, {
       message: '서비스 이용약관에 동의해주세요.',
@@ -85,28 +82,25 @@ export function SignupForm() {
   const passwordStrength = getPasswordStrength(password)
 
   // 이메일 중복 확인
-  const checkEmailAvailability = useCallback(
-    async (email: string) => {
-      if (!email || !email.includes('@')) {
-        setEmailAvailable(null)
-        return
-      }
+  const checkEmailAvailability = useCallback(async (email: string) => {
+    if (!email || !email.includes('@')) {
+      setEmailAvailable(null)
+      return
+    }
 
-      setEmailChecking(true)
-      try {
-        const res = await fetch(
-          `/api/auth/check-email?email=${encodeURIComponent(email)}`
-        )
-        const data = await res.json()
-        setEmailAvailable(data.available)
-      } catch {
-        setEmailAvailable(null)
-      } finally {
-        setEmailChecking(false)
-      }
-    },
-    []
-  )
+    setEmailChecking(true)
+    try {
+      const res = await fetch(
+        `/api/auth/check-email?email=${encodeURIComponent(email)}`
+      )
+      const data = await res.json()
+      setEmailAvailable(data.available)
+    } catch {
+      setEmailAvailable(null)
+    } finally {
+      setEmailChecking(false)
+    }
+  }, [])
 
   // 전체 동의
   const handleAgreeAll = (checked: boolean) => {
@@ -147,7 +141,9 @@ export function SignupForm() {
       if (authData.user) {
         // 이메일 인증 안내 페이지로 이동
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        router.push(('/auth/verify-email?email=' + encodeURIComponent(data.email)) as any)
+        router.push(
+          ('/auth/verify-email?email=' + encodeURIComponent(data.email)) as any
+        )
       }
     } catch {
       setError('회원가입 중 오류가 발생했습니다. 다시 시도해주세요.')
@@ -164,8 +160,8 @@ export function SignupForm() {
     try {
       const supabase = createClient()
       // Supabase Provider 타입 캐스팅 (naver는 커스텀 OIDC로 설정 필요)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error: authError } = await supabase.auth.signInWithOAuth({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         provider: provider as any,
         options: {
           redirectTo: `${window.location.origin}/auth/callback`,
@@ -262,7 +258,9 @@ export function SignupForm() {
           <span className="w-full border-t border-editorial-dark/10" />
         </div>
         <div className="relative flex justify-center">
-          <span className="bg-editorial-bg px-6 text-xs tracking-widest uppercase text-editorial-ink/40">or</span>
+          <span className="bg-editorial-bg px-6 text-xs uppercase tracking-widest text-editorial-ink/40">
+            or
+          </span>
         </div>
       </div>
 
@@ -272,7 +270,7 @@ export function SignupForm() {
         <div>
           <label
             htmlFor="email"
-            className="block text-xs tracking-widest uppercase text-editorial-ink/60 mb-2"
+            className="mb-2 block text-xs uppercase tracking-widest text-editorial-ink/60"
           >
             Email
           </label>
@@ -283,7 +281,7 @@ export function SignupForm() {
               id="email"
               placeholder="email@example.com"
               onBlur={(e) => checkEmailAvailability(e.target.value)}
-              className="block w-full border border-editorial-dark/10 bg-white px-4 py-3.5 pr-12 text-sm text-editorial-dark placeholder-editorial-ink/30 focus:border-editorial-gold focus:outline-none transition-colors"
+              className="block w-full border border-editorial-dark/10 bg-white px-4 py-3.5 pr-12 text-sm text-editorial-dark placeholder-editorial-ink/30 transition-colors focus:border-editorial-gold focus:outline-none"
             />
             {emailChecking && (
               <Loader2 className="absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-editorial-ink/40" />
@@ -309,7 +307,7 @@ export function SignupForm() {
         <div>
           <label
             htmlFor="password"
-            className="block text-xs tracking-widest uppercase text-editorial-ink/60 mb-2"
+            className="mb-2 block text-xs uppercase tracking-widest text-editorial-ink/60"
           >
             Password
           </label>
@@ -319,12 +317,12 @@ export function SignupForm() {
               type={showPassword ? 'text' : 'password'}
               id="password"
               placeholder="8자 이상, 영문+숫자"
-              className="block w-full border border-editorial-dark/10 bg-white px-4 py-3.5 pr-12 text-sm text-editorial-dark placeholder-editorial-ink/30 focus:border-editorial-gold focus:outline-none transition-colors"
+              className="block w-full border border-editorial-dark/10 bg-white px-4 py-3.5 pr-12 text-sm text-editorial-dark placeholder-editorial-ink/30 transition-colors focus:border-editorial-gold focus:outline-none"
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-editorial-ink/40 hover:text-editorial-dark transition-colors"
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-editorial-ink/40 transition-colors hover:text-editorial-dark"
             >
               {showPassword ? (
                 <EyeOff className="h-4 w-4" />
@@ -360,7 +358,7 @@ export function SignupForm() {
         <div>
           <label
             htmlFor="passwordConfirm"
-            className="block text-xs tracking-widest uppercase text-editorial-ink/60 mb-2"
+            className="mb-2 block text-xs uppercase tracking-widest text-editorial-ink/60"
           >
             Confirm Password
           </label>
@@ -370,12 +368,12 @@ export function SignupForm() {
               type={showPasswordConfirm ? 'text' : 'password'}
               id="passwordConfirm"
               placeholder="비밀번호 다시 입력"
-              className="block w-full border border-editorial-dark/10 bg-white px-4 py-3.5 pr-12 text-sm text-editorial-dark placeholder-editorial-ink/30 focus:border-editorial-gold focus:outline-none transition-colors"
+              className="block w-full border border-editorial-dark/10 bg-white px-4 py-3.5 pr-12 text-sm text-editorial-dark placeholder-editorial-ink/30 transition-colors focus:border-editorial-gold focus:outline-none"
             />
             <button
               type="button"
               onClick={() => setShowPasswordConfirm(!showPasswordConfirm)}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-editorial-ink/40 hover:text-editorial-dark transition-colors"
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-editorial-ink/40 transition-colors hover:text-editorial-dark"
             >
               {showPasswordConfirm ? (
                 <EyeOff className="h-4 w-4" />
@@ -398,18 +396,20 @@ export function SignupForm() {
               type="checkbox"
               checked={allAgreed}
               onChange={(e) => handleAgreeAll(e.target.checked)}
-              className="h-4 w-4 border-editorial-dark/20 text-editorial-gold focus:ring-editorial-gold accent-editorial-gold"
+              className="h-4 w-4 border-editorial-dark/20 text-editorial-gold accent-editorial-gold focus:ring-editorial-gold"
             />
-            <span className="text-sm font-medium text-editorial-dark">전체 동의</span>
+            <span className="text-sm font-medium text-editorial-dark">
+              전체 동의
+            </span>
           </label>
 
-          <div className="border-t border-editorial-dark/10 pt-4 space-y-3">
+          <div className="space-y-3 border-t border-editorial-dark/10 pt-4">
             <label className="flex cursor-pointer items-center justify-between">
               <div className="flex items-center gap-3">
                 <input
                   type="checkbox"
                   {...register('agreeService')}
-                  className="h-3.5 w-3.5 border-editorial-dark/20 text-editorial-gold focus:ring-editorial-gold accent-editorial-gold"
+                  className="h-3.5 w-3.5 border-editorial-dark/20 text-editorial-gold accent-editorial-gold focus:ring-editorial-gold"
                 />
                 <span className="text-sm text-editorial-ink/70">
                   (필수) 서비스 이용약관
@@ -418,7 +418,7 @@ export function SignupForm() {
               <a
                 href="/terms/service"
                 target="_blank"
-                className="text-editorial-ink/40 hover:text-editorial-gold transition-colors"
+                className="text-editorial-ink/40 transition-colors hover:text-editorial-gold"
               >
                 <ExternalLink className="h-3.5 w-3.5" />
               </a>
@@ -434,7 +434,7 @@ export function SignupForm() {
                 <input
                   type="checkbox"
                   {...register('agreePrivacy')}
-                  className="h-3.5 w-3.5 border-editorial-dark/20 text-editorial-gold focus:ring-editorial-gold accent-editorial-gold"
+                  className="h-3.5 w-3.5 border-editorial-dark/20 text-editorial-gold accent-editorial-gold focus:ring-editorial-gold"
                 />
                 <span className="text-sm text-editorial-ink/70">
                   (필수) 개인정보 처리방침
@@ -443,7 +443,7 @@ export function SignupForm() {
               <a
                 href="/terms/privacy"
                 target="_blank"
-                className="text-editorial-ink/40 hover:text-editorial-gold transition-colors"
+                className="text-editorial-ink/40 transition-colors hover:text-editorial-gold"
               >
                 <ExternalLink className="h-3.5 w-3.5" />
               </a>
@@ -458,7 +458,7 @@ export function SignupForm() {
               <input
                 type="checkbox"
                 {...register('agreeMarketing')}
-                className="h-3.5 w-3.5 border-editorial-dark/20 text-editorial-gold focus:ring-editorial-gold accent-editorial-gold"
+                className="h-3.5 w-3.5 border-editorial-dark/20 text-editorial-gold accent-editorial-gold focus:ring-editorial-gold"
               />
               <span className="text-sm text-editorial-ink/70">
                 (선택) 마케팅 정보 수신
@@ -478,7 +478,7 @@ export function SignupForm() {
         <button
           type="submit"
           disabled={isLoading || emailAvailable === false}
-          className="flex w-full items-center justify-center bg-editorial-dark px-4 py-3.5 text-sm tracking-widest uppercase text-white transition-colors hover:bg-editorial-gold disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex w-full items-center justify-center bg-editorial-dark px-4 py-3.5 text-sm uppercase tracking-widest text-white transition-colors hover:bg-editorial-gold disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isLoading ? (
             <>

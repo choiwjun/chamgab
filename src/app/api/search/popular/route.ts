@@ -12,10 +12,12 @@ import type {
 // 동적 렌더링 강제 (searchParams 사용)
 export const dynamic = 'force-dynamic'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-)
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+  )
+}
 
 /**
  * GET /api/search/popular
@@ -47,6 +49,7 @@ export async function GET(
     }
 
     // Supabase에서 인기 지역 조회 (시군구 level=2, avg_price 기준 정렬)
+    const supabase = getSupabase()
     const { data: regions, error } = await supabase
       .from('regions')
       .select('name, avg_price, price_change_weekly, updated_at')

@@ -8,9 +8,9 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.services.poi_service import POIService, generate_simulated_poi_features
-from app.services.market_service import MarketService, generate_simulated_market_features
-from app.services.property_features_service import PropertyFeaturesService, generate_simulated_property_features
+from app.services.poi_service import POIService
+from app.services.market_service import MarketService
+from app.services.property_features_service import PropertyFeaturesService
 
 
 def demo_price_estimation():
@@ -85,11 +85,15 @@ def demo_price_estimation():
     print("=" * 70)
 
     poi_service = POIService()
-    poi_features = generate_simulated_poi_features(
-        property_info['sido'],
-        property_info['sigungu']
-    )
-    poi_features['poi_score'] = poi_service.get_poi_score(poi_features)
+    # 강남구 대치동 좌표 (실제 Kakao API 호출)
+    lat, lng = 37.4946, 127.0665
+    poi_features = poi_service.get_poi_features(lat, lng)
+    if not poi_features:
+        print("   (POI API 미연결 - 기본값 사용)")
+        poi_features = {k: 0 for k in ["distance_to_subway", "subway_count_1km", "distance_to_school",
+                        "school_count_1km", "distance_to_academy", "academy_count_1km",
+                        "distance_to_hospital", "hospital_count_1km", "distance_to_mart",
+                        "convenience_count_500m", "distance_to_park", "poi_score"]}
 
     poi_labels = {
         "distance_to_subway": "지하철역 거리",
@@ -118,9 +122,8 @@ def demo_price_estimation():
     print("[3] 시장 지표 피처 (6개)")
     print("=" * 70)
 
-    market_features = generate_simulated_market_features(
-        2026, 2, property_info['sigungu']
-    )
+    market_service = MarketService()
+    market_features = market_service.get_market_features(2026, 2, property_info['sigungu'])
 
     market_labels = {
         "base_rate": ("기준금리", "%"),

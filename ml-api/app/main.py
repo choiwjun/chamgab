@@ -19,7 +19,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
-from app.api import predict, factors, similar, health, commercial, chamgab, integrated, reports, gamification
+from app.api import predict, factors, similar, health, commercial, chamgab, integrated, reports
 from app.api import collect, analyze, scheduler
 from app.core.config import settings
 from app.core.scheduler import data_scheduler
@@ -73,9 +73,9 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Error loading models: {e}")
 
-    # Start scheduler (optional: can be enabled via API)
-    # data_scheduler.start()
-    print("Scheduler available. Use /api/scheduler/start to enable.")
+    # 스케줄러 자동 시작 (수집 + 학습 통합)
+    data_scheduler.set_app(app)
+    data_scheduler.start()
 
     yield
 
@@ -124,8 +124,8 @@ app.include_router(integrated.router, tags=["Integrated"])
 # 리포트 생성 라우터
 app.include_router(reports.router, tags=["Reports"])
 
-# 게이미피케이션 라우터
-app.include_router(gamification.router, tags=["Gamification"])
+# 게이미피케이션 라우터 (비활성화 - Supabase 기반 재구현 필요)
+# app.include_router(gamification.router, tags=["Gamification"])
 
 
 @app.get("/")

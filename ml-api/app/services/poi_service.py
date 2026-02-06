@@ -310,47 +310,6 @@ class POIService:
         return min(100, max(0, score))
 
 
-# 시뮬레이션용 (API 키 없을 때)
-def generate_simulated_poi_features(
-    sido: str = "서울시",
-    sigungu: str = "강남구"
-) -> Dict[str, float]:
-    """
-    지역 기반 시뮬레이션 POI 피처 생성
-
-    실제 API 호출 없이 지역 특성에 따른 가상의 POI 데이터 생성
-    """
-    import random
-
-    # 지역별 기본 특성 (강남/서초/송파 등 우수 지역)
-    premium_areas = ["강남구", "서초구", "송파구", "용산구", "마포구", "성동구"]
-    good_areas = ["영등포구", "강동구", "광진구", "동작구", "양천구"]
-
-    if sigungu in premium_areas:
-        base_multiplier = 0.7  # 거리 짧음
-        count_multiplier = 1.5  # 시설 많음
-    elif sigungu in good_areas:
-        base_multiplier = 0.9
-        count_multiplier = 1.2
-    else:
-        base_multiplier = 1.1
-        count_multiplier = 0.9
-
-    return {
-        "distance_to_subway": round(random.uniform(200, 800) * base_multiplier, 1),
-        "subway_count_1km": int(random.randint(1, 4) * count_multiplier),
-        "distance_to_school": round(random.uniform(200, 600) * base_multiplier, 1),
-        "school_count_1km": int(random.randint(2, 8) * count_multiplier),
-        "distance_to_academy": round(random.uniform(100, 500) * base_multiplier, 1),
-        "academy_count_1km": int(random.randint(5, 20) * count_multiplier),
-        "distance_to_hospital": round(random.uniform(300, 1000) * base_multiplier, 1),
-        "hospital_count_1km": int(random.randint(1, 5) * count_multiplier),
-        "distance_to_mart": round(random.uniform(500, 1500) * base_multiplier, 1),
-        "convenience_count_500m": int(random.randint(3, 15) * count_multiplier),
-        "distance_to_park": round(random.uniform(300, 1200) * base_multiplier, 1),
-    }
-
-
 if __name__ == "__main__":
     # 테스트
     poi = POIService()
@@ -365,8 +324,3 @@ if __name__ == "__main__":
         print(f"  {key}: {value}")
 
     print(f"\n입지 점수: {poi.get_poi_score(features):.1f}/100")
-
-    print("\n=== 시뮬레이션 테스트 ===")
-    sim_features = generate_simulated_poi_features("서울시", "강남구")
-    for key, value in sim_features.items():
-        print(f"  {key}: {value}")

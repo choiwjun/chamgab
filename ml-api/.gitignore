@@ -1,0 +1,9 @@
+.env
+__pycache__/
+*.pyc
+.tmp-pytest/
+data/
+scripts/data/
+scripts/*.csv
+*.log
+*.csv

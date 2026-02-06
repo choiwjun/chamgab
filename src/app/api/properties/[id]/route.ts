@@ -8,10 +8,12 @@ export const dynamic = 'force-dynamic'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-)
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+  )
+}
 
 /**
  * GET /api/properties/:id
@@ -26,18 +28,24 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const supabase = getSupabase()
     const { id } = await params
 
     // UUID 형식 검증
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
     if (!uuidRegex.test(id)) {
-      return NextResponse.json({ error: 'Invalid property ID format' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'Invalid property ID format' },
+        { status: 400 }
+      )
     }
 
     // 단지 정보 조인하여 조회
     const { data, error } = await supabase
       .from('properties')
-      .select(`
+      .select(
+        `
         *,
         complexes:complex_id (
           id,
@@ -47,13 +55,17 @@ export async function GET(
           built_year,
           brand
         )
-      `)
+      `
+      )
       .eq('id', id)
       .single()
 
     if (error) {
       if (error.code === 'PGRST116') {
-        return NextResponse.json({ error: 'Property not found' }, { status: 404 })
+        return NextResponse.json(
+          { error: 'Property not found' },
+          { status: 404 }
+        )
       }
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
@@ -66,7 +78,10 @@ export async function GET(
     delete property.complexes
 
     return NextResponse.json(property)
-  } catch (err) {
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  } catch {
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
   }
 }

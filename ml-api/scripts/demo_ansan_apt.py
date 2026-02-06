@@ -8,9 +8,9 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.services.poi_service import POIService, generate_simulated_poi_features
-from app.services.market_service import MarketService, generate_simulated_market_features
-from app.services.property_features_service import PropertyFeaturesService, generate_simulated_property_features
+from app.services.poi_service import POIService
+from app.services.market_service import MarketService
+from app.services.property_features_service import PropertyFeaturesService
 
 
 def analyze_ansan_apt():

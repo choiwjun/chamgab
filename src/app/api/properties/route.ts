@@ -7,196 +7,13 @@ export const dynamic = 'force-dynamic'
 
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
-import type { PropertyQueryParams, Property } from '@/types/property'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-)
-
-// Mock 데이터 (Supabase에 데이터 없을 때 사용)
-const MOCK_PROPERTIES: Property[] = [
-  {
-    id: 'mock-1',
-    name: '래미안 강남 포레스트',
-    address: '서울시 강남구 역삼동 123',
-    sido: '서울특별시',
-    sigungu: '강남구',
-    eupmyeondong: '역삼동',
-    property_type: 'apt',
-    price: 2850000000,
-    area_exclusive: 84.5,
-    floor: 18,
-    total_floors: 35,
-    building_name: '래미안 강남 포레스트',
-    image_url: null,
-    latitude: 37.5012,
-    longitude: 127.0396,
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 'mock-2',
-    name: '아크로리버파크',
-    address: '서울시 서초구 반포동 456',
-    sido: '서울특별시',
-    sigungu: '서초구',
-    eupmyeondong: '반포동',
-    property_type: 'apt',
-    price: 4200000000,
-    area_exclusive: 112.3,
-    floor: 25,
-    total_floors: 42,
-    building_name: '아크로리버파크',
-    image_url: null,
-    latitude: 37.5085,
-    longitude: 126.9962,
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 'mock-3',
-    name: '잠실 엘스',
-    address: '서울시 송파구 잠실동 789',
-    sido: '서울특별시',
-    sigungu: '송파구',
-    eupmyeondong: '잠실동',
-    property_type: 'apt',
-    price: 2100000000,
-    area_exclusive: 84.9,
-    floor: 12,
-    total_floors: 28,
-    building_name: '잠실 엘스',
-    image_url: null,
-    latitude: 37.5133,
-    longitude: 127.0864,
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 'mock-4',
-    name: '힐스테이트 갤러리',
-    address: '서울시 용산구 한남동 234',
-    sido: '서울특별시',
-    sigungu: '용산구',
-    eupmyeondong: '한남동',
-    property_type: 'apt',
-    price: 3500000000,
-    area_exclusive: 134.5,
-    floor: 22,
-    total_floors: 45,
-    building_name: '힐스테이트 갤러리',
-    image_url: null,
-    latitude: 37.534,
-    longitude: 127.0026,
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 'mock-5',
-    name: '마포 래미안 푸르지오',
-    address: '서울시 마포구 아현동 567',
-    sido: '서울특별시',
-    sigungu: '마포구',
-    eupmyeondong: '아현동',
-    property_type: 'apt',
-    price: 1580000000,
-    area_exclusive: 59.9,
-    floor: 8,
-    total_floors: 25,
-    building_name: '마포 래미안 푸르지오',
-    image_url: null,
-    latitude: 37.5512,
-    longitude: 126.9567,
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 'mock-6',
-    name: '성수동 트리마제',
-    address: '서울시 성동구 성수동 890',
-    sido: '서울특별시',
-    sigungu: '성동구',
-    eupmyeondong: '성수동',
-    property_type: 'apt',
-    price: 1920000000,
-    area_exclusive: 84.2,
-    floor: 15,
-    total_floors: 32,
-    building_name: '트리마제',
-    image_url: null,
-    latitude: 37.5445,
-    longitude: 127.0565,
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 'mock-7',
-    name: '반포 자이',
-    address: '서울시 서초구 반포동 111',
-    sido: '서울특별시',
-    sigungu: '서초구',
-    eupmyeondong: '반포동',
-    property_type: 'apt',
-    price: 3800000000,
-    area_exclusive: 112.5,
-    floor: 28,
-    total_floors: 38,
-    building_name: '반포 자이',
-    image_url: null,
-    latitude: 37.5082,
-    longitude: 127.0112,
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 'mock-8',
-    name: '청담 아이파크',
-    address: '서울시 강남구 청담동 222',
-    sido: '서울특별시',
-    sigungu: '강남구',
-    eupmyeondong: '청담동',
-    property_type: 'apt',
-    price: 5200000000,
-    area_exclusive: 165.3,
-    floor: 32,
-    total_floors: 40,
-    building_name: '청담 아이파크',
-    image_url: null,
-    latitude: 37.5245,
-    longitude: 127.0478,
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 'mock-9',
-    name: '동작 롯데캐슬',
-    address: '서울시 동작구 사당동 333',
-    sido: '서울특별시',
-    sigungu: '동작구',
-    eupmyeondong: '사당동',
-    property_type: 'apt',
-    price: 1250000000,
-    area_exclusive: 59.5,
-    floor: 10,
-    total_floors: 22,
-    building_name: '동작 롯데캐슬',
-    image_url: null,
-    latitude: 37.4912,
-    longitude: 126.9678,
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 'mock-10',
-    name: '목동 하이페리온',
-    address: '서울시 양천구 목동 444',
-    sido: '서울특별시',
-    sigungu: '양천구',
-    eupmyeondong: '목동',
-    property_type: 'apt',
-    price: 1680000000,
-    area_exclusive: 84.8,
-    floor: 14,
-    total_floors: 30,
-    building_name: '목동 하이페리온',
-    image_url: null,
-    latitude: 37.5267,
-    longitude: 126.8756,
-    created_at: new Date().toISOString(),
-  },
-]
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+  )
+}
 
 /**
  * GET /api/properties
@@ -223,6 +40,7 @@ const MOCK_PROPERTIES: Property[] = [
  */
 export async function GET(request: NextRequest) {
   try {
+    const supabase = getSupabase()
     const searchParams = request.nextUrl.searchParams
 
     // Query parameters 파싱
@@ -291,41 +109,27 @@ export async function GET(request: NextRequest) {
 
     const { data, count, error } = await query
 
-    // Supabase 에러 또는 데이터 없으면 Mock 데이터 반환
-    if (error || !data || data.length === 0) {
-      if (error) {
-        console.error(
-          '[Properties API] Supabase error, using mock data:',
-          error.message
-        )
-      }
-      const mockData = MOCK_PROPERTIES.slice(0, limit)
-      return NextResponse.json({
-        items: mockData,
-        total: MOCK_PROPERTIES.length,
-        page,
-        limit,
-        isMock: true,
-      })
+    // Supabase 에러 처리
+    if (error) {
+      console.error('[Properties API] Supabase error:', error.message)
+      return NextResponse.json(
+        { items: [], total: 0, error: 'Database error' },
+        { status: 503 }
+      )
     }
 
     return NextResponse.json({
-      items: data,
+      items: data || [],
       total: count || 0,
       page,
       limit,
     })
   } catch (err) {
-    // 예외 발생 시에도 Mock 데이터 반환
-    console.error('[Properties API] Exception, using mock data:', err)
-    const page = 1
-    const limit = 20
-    return NextResponse.json({
-      items: MOCK_PROPERTIES.slice(0, limit),
-      total: MOCK_PROPERTIES.length,
-      page,
-      limit,
-      isMock: true,
-    })
+    // 예외 발생 시 에러 응답
+    console.error('[Properties API] Exception:', err)
+    return NextResponse.json(
+      { items: [], total: 0, error: 'Database error' },
+      { status: 503 }
+    )
   }
 }

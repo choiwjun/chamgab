@@ -9,10 +9,12 @@ import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import type { SearchSuggestion } from '@/types/property'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-)
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+  )
+}
 
 /**
  * GET /api/properties/autocomplete
@@ -29,6 +31,7 @@ const supabase = createClient(
  */
 export async function GET(request: NextRequest) {
   try {
+    const supabase = getSupabase()
     const searchParams = request.nextUrl.searchParams
     const query = searchParams.get('q') || ''
     const limit = Math.min(parseInt(searchParams.get('limit') || '10'), 20)

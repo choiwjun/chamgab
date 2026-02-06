@@ -32,7 +32,7 @@ interface IndustryRecommendationResponse {
   district_name: string
   analyzed_at: string
   recommendations: IndustryRecommendation[]
-  analysis_summary: AnalysisSummary
+  analysis_summary?: AnalysisSummary
 }
 
 interface IndustryRecommendationProps {
@@ -137,40 +137,42 @@ export function IndustryRecommendation({
       </div>
 
       {/* 상권 분석 요약 */}
-      <div className="mb-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
-        <h4 className="mb-3 text-sm font-semibold text-gray-700">
-          상권 특성 분석
-        </h4>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-          <div className="flex items-center gap-2">
-            <Target className="h-4 w-4 text-gray-600" />
-            <div>
-              <p className="text-xs text-gray-600">주요 연령층</p>
-              <p className="font-semibold text-gray-900">
-                {getAgeGroupLabel(data.analysis_summary.primary_age_group)}
-              </p>
+      {data.analysis_summary && (
+        <div className="mb-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
+          <h4 className="mb-3 text-sm font-semibold text-gray-700">
+            상권 특성 분석
+          </h4>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div className="flex items-center gap-2">
+              <Target className="h-4 w-4 text-gray-600" />
+              <div>
+                <p className="text-xs text-gray-600">주요 연령층</p>
+                <p className="font-semibold text-gray-900">
+                  {getAgeGroupLabel(data.analysis_summary.primary_age_group)}
+                </p>
+              </div>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <TrendingUp className="h-4 w-4 text-gray-600" />
-            <div>
-              <p className="text-xs text-gray-600">피크 시간대</p>
-              <p className="font-semibold text-gray-900">
-                {getPeakTimeLabel(data.analysis_summary.peak_time)}
-              </p>
+            <div className="flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-gray-600" />
+              <div>
+                <p className="text-xs text-gray-600">피크 시간대</p>
+                <p className="font-semibold text-gray-900">
+                  {getPeakTimeLabel(data.analysis_summary.peak_time)}
+                </p>
+              </div>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Calendar className="h-4 w-4 text-gray-600" />
-            <div>
-              <p className="text-xs text-gray-600">주말 비중</p>
-              <p className="font-semibold text-gray-900">
-                {(data.analysis_summary.weekend_ratio * 100).toFixed(0)}%
-              </p>
+            <div className="flex items-center gap-2">
+              <Calendar className="h-4 w-4 text-gray-600" />
+              <div>
+                <p className="text-xs text-gray-600">주말 비중</p>
+                <p className="font-semibold text-gray-900">
+                  {(data.analysis_summary.weekend_ratio * 100).toFixed(0)}%
+                </p>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* 추천 업종 목록 */}
       <div className="space-y-4">

@@ -9,62 +9,12 @@ import { NextRequest, NextResponse } from 'next/server'
 export const dynamic = 'force-dynamic'
 import type { RegionTrend } from '@/types/region'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-)
-
-// Mock 데이터 (Supabase에 데이터 없을 때 사용)
-const MOCK_TRENDS: RegionTrend[] = [
-  {
-    id: 'mock-1',
-    name: '강남구',
-    level: 2,
-    avg_price: 2850000000,
-    price_change_weekly: 1.2,
-    property_count: 342,
-  },
-  {
-    id: 'mock-2',
-    name: '서초구',
-    level: 2,
-    avg_price: 2650000000,
-    price_change_weekly: 0.8,
-    property_count: 287,
-  },
-  {
-    id: 'mock-3',
-    name: '송파구',
-    level: 2,
-    avg_price: 1980000000,
-    price_change_weekly: 0.5,
-    property_count: 456,
-  },
-  {
-    id: 'mock-4',
-    name: '용산구',
-    level: 2,
-    avg_price: 2420000000,
-    price_change_weekly: -0.3,
-    property_count: 198,
-  },
-  {
-    id: 'mock-5',
-    name: '마포구',
-    level: 2,
-    avg_price: 1580000000,
-    price_change_weekly: 0.2,
-    property_count: 312,
-  },
-  {
-    id: 'mock-6',
-    name: '성동구',
-    level: 2,
-    avg_price: 1720000000,
-    price_change_weekly: 1.5,
-    property_count: 245,
-  },
-]
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+  )
+}
 
 /**
  * GET /api/regions/trends
@@ -105,6 +55,7 @@ const MOCK_TRENDS: RegionTrend[] = [
  */
 export async function GET(request: NextRequest) {
   try {
+    const supabase = getSupabase()
     const searchParams = request.nextUrl.searchParams
 
     // Query parameters 파싱
@@ -149,29 +100,18 @@ export async function GET(request: NextRequest) {
 
     const { data: trends, error } = await query
 
-    // Supabase 에러 또는 데이터 없으면 Mock 데이터 반환
-    if (error || !trends || trends.length === 0) {
-      if (error) {
-        console.error(
-          '[Regions API] Supabase error, using mock data:',
-          error.message
-        )
-      }
-      return NextResponse.json({
-        items: MOCK_TRENDS.slice(0, limit),
-        metadata: {
-          level,
-          limit,
-          sort,
-          count: Math.min(MOCK_TRENDS.length, limit),
-          isMock: true,
-        },
-      })
+    // Supabase 에러 처리
+    if (error) {
+      console.error('[Regions API] Supabase error:', error.message)
+      return NextResponse.json(
+        { items: [], error: 'Database error' },
+        { status: 503 }
+      )
     }
 
     // RegionTrend 객체로 변환
     const result: RegionTrend[] = await Promise.all(
-      trends.map(async (region) => {
+      (trends || []).map(async (region) => {
         // 각 지역의 매물 수 조회
         const { count } = await supabase
           .from('properties')
@@ -199,17 +139,11 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (err) {
-    // 예외 발생 시에도 Mock 데이터 반환
-    console.error('[Regions API] Exception, using mock data:', err)
-    return NextResponse.json({
-      items: MOCK_TRENDS.slice(0, 6),
-      metadata: {
-        level: 2,
-        limit: 6,
-        sort: 'price_change',
-        count: 6,
-        isMock: true,
-      },
-    })
+    // 예외 발생 시 에러 응답
+    console.error('[Regions API] Exception:', err)
+    return NextResponse.json(
+      { items: [], error: 'Database error' },
+      { status: 503 }
+    )
   }
 }

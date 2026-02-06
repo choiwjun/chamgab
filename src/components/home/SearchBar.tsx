@@ -98,10 +98,11 @@ export function SearchBar() {
   return (
     <div ref={containerRef} className="relative w-full max-w-2xl">
       <form onSubmit={handleSubmit} className="relative">
-        <div className="relative flex items-center border-b-2 border-editorial-dark/20 focus-within:border-editorial-gold transition-colors duration-300">
+        <div className="relative flex items-center border-b-2 border-editorial-dark/20 transition-colors duration-300 focus-within:border-editorial-gold">
           <Search className="absolute left-0 h-5 w-5 text-editorial-ink/40" />
           <input
             type="text"
+            role="combobox"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="아파트명, 지역으로 검색"
@@ -113,7 +114,7 @@ export function SearchBar() {
           />
           <button
             type="submit"
-            className="px-6 py-2 bg-editorial-dark text-white text-sm tracking-wide hover:bg-editorial-gold transition-colors duration-300"
+            className="bg-editorial-dark px-6 py-2 text-sm tracking-wide text-white transition-colors duration-300 hover:bg-editorial-gold"
           >
             검색
           </button>
@@ -127,7 +128,9 @@ export function SearchBar() {
             className="absolute z-50 mt-2 w-full border border-editorial-dark/10 bg-white shadow-lg"
           >
             {isLoading && (
-              <div className="px-4 py-3 text-sm text-editorial-ink/50">검색 중...</div>
+              <div className="px-4 py-3 text-sm text-editorial-ink/50">
+                검색 중...
+              </div>
             )}
 
             {!isLoading &&

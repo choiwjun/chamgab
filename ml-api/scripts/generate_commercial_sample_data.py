@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
-Generate sample commercial analysis data for testing
+DEV-ONLY: Generate sample commercial analysis data for testing
 Creates synthetic data for districts, industries, and statistics
+
+주의: 이 스크립트는 개발/테스트 전용입니다.
+프로덕션에서는 실제 상권 데이터 수집 파이프라인을 사용하세요.
 """
 import os
 import sys

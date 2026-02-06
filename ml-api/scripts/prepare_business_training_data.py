@@ -34,7 +34,8 @@ SUPABASE_URL = os.environ.get('SUPABASE_URL') or os.environ.get('NEXT_PUBLIC_SUP
 SUPABASE_KEY = os.environ.get('SUPABASE_SERVICE_KEY') or os.environ.get('SUPABASE_SERVICE_ROLE_KEY')
 
 if not SUPABASE_URL or not SUPABASE_KEY:
-    print("Error: SUPABASE_URL and SUPABASE_SERVICE_KEY environment variables required")
+    print("Error: Supabase not configured.")
+    print("Set SUPABASE_URL and SUPABASE_SERVICE_KEY environment variables.")
     sys.exit(1)
 
 

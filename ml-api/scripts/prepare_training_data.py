@@ -66,25 +66,24 @@ class TrainingDataPreparer:
     def fetch_transactions(self, limit: int = 100000) -> pd.DataFrame:
         """실거래가 데이터 조회"""
         if not self.supabase:
-            return self._generate_mock_data()
+            raise ValueError(
+                "Supabase 연결이 필요합니다. SUPABASE_URL과 SUPABASE_SERVICE_KEY를 설정하세요."
+            )
 
         print("Supabase에서 실거래가 데이터 조회 중...")
 
-        try:
-            response = self.supabase.table("transactions").select("*").limit(limit).execute()
-            data = response.data
+        response = self.supabase.table("transactions").select("*").limit(limit).execute()
+        data = response.data
 
-            if not data:
-                print("데이터 없음, Mock 데이터 사용")
-                return self._generate_mock_data()
+        if not data:
+            raise ValueError(
+                "transactions 테이블이 비어있습니다. "
+                "collect_all_transactions.py를 먼저 실행하세요."
+            )
 
-            df = pd.DataFrame(data)
-            print(f"  {len(df)}건 조회됨")
-            return df
-
-        except Exception as e:
-            print(f"조회 오류: {e}")
-            return self._generate_mock_data()
+        df = pd.DataFrame(data)
+        print(f"  {len(df)}건 조회됨")
+        return df
 
     def fetch_price_indices(self) -> pd.DataFrame:
         """가격지수 데이터 조회"""
@@ -146,56 +145,6 @@ class TrainingDataPreparer:
             점포수 통계 DataFrame (store_count, density_level 등)
         """
         return self._fetch_table_data("store_statistics")
-
-    def _generate_mock_data(self) -> pd.DataFrame:
-        """Mock 학습 데이터 생성"""
-        import random
-
-        print("Mock 학습 데이터 생성 중...")
-
-        n_samples = 10000
-        data = []
-
-        regions = ["강남구", "서초구", "송파구", "마포구", "용산구", "성동구", "광진구", "영등포구"]
-
-        for _ in range(n_samples):
-            region = random.choice(regions)
-
-            # 지역별 기본 가격 설정
-            base_prices = {
-                "강남구": 150000, "서초구": 140000, "송파구": 120000,
-                "마포구": 100000, "용산구": 130000, "성동구": 95000,
-                "광진구": 90000, "영등포구": 85000,
-            }
-            base_price = base_prices.get(region, 80000)
-
-            # 피처 생성
-            area = random.uniform(50, 150)  # 전용면적
-            floor = random.randint(1, 30)
-            year_built = random.randint(1990, 2023)
-            building_age = 2024 - year_built
-
-            # 가격 계산 (피처 기반)
-            price_per_sqm = base_price
-            price_per_sqm += (area - 84) * 500  # 면적 프리미엄
-            price_per_sqm += floor * 200  # 층수 프리미엄
-            price_per_sqm -= building_age * 500  # 노후 할인
-            price_per_sqm += random.gauss(0, 5000)  # 노이즈
-
-            total_price = price_per_sqm * area / 10000  # 만원 -> 억원
-
-            data.append({
-                "sigungu": region,
-                "area_exclusive": round(area, 2),
-                "floor": floor,
-                "year_built": year_built,
-                "building_age": building_age,
-                "price_per_sqm": round(max(price_per_sqm, 30000), 0),
-                "price": round(max(total_price, 1), 2),
-                "transaction_date": f"2023{random.randint(1, 12):02d}",
-            })
-
-        return pd.DataFrame(data)
 
     def prepare_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """피처 엔지니어링"""

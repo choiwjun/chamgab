@@ -310,47 +310,6 @@ class PropertyFeaturesService:
         return features
 
 
-def generate_simulated_property_features(
-    built_year: int = 2010,
-    sigungu: str = "강남구",
-) -> Dict[str, float]:
-    """
-    시뮬레이션용 매물 추가 피처 생성
-
-    실제 매물 설명이 없는 학습 데이터용
-    """
-    import random
-
-    service = PropertyFeaturesService()
-
-    # 재건축 + 학군 피처
-    features = {}
-    features.update(service.get_reconstruction_features(built_year))
-    features.update(service.get_school_features(sigungu))
-
-    # 가격 비교 (랜덤 시뮬레이션)
-    features["price_vs_previous"] = round(random.uniform(0.95, 1.10), 3)
-    features["price_vs_complex_avg"] = round(random.uniform(0.90, 1.10), 3)
-    features["price_vs_area_avg"] = round(random.uniform(0.85, 1.20), 3)
-
-    # 향/뷰/리모델링 (지역 특성 반영)
-    premium_areas = ["강남구", "서초구", "송파구", "용산구"]
-
-    if sigungu in premium_areas:
-        # 프리미엄 지역은 남향, 좋은 뷰 확률 높음
-        features["direction_premium"] = random.choice([1.0, 1.0, 0.98, 0.97])
-        features["view_premium"] = random.choice([1.0, 1.02, 1.05, 1.15])
-        features["is_remodeled"] = random.choice([0, 0, 0, 1])
-    else:
-        features["direction_premium"] = random.choice([1.0, 0.98, 0.95, 0.93])
-        features["view_premium"] = random.choice([1.0, 1.0, 1.02, 1.0])
-        features["is_remodeled"] = random.choice([0, 0, 1, 0])
-
-    features["remodel_premium"] = 0.05 if features["is_remodeled"] else 0.0
-
-    return features
-
-
 if __name__ == "__main__":
     # 테스트
     service = PropertyFeaturesService()
@@ -369,9 +328,4 @@ if __name__ == "__main__":
     desc = "남향 한강뷰 올수리 풀옵션 아파트입니다"
     text_features = service.get_text_features(desc)
     for k, v in text_features.items():
-        print(f"  {k}: {v}")
-
-    print("\n=== 시뮬레이션 테스트 ===")
-    sim = generate_simulated_property_features(2000, "강남구")
-    for k, v in sim.items():
         print(f"  {k}: {v}")

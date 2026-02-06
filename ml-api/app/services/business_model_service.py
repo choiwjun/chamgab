@@ -129,7 +129,7 @@ class BusinessModelService:
         }
 
     def _prepare_features(self, **kwargs) -> pd.DataFrame:
-        """학습 시와 동일한 피처 엔지니어링"""
+        """학습 시와 동일한 피처 엔지니어링 (BusinessFeatureEngineer.create_features 일치)"""
         survival_rate = kwargs["survival_rate"]
         monthly_avg_sales = kwargs["monthly_avg_sales"]
         sales_growth_rate = kwargs["sales_growth_rate"]
@@ -140,37 +140,45 @@ class BusinessModelService:
         peak_hour_ratio = kwargs["peak_hour_ratio"]
         weekend_ratio = kwargs["weekend_ratio"]
 
-        # 파생 피처 계산 (feature_engineering.py의 BusinessFeatureEngineer와 동일)
+        # 파생 피처 계산 (feature_engineering.py의 BusinessFeatureEngineer.create_features와 동일)
         survival_rate_normalized = survival_rate / 100.0
         monthly_avg_sales_log = float(np.log1p(monthly_avg_sales))
         sales_per_store = monthly_avg_sales / max(store_count, 1)
-        sales_volatility = abs(sales_growth_rate) / 10.0  # 근사값
+        sales_volatility = abs(sales_growth_rate)  # 학습과 동일: abs(growth_rate)
         store_count_log = float(np.log1p(store_count))
 
-        # 밀집도 레벨 (0: 낮음, 1: 보통, 2: 높음)
-        if store_count < 50:
-            density_level = 0
-        elif store_count < 150:
-            density_level = 1
+        # 밀집도 레벨 (0=low, 1=medium, 2=high, 3=very_high) - 학습과 동일 4단계
+        if store_count <= 50:
+            density_level = 0.0
+        elif store_count <= 100:
+            density_level = 1.0
+        elif store_count <= 200:
+            density_level = 2.0
         else:
-            density_level = 2
+            density_level = 3.0
 
-        # 시장 포화도
-        market_saturation = competition_ratio * (1 - survival_rate_normalized)
+        # 시장 포화도 - 학습과 동일: (store_count * competition_ratio) / (sales / 1e7)
+        sales_safe = max(monthly_avg_sales, 1)
+        market_saturation = min(max(
+            (store_count * competition_ratio) / (sales_safe / 10_000_000), 0
+        ), 100)
 
-        # 사업 생존 가능성 지수
+        # 사업 가능성 지수 - 학습과 동일
+        growth_clipped = max(-10, min(sales_growth_rate, 20))
+        comp_clipped = max(0, min(competition_ratio, 2))
         viability_index = (
             survival_rate_normalized * 0.4
-            + (1 - market_saturation) * 0.3
-            + min(sales_growth_rate / 10, 1) * 0.3
-        )
+            + (growth_clipped + 10) / 30 * 0.3
+            + (1 - comp_clipped / 2) * 0.3
+        ) * 100
+        viability_index = max(0, min(viability_index, 100))
 
-        # 성장 잠재력
+        # 성장 잠재력 - 학습과 동일
         growth_potential = (
-            sales_growth_rate / 10.0 * 0.5
-            + (1 - competition_ratio / 3.0) * 0.3
-            + foot_traffic_score / 100.0 * 0.2
+            growth_clipped / 20 * 50
+            + (100 - market_saturation) / 100 * 50
         )
+        growth_potential = max(0, min(growth_potential, 100))
 
         row = {
             "survival_rate": survival_rate,

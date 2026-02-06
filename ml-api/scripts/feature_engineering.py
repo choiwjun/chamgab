@@ -30,14 +30,31 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.core.database import get_supabase_client
-from app.services.poi_service import POIService, generate_simulated_poi_features
-from app.services.market_service import MarketService, generate_simulated_market_features
-from app.services.property_features_service import PropertyFeaturesService, generate_simulated_property_features
-from app.services.footfall_service import FootfallService, generate_simulated_footfall_features
+from app.services.poi_service import POIService
+from app.services.market_service import MarketService
+from app.services.property_features_service import PropertyFeaturesService
+from app.services.footfall_service import FootfallService
 
 
 class FeatureEngineer:
     """XGBoost 학습용 피처 엔지니어링"""
+
+    # 서울 주요 구 대표 좌표 (구청 위치 기준)
+    DISTRICT_COORDS = {
+        "강남구": (37.5172, 127.0473), "서초구": (37.4837, 127.0324),
+        "송파구": (37.5145, 127.1059), "용산구": (37.5326, 126.9908),
+        "마포구": (37.5663, 126.9014), "성동구": (37.5633, 127.0371),
+        "영등포구": (37.5264, 126.8963), "강동구": (37.5301, 127.1238),
+        "광진구": (37.5385, 127.0823), "동작구": (37.5124, 126.9393),
+        "양천구": (37.5169, 126.8666), "노원구": (37.6541, 127.0568),
+        "강서구": (37.5510, 126.8496), "은평구": (37.6027, 126.9291),
+        "종로구": (37.5735, 126.9790), "중구": (37.5636, 126.9976),
+        "동대문구": (37.5744, 127.0396), "중랑구": (37.6064, 127.0928),
+        "성북구": (37.5894, 127.0167), "강북구": (37.6396, 127.0257),
+        "도봉구": (37.6688, 127.0471), "서대문구": (37.5791, 126.9368),
+        "구로구": (37.4954, 126.8875), "금천구": (37.4569, 126.8955),
+        "관악구": (37.4784, 126.9516),
+    }
 
     # 브랜드 티어 (프리미엄 순)
     BRAND_TIERS = {
@@ -252,25 +269,26 @@ class FeatureEngineer:
 
         print("POI 피처 생성 중...")
 
-        # 시뮬레이션 데이터 생성 (실제 좌표가 없는 경우)
-        poi_data = []
-        for _, row in df.iterrows():
-            sido = row.get("sido", "서울시")
-            sigungu = row.get("sigungu", "강남구")
+        # 유니크 (sido, sigungu) 조합별로 한 번만 생성 후 매핑 (성능 최적화)
+        poi_service = POIService()
+        poi_cache: dict = {}
 
-            # 시뮬레이션 POI 피처 생성
-            features = generate_simulated_poi_features(sido, sigungu)
+        sido_col = df["sido"].fillna("서울시")
+        sigungu_col = df["sigungu"].fillna("강남구")
 
-            # POI 점수 계산
-            poi_service = POIService()
-            features["poi_score"] = poi_service.get_poi_score(features)
+        for sido, sigungu in set(zip(sido_col, sigungu_col)):
+            key = (sido, sigungu)
+            if key not in poi_cache:
+                coords = self.DISTRICT_COORDS.get(sigungu, (37.5665, 126.9780))
+                features = poi_service.get_poi_features(lat=coords[0], lng=coords[1])
+                features["poi_score"] = poi_service.get_poi_score(features)
+                poi_cache[key] = features
 
-            poi_data.append(features)
-
-        # POI 피처를 DataFrame에 추가
-        poi_df = pd.DataFrame(poi_data)
+        # 캐시에서 매핑하여 DataFrame에 추가
+        poi_rows = [poi_cache[(s, g)] for s, g in zip(sido_col, sigungu_col)]
+        poi_df = pd.DataFrame(poi_rows, index=df.index)
         for col in poi_df.columns:
-            df[col] = poi_df[col].values
+            df[col] = poi_df[col]
 
         print(f"POI 피처 {len(poi_df.columns)}개 추가 완료")
         return df
@@ -293,18 +311,22 @@ class FeatureEngineer:
 
         print("시장 지표 피처 생성 중...")
 
-        market_data = []
-        for _, row in df.iterrows():
-            year = row.get("transaction_year", 2026)
-            month = row.get("transaction_month", 1)
-            sigungu = row.get("sigungu", "강남구")
+        # 유니크 (year, month, sigungu) 조합별로 한 번만 생성
+        market_cache: dict = {}
+        years = df.get("transaction_year", pd.Series([2026] * len(df))).fillna(2026).astype(int)
+        months = df.get("transaction_month", pd.Series([1] * len(df))).fillna(1).astype(int)
+        sigungus = df["sigungu"].fillna("강남구")
 
-            features = generate_simulated_market_features(int(year), int(month), sigungu)
-            market_data.append(features)
+        market_service = MarketService()
+        for y, m, s in set(zip(years, months, sigungus)):
+            key = (int(y), int(m), s)
+            if key not in market_cache:
+                market_cache[key] = market_service.get_market_features(*key)
 
-        market_df = pd.DataFrame(market_data)
+        market_rows = [market_cache[(int(y), int(m), s)] for y, m, s in zip(years, months, sigungus)]
+        market_df = pd.DataFrame(market_rows, index=df.index)
         for col in market_df.columns:
-            df[col] = market_df[col].values
+            df[col] = market_df[col]
 
         print(f"시장 지표 피처 {len(market_df.columns)}개 추가 완료")
         return df
@@ -333,17 +355,21 @@ class FeatureEngineer:
 
         print("매물 추가 피처 생성 중...")
 
-        property_data = []
-        for _, row in df.iterrows():
-            built_year = row.get("built_year", 2010)
-            sigungu = row.get("sigungu", "강남구")
+        # 유니크 (built_year, sigungu) 조합별로 한 번만 생성
+        prop_cache: dict = {}
+        built_years = df["built_year"].fillna(2010).astype(int)
+        sigungus = df["sigungu"].fillna("강남구")
 
-            features = generate_simulated_property_features(int(built_year), sigungu)
-            property_data.append(features)
+        prop_service = PropertyFeaturesService()
+        for by, s in set(zip(built_years, sigungus)):
+            key = (int(by), s)
+            if key not in prop_cache:
+                prop_cache[key] = prop_service.get_all_features(built_year=key[0], sigungu=key[1])
 
-        property_df = pd.DataFrame(property_data)
+        prop_rows = [prop_cache[(int(by), s)] for by, s in zip(built_years, sigungus)]
+        property_df = pd.DataFrame(prop_rows, index=df.index)
         for col in property_df.columns:
-            df[col] = property_df[col].values
+            df[col] = property_df[col]
 
         print(f"매물 추가 피처 {len(property_df.columns)}개 추가 완료")
         return df
@@ -363,16 +389,20 @@ class FeatureEngineer:
 
         print("유동인구/상권 피처 생성 중...")
 
-        footfall_data = []
-        for _, row in df.iterrows():
-            sigungu = row.get("sigungu", "강남구")
-            features = generate_simulated_footfall_features(sigungu)
-            footfall_data.append(features)
+        # 유니크 sigungu별로 한 번만 생성
+        footfall_cache: dict = {}
+        sigungus = df["sigungu"].fillna("강남구")
 
-        footfall_df = pd.DataFrame(footfall_data)
+        footfall_service = FootfallService()
+        for s in sigungus.unique():
+            if s not in footfall_cache:
+                footfall_cache[s] = footfall_service.get_footfall_features(sigungu=s)
+
+        footfall_rows = [footfall_cache[s] for s in sigungus]
+        footfall_df = pd.DataFrame(footfall_rows, index=df.index)
         for col in footfall_columns:
             if col in footfall_df.columns:
-                df[col] = footfall_df[col].values
+                df[col] = footfall_df[col]
 
         print(f"유동인구/상권 피처 {len(footfall_columns)}개 추가 완료")
         return df
@@ -709,13 +739,11 @@ class BusinessFeatureEngineer:
             (100 - df['market_saturation']) / 100 * 50
         ).clip(0, 100)
 
-        # 5. 유동인구 피처 (시뮬레이션)
+        # 5. 유동인구 피처 (실데이터 없으면 0으로 처리)
         if 'foot_traffic_score' not in df.columns:
-            np.random.seed(42)
-            n = len(df)
-            df['foot_traffic_score'] = np.random.uniform(30, 95, n)
-            df['peak_hour_ratio'] = np.random.uniform(0.15, 0.45, n)
-            df['weekend_ratio'] = np.random.uniform(0.3, 0.7, n)
+            df['foot_traffic_score'] = 0.0
+            df['peak_hour_ratio'] = 0.0
+            df['weekend_ratio'] = 0.0
 
         return df
 
@@ -747,7 +775,9 @@ class BusinessFeatureEngineer:
             (X, y, df_full) 튜플
         """
         if df is None or df.empty:
-            df = self._generate_training_data(n_samples)
+            raise ValueError(
+                "학습 데이터가 필요합니다. prepare_business_training_data.py를 먼저 실행하세요."
+            )
 
         # 피처 생성
         df = self.create_features(df)
@@ -771,51 +801,6 @@ class BusinessFeatureEngineer:
         print(f"성공/실패 분포: {y.value_counts().to_dict()}")
 
         return X, y, df
-
-    def _generate_training_data(self, n_samples: int = 2000) -> pd.DataFrame:
-        """현실적인 시뮬레이션 학습 데이터 생성"""
-        np.random.seed(42)
-
-        # 상권 유형별 특성 반영
-        data = {
-            'survival_rate': [],
-            'monthly_avg_sales': [],
-            'sales_growth_rate': [],
-            'store_count': [],
-            'franchise_ratio': [],
-            'competition_ratio': [],
-        }
-
-        # 성공 상권 (60%)
-        n_success = int(n_samples * 0.6)
-        data['survival_rate'].extend(np.random.normal(78, 8, n_success).clip(55, 98))
-        data['monthly_avg_sales'].extend(np.random.lognormal(17.5, 0.5, n_success).clip(15000000, 200000000))
-        data['sales_growth_rate'].extend(np.random.normal(3.5, 4, n_success).clip(-8, 25))
-        data['store_count'].extend(np.random.poisson(80, n_success).clip(10, 300))
-        data['franchise_ratio'].extend(np.random.beta(3, 7, n_success).clip(0.05, 0.8))
-        data['competition_ratio'].extend(np.random.normal(1.0, 0.25, n_success).clip(0.5, 1.8))
-
-        # 실패 상권 (40%)
-        n_fail = n_samples - n_success
-        data['survival_rate'].extend(np.random.normal(55, 12, n_fail).clip(20, 75))
-        data['monthly_avg_sales'].extend(np.random.lognormal(16.8, 0.6, n_fail).clip(5000000, 100000000))
-        data['sales_growth_rate'].extend(np.random.normal(-2.0, 5, n_fail).clip(-15, 10))
-        data['store_count'].extend(np.random.poisson(120, n_fail).clip(15, 400))
-        data['franchise_ratio'].extend(np.random.beta(2, 5, n_fail).clip(0.05, 0.9))
-        data['competition_ratio'].extend(np.random.normal(1.5, 0.35, n_fail).clip(0.7, 3.0))
-
-        df = pd.DataFrame(data)
-
-        # 타겟: 생존율 > 65 AND 매출 성장률 > -2
-        df['success'] = (
-            (df['survival_rate'] > 65) &
-            (df['sales_growth_rate'] > -2)
-        ).astype(int)
-
-        # 셔플
-        df = df.sample(frac=1, random_state=42).reset_index(drop=True)
-
-        return df
 
     def save(self, path: str):
         """피처 엔지니어 저장"""

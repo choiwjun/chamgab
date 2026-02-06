@@ -5,7 +5,7 @@
 
 import { useAuth as useAuthContext } from '@/providers/AuthProvider'
 import { useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 /**
  * 인증 상태 관리 훅 (AuthProvider 기반)
@@ -22,15 +22,13 @@ export function useAuth() {
 
   /**
    * 인증이 필요한 페이지에서 사용
-   * 비로그인 시 로그인 페이지로 리다이렉트
+   * 비로그인 시 로그인 페이지로 리다이렉트 (명령형)
    */
-  const requireAuth = () => {
-    useEffect(() => {
-      if (!authContext.isLoading && !authContext.isAuthenticated) {
-        router.push('/auth/login' as any)
-      }
-    }, [authContext.isLoading, authContext.isAuthenticated])
-  }
+  const requireAuth = useCallback(() => {
+    if (!authContext.isLoading && !authContext.isAuthenticated) {
+      router.push('/auth/login' as never)
+    }
+  }, [authContext.isLoading, authContext.isAuthenticated, router])
 
   // 읽지 않은 알림 개수 가져오기 (mock)
   useEffect(() => {
