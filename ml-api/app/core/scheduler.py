@@ -310,7 +310,7 @@ class DataScheduler:
         self.last_training_job = job_id
         print(f"[스케줄러] 월간 전체 모델 학습 시작: {job_id}")
 
-        # Step 1: 아파트 학습 데이터 준비
+        # Step 1: 아파트 학습 데이터 준비 (Supabase에서 직접 읽기)
         ok = self._run_script(
             "scripts.prepare_training_data",
             args=["--full", "--output", "data/training_data.csv"],

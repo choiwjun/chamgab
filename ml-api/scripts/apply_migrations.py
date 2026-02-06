@@ -47,6 +47,7 @@ DB_PASSWORD = os.environ.get('SUPABASE_DB_PASSWORD', '')
 MIGRATIONS = [
     '015_create_commercial_analysis_tables.sql',
     '016_add_commercial_demographics.sql',
+    '018_add_collected_columns.sql',
 ]
 
 

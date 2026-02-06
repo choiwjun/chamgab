@@ -63,26 +63,82 @@ class TrainingDataPreparer:
             print("경고: Supabase 설정이 없습니다.")
             self.supabase = None
 
-    def fetch_transactions(self, limit: int = 100000) -> pd.DataFrame:
-        """실거래가 데이터 조회"""
-        if not self.supabase:
-            raise ValueError(
-                "Supabase 연결이 필요합니다. SUPABASE_URL과 SUPABASE_SERVICE_KEY를 설정하세요."
-            )
+    def fetch_transactions(self, limit: int = 100000, csv_path: str = None) -> pd.DataFrame:
+        """
+        실거래가 데이터 조회
 
-        print("Supabase에서 실거래가 데이터 조회 중...")
+        우선순위: Supabase (전체 컬럼) → csv_path → data/latest_collected.csv
+        """
+        # 1. Supabase에서 읽기 (주 데이터소스 - 영구 저장소)
+        if self.supabase:
+            print("Supabase에서 실거래가 데이터 조회 중...")
+            try:
+                all_data = []
+                offset = 0
+                page_size = 1000
+                while True:
+                    response = (
+                        self.supabase.table("transactions")
+                        .select("*")
+                        .range(offset, offset + page_size - 1)
+                        .execute()
+                    )
+                    if not response.data:
+                        break
+                    all_data.extend(response.data)
+                    if len(response.data) < page_size:
+                        break
+                    offset += page_size
 
-        response = self.supabase.table("transactions").select("*").limit(limit).execute()
-        data = response.data
+                if all_data:
+                    df = pd.DataFrame(all_data)
+                    # Supabase 컬럼명 → 학습용 컬럼명 매핑
+                    if "built_year" in df.columns and "year_built" not in df.columns:
+                        df = df.rename(columns={"built_year": "year_built"})
+                    print(f"  {len(df)}건 조회됨 (Supabase)")
+                    return df
+                else:
+                    print("  Supabase에 데이터 없음, CSV fallback 시도...")
+            except Exception as e:
+                print(f"  Supabase 조회 실패: {e}, CSV fallback 시도...")
 
-        if not data:
-            raise ValueError(
-                "transactions 테이블이 비어있습니다. "
-                "collect_all_transactions.py를 먼저 실행하세요."
-            )
+        # 2. CSV 파일에서 읽기 (fallback - 인자로 지정)
+        if csv_path and Path(csv_path).exists():
+            print(f"CSV에서 데이터 로드: {csv_path}")
+            df = pd.read_csv(csv_path)
+            df = self._normalize_csv_columns(df)
+            print(f"  {len(df)}건 로드됨 (CSV)")
+            return df
 
-        df = pd.DataFrame(data)
-        print(f"  {len(df)}건 조회됨")
+        # 3. 수집기 CSV 자동 탐색 (fallback)
+        auto_csv = Path(__file__).parent.parent / "data" / "latest_collected.csv"
+        if auto_csv.exists():
+            print(f"수집 CSV 자동 감지: {auto_csv}")
+            df = pd.read_csv(auto_csv)
+            df = self._normalize_csv_columns(df)
+            print(f"  {len(df)}건 로드됨 (자동 CSV)")
+            return df
+
+        raise ValueError(
+            "데이터가 없습니다. 스케줄러에서 수집을 먼저 실행하세요. "
+            "(POST /api/scheduler/run {job_type: daily})"
+        )
+
+    @staticmethod
+    def _normalize_csv_columns(df: pd.DataFrame) -> pd.DataFrame:
+        """수집 CSV 컬럼명을 학습용 컬럼명으로 매핑"""
+        rename_map = {}
+        if "area" in df.columns and "area_exclusive" not in df.columns:
+            rename_map["area"] = "area_exclusive"
+        if "deal_date" in df.columns and "transaction_date" not in df.columns:
+            rename_map["deal_date"] = "transaction_date"
+        if "built_year" in df.columns and "year_built" not in df.columns:
+            rename_map["built_year"] = "year_built"
+        if rename_map:
+            df = df.rename(columns=rename_map)
+        # price: 만원 → 원 변환 (수집 데이터는 만원 단위)
+        if "price" in df.columns and len(df) > 0 and df["price"].max() < 10_000_000:
+            df["price"] = df["price"] * 10000
         return df
 
     def fetch_price_indices(self) -> pd.DataFrame:
@@ -437,14 +493,14 @@ class TrainingDataPreparer:
 
         return result
 
-    def prepare_full(self, output_path: str = "data/training_data.parquet") -> pd.DataFrame:
+    def prepare_full(self, output_path: str = "data/training_data.parquet", input_csv: str = None) -> pd.DataFrame:
         """전체 학습 데이터 준비"""
         print("=" * 60)
         print("학습 데이터 준비")
         print("=" * 60)
 
         # 데이터 조회
-        transactions = self.fetch_transactions()
+        transactions = self.fetch_transactions(csv_path=input_csv)
 
         # 피처 엔지니어링
         features = self.prepare_features(transactions)
@@ -471,12 +527,13 @@ def main():
     parser = argparse.ArgumentParser(description="학습 데이터 준비")
     parser.add_argument("--full", action="store_true", help="전체 데이터 준비")
     parser.add_argument("--output", type=str, default="data/training_data.parquet", help="출력 경로")
+    parser.add_argument("--input-csv", type=str, default=None, help="입력 CSV 경로 (수집 데이터)")
     args = parser.parse_args()
 
     preparer = TrainingDataPreparer()
 
     if args.full:
-        preparer.prepare_full(output_path=args.output)
+        preparer.prepare_full(output_path=args.output, input_csv=args.input_csv)
     else:
         print("옵션을 지정해주세요: --full")
 

@@ -8,16 +8,22 @@
 - 백그라운드 작업으로 비동기 수집
 """
 import os
+import csv
 import asyncio
 import aiohttp
 import xml.etree.ElementTree as ET
 import json
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, asdict
 from enum import Enum
 
 from app.core.config import settings
+
+# 수집 데이터 CSV 저장 경로
+DATA_DIR = Path(__file__).parent.parent.parent / "data"
+LATEST_CSV_PATH = DATA_DIR / "latest_collected.csv"
 
 
 class CollectionStatus(str, Enum):
@@ -311,11 +317,17 @@ class CollectorService:
             job.molit_count = len(molit_results)
             job.rone_count = len(rone_results)
 
-        # 데이터 저장
+        # 인메모리 저장
         self.collected_data[job_id] = {
             "molit": molit_results,
             "rone": rone_results,
         }
+
+        # Supabase + CSV 영구 저장
+        if molit_results:
+            saved = await self._persist_to_supabase(molit_results)
+            csv_path = self._save_to_csv(molit_results)
+            print(f"[영구 저장] Supabase: {saved}건, CSV: {csv_path}")
 
         print(f"[수집 완료] MOLIT: {len(molit_results)}건, R-ONE: {len(rone_results)}건")
 
@@ -361,6 +373,97 @@ class CollectorService:
     def get_collected_data(self, job_id: str) -> Optional[Dict[str, List[dict]]]:
         """수집된 데이터 조회"""
         return self.collected_data.get(job_id)
+
+    async def _persist_to_supabase(self, molit_results: List[dict]) -> int:
+        """수집 데이터를 Supabase transactions 테이블에 영구 저장 (전체 필드)"""
+        try:
+            from app.core.database import get_supabase_client
+            client = get_supabase_client()
+
+            # region_code → sigungu 매핑
+            code_to_name = {v: k for k, v in self.REGION_CODES.items()}
+
+            # 전체 필드 변환 (018 마이그레이션 적용 후 모든 컬럼 사용)
+            rows = []
+            for item in molit_results:
+                rows.append({
+                    "transaction_date": item["deal_date"],
+                    "price": item["price"] * 10000,  # 만원 → 원
+                    "area_exclusive": item["area"],
+                    "floor": item["floor"],
+                    "dong": item["dong"],
+                    "region_code": item.get("region_code", ""),
+                    "apt_name": item.get("apt_name", ""),
+                    "built_year": item.get("built_year"),
+                    "jibun": item.get("jibun", ""),
+                    "sigungu": code_to_name.get(item.get("region_code", ""), ""),
+                })
+
+            # 배치 insert (500개씩)
+            inserted = 0
+            batch_size = 500
+            for i in range(0, len(rows), batch_size):
+                batch = rows[i:i + batch_size]
+                try:
+                    result = client.table("transactions").insert(batch).execute()
+                    inserted += len(result.data) if result.data else 0
+                except Exception as e:
+                    err_msg = str(e)
+                    # 컬럼이 아직 없으면 기본 컬럼만으로 재시도
+                    if "column" in err_msg and ("region_code" in err_msg or "apt_name" in err_msg or "built_year" in err_msg):
+                        print(f"[Supabase] 신규 컬럼 미적용, 기본 컬럼으로 재시도 (배치 {i//batch_size})")
+                        basic_batch = [{
+                            "transaction_date": r["transaction_date"],
+                            "price": r["price"],
+                            "area_exclusive": r["area_exclusive"],
+                            "floor": r["floor"],
+                            "dong": r["dong"],
+                        } for r in batch]
+                        try:
+                            result = client.table("transactions").insert(basic_batch).execute()
+                            inserted += len(result.data) if result.data else 0
+                        except Exception as e2:
+                            print(f"[Supabase] 기본 컬럼 저장도 실패: {e2}")
+                    else:
+                        print(f"[Supabase] 배치 {i//batch_size} 저장 실패: {e}")
+
+            return inserted
+        except Exception as e:
+            print(f"[Supabase] 저장 실패: {e}")
+            return 0
+
+    def _save_to_csv(self, molit_results: List[dict]) -> str:
+        """수집 데이터를 CSV 파일로 저장 (학습용, 모든 필드 포함)"""
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+        # 기존 CSV가 있으면 append, 없으면 새로 생성
+        file_exists = LATEST_CSV_PATH.exists()
+        fieldnames = [
+            "region_code", "apt_name", "area", "floor", "price",
+            "deal_date", "built_year", "dong", "jibun", "collected_at"
+        ]
+
+        # region_code → sigungu 매핑 추가
+        code_to_name = {v: k for k, v in self.REGION_CODES.items()}
+
+        with open(LATEST_CSV_PATH, "a", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames + ["sigungu"])
+            if not file_exists:
+                writer.writeheader()
+
+            for item in molit_results:
+                row = {k: item.get(k, "") for k in fieldnames}
+                row["sigungu"] = code_to_name.get(item.get("region_code", ""), "")
+                writer.writerow(row)
+
+        return str(LATEST_CSV_PATH)
+
+    @staticmethod
+    def get_latest_csv_path() -> Optional[str]:
+        """최신 수집 CSV 경로 반환 (학습 스크립트용)"""
+        if LATEST_CSV_PATH.exists():
+            return str(LATEST_CSV_PATH)
+        return None
 
 
 # 싱글톤 인스턴스

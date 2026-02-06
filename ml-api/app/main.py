@@ -23,6 +23,7 @@ from app.api import predict, factors, similar, health, commercial, chamgab, inte
 from app.api import collect, analyze, scheduler
 from app.core.config import settings
 from app.core.scheduler import data_scheduler
+from app.core.migrate import auto_migrate
 from app.services.business_model_service import business_model_service
 
 
@@ -36,7 +37,10 @@ BUSINESS_MODEL_PATH = MODELS_DIR / "business_model.pkl"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Load ML models
+    # Startup: 자동 마이그레이션 (transactions 컬럼 추가)
+    auto_migrate()
+
+    # Load ML models
     print("Loading ML models...")
 
     app.state.model = None
