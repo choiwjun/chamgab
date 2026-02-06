@@ -123,13 +123,7 @@ export default function DemographicsAnalysis({
                   />
                 ))}
               </Pie>
-              <Tooltip
-                formatter={(
-                  value: number,
-                  _name: string,
-                  props: { payload: { count: number } }
-                ) => `${value}% (${props.payload.count.toLocaleString()}명)`}
-              />
+              <Tooltip formatter={(value: number) => `${value}%`} />
             </PieChart>
           </ResponsiveContainer>
         </div>

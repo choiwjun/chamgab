@@ -22,18 +22,26 @@ import type {
 
 // 코드 스플리팅: 큰 컴포넌트들을 lazy load
 const SuccessProbabilityCard = dynamic(
-  () => import('@/components/business/SuccessProbabilityCard'),
+  () =>
+    import('@/components/business/SuccessProbabilityCard').then(
+      (mod) => mod.SuccessProbabilityCard
+    ),
   { loading: () => <div className="h-64 animate-pulse rounded bg-gray-100" /> }
 )
 
 const DistrictCharacteristicsCard = dynamic(
-  () => import('@/components/business/DistrictCharacteristicsCard'),
+  () =>
+    import('@/components/business/DistrictCharacteristicsCard').then(
+      (mod) => mod.DistrictCharacteristicsCard
+    ),
   { loading: () => <div className="h-96 animate-pulse rounded bg-gray-100" /> }
 )
 
-const MetricsCard = dynamic(() => import('@/components/business/MetricsCard'), {
-  loading: () => <div className="h-32 animate-pulse rounded bg-gray-100" />,
-})
+const MetricsCard = dynamic(
+  () =>
+    import('@/components/business/MetricsCard').then((mod) => mod.MetricsCard),
+  { loading: () => <div className="h-32 animate-pulse rounded bg-gray-100" /> }
+)
 
 const PeakHoursAnalysis = dynamic(
   () => import('@/components/business/PeakHoursAnalysis'),

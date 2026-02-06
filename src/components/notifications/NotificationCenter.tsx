@@ -15,13 +15,22 @@ import {
 import { useState } from 'react'
 
 // Types matching backend API
+interface AlertData {
+  property_name?: string
+  change_percent?: number
+  district_name?: string
+  growth_score?: number
+  growth_rate?: number
+  [key: string]: string | number | boolean | undefined
+}
+
 interface Alert {
   alert_id: string
   alert_type: string // price_change, district_growth, opportunity
   title: string
   message: string
   severity: string // info, warning, critical
-  data: Record<string, unknown>
+  data: AlertData
   created_at: string
 }
 
@@ -259,26 +268,28 @@ export default function NotificationCenter({
                               </span>
                             </div>
                           )}
-                          {alert.data.change_percent !== undefined && (
+                          {alert.data.change_percent != null && (
                             <div>
                               <span className="text-gray-600">변동률:</span>
                               <span
                                 className={`ml-1 font-semibold ${
-                                  alert.data.change_percent > 0
+                                  Number(alert.data.change_percent) > 0
                                     ? 'text-red-600'
                                     : 'text-blue-600'
                                 }`}
                               >
-                                {alert.data.change_percent > 0 ? '+' : ''}
-                                {alert.data.change_percent.toFixed(1)}%
+                                {Number(alert.data.change_percent) > 0
+                                  ? '+'
+                                  : ''}
+                                {Number(alert.data.change_percent).toFixed(1)}%
                               </span>
                             </div>
                           )}
-                          {alert.data.growth_rate !== undefined && (
+                          {alert.data.growth_rate != null && (
                             <div>
                               <span className="text-gray-600">성장률:</span>
                               <span className="ml-1 font-semibold text-green-600">
-                                +{alert.data.growth_rate.toFixed(1)}%
+                                +{Number(alert.data.growth_rate).toFixed(1)}%
                               </span>
                             </div>
                           )}

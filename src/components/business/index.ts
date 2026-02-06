@@ -1,13 +1,13 @@
-// Phase 5 Components
-export { default as ComparisonTable } from './ComparisonTable'
-export { default as DistrictCharacteristicsCard } from './DistrictCharacteristicsCard'
-export { default as IndustryOverview } from './IndustryOverview'
-export { default as IndustrySelect } from './IndustrySelect'
-export { default as MetricsCard } from './MetricsCard'
-export { default as RegionSelect } from './RegionSelect'
-export { default as SuccessProbabilityCard } from './SuccessProbabilityCard'
+// Phase 5 Components (named exports)
+export { ComparisonTable } from './ComparisonTable'
+export { DistrictCharacteristicsCard } from './DistrictCharacteristicsCard'
+export { IndustryOverview } from './IndustryOverview'
+export { IndustrySelect } from './IndustrySelect'
+export { MetricsCard } from './MetricsCard'
+export { RegionSelect } from './RegionSelect'
+export { SuccessProbabilityCard } from './SuccessProbabilityCard'
 
-// P6-S1: 상권 분석 고도화 컴포넌트
+// P6-S1: 상권 분석 고도화 컴포넌트 (default exports)
 export { default as PeakHoursAnalysis } from './PeakHoursAnalysis'
 export { default as DemographicsAnalysis } from './DemographicsAnalysis'
 export { default as WeekendAnalysis } from './WeekendAnalysis'
