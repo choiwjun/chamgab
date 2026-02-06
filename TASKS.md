@@ -1345,26 +1345,26 @@ P6-Enhancement
 
 ---
 
-### P6-Enhancement: 게이미피케이션 (선택)
+### P6-Enhancement: 게이미피케이션 (선택) ✅
 
-#### P6-Enhancement-T1: 배지 시스템
+#### P6-Enhancement-T1: 배지 시스템 ✅
 
-**파일**: `src/components/gamification/BadgeSystem.tsx`
+**파일**: `src/components/gamification/BadgeSystem.tsx`, `ml-api/app/api/gamification.py`
 
-- [ ] GREEN: 배지 정의 (10개)
-- [ ] GREEN: 달성 조건 체크
-- [ ] GREEN: 배지 컬렉션 UI
-- [ ] GREEN: 포인트 시스템
+- [x] GREEN: 배지 정의 (10개)
+- [x] GREEN: 달성 조건 체크
+- [x] GREEN: 배지 컬렉션 UI
+- [x] GREEN: 포인트 시스템
 
 ---
 
-#### P6-Enhancement-T2: 리더보드
+#### P6-Enhancement-T2: 리더보드 ✅
 
-**파일**: `src/components/gamification/Leaderboard.tsx`
+**파일**: `src/components/gamification/Leaderboard.tsx`, `ml-api/app/api/gamification.py`
 
-- [ ] GREEN: 주간 TOP 10
-- [ ] GREEN: 카테고리별 랭킹
-- [ ] GREEN: 내 순위 표시
+- [x] GREEN: 주간 TOP 10
+- [x] GREEN: 카테고리별 랭킹
+- [x] GREEN: 내 순위 표시
 
 ---
 
