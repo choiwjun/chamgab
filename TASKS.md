@@ -24,7 +24,7 @@
 ### P0-T0.3: 기본 의존성 설치 ✅
 
 - [x] Tailwind CSS 3.x 설치 및 설정
-- [ ] shadcn/ui 초기화 (Phase 1에서)
+- [x] shadcn/ui 초기화 (`components.json` 설정, `cn()` 유틸리티)
 - [x] Zustand 설치
 - [x] TanStack Query 설치
 - [x] React Hook Form + Zod 설치
@@ -43,7 +43,7 @@
 - [x] Recharts 설치 (차트 라이브러리)
 - [x] Lucide React 설치 (아이콘)
 - [x] Pretendard 웹폰트 설정 (`src/app/layout.tsx`)
-- [ ] next-themes 설치 (다크모드 대비) - Phase 2+
+- [x] next-themes 설치 (다크모드 - ThemeProvider, ThemeToggle 컴포넌트, CSS 변수)
 
 ### P0-T0.6: 디자인 시스템 설정 ✅
 

@@ -14,19 +14,44 @@
 }
 
 :root {
-  --primary: #1E3A5F;
-  --primary-light: #2E5A8F;
-  --accent: #D4A853;
-  --chamgab-up: #10B981;
-  --chamgab-down: #EF4444;
-  --chamgab-neutral: #64748B;
+  --primary: #1e3a5f;
+  --primary-light: #2e5a8f;
+  --accent: #d4a853;
+  --chamgab-up: #10b981;
+  --chamgab-down: #ef4444;
+  --chamgab-neutral: #64748b;
+  --background: #faf8f5;
+  --foreground: #3d3d3d;
+}
+
+.dark {
+  --primary: #93b5d6;
+  --primary-light: #a8c8e8;
+  --accent: #d4b896;
+  --chamgab-up: #34d399;
+  --chamgab-down: #f87171;
+  --chamgab-neutral: #94a3b8;
+  --background: #0f0f1a;
+  --foreground: #e8e4dc;
 }
 
 body {
-  font-family: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont,
-    system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo',
-    'Noto Sans KR', 'Malgun Gothic', 'Apple Color Emoji', 'Segoe UI Emoji',
-    'Segoe UI Symbol', sans-serif;
+  font-family:
+    'Pretendard Variable',
+    Pretendard,
+    -apple-system,
+    BlinkMacSystemFont,
+    system-ui,
+    Roboto,
+    'Helvetica Neue',
+    'Segoe UI',
+    'Apple SD Gothic Neo',
+    'Noto Sans KR',
+    'Malgun Gothic',
+    'Apple Color Emoji',
+    'Segoe UI Emoji',
+    'Segoe UI Symbol',
+    sans-serif;
 }
 
 /* 참값 가격 표시 */
@@ -45,5 +70,9 @@ body {
 
 /* 신뢰도 프로그레스 바 */
 .confidence-bar {
-  background: linear-gradient(90deg, var(--chamgab-up) var(--confidence), #e5e7eb var(--confidence));
+  background: linear-gradient(
+    90deg,
+    var(--chamgab-up) var(--confidence),
+    #e5e7eb var(--confidence)
+  );
 }
