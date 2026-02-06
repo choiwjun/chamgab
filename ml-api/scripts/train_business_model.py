@@ -53,12 +53,29 @@ class BusinessSuccessTrainer:
 
     # 피처 컬럼 (success_score 제외 - 데이터 누수 방지)
     FEATURE_COLUMNS = [
+        # 생존율 피처
         "survival_rate",
+        "survival_rate_normalized",
+        # 매출 피처
         "monthly_avg_sales",
+        "monthly_avg_sales_log",
         "sales_growth_rate",
+        "sales_per_store",
+        "sales_volatility",
+        # 경쟁 피처
         "store_count",
+        "store_count_log",
+        "density_level",
         "franchise_ratio",
         "competition_ratio",
+        "market_saturation",
+        # 복합 피처
+        "viability_index",
+        "growth_potential",
+        # 유동인구 피처
+        "foot_traffic_score",
+        "peak_hour_ratio",
+        "weekend_ratio",
     ]
 
     def __init__(self):
@@ -403,6 +420,60 @@ class BusinessSuccessTrainer:
 
         return grid_search.best_params_
 
+    def tune_with_optuna(
+        self,
+        X_train: pd.DataFrame,
+        y_train: pd.Series,
+        n_trials: int = 50
+    ) -> dict:
+        """
+        Optuna 기반 하이퍼파라미터 튜닝
+
+        Args:
+            X_train: 학습 데이터
+            y_train: 학습 타겟
+            n_trials: 탐색 시행 횟수
+
+        Returns:
+            최적 파라미터
+        """
+        import optuna
+        optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+        print(f"\n{'='*60}")
+        print(f"Optuna 하이퍼파라미터 튜닝 ({n_trials} trials)")
+        print(f"{'='*60}")
+
+        def objective(trial):
+            params = {
+                "n_estimators": trial.suggest_int("n_estimators", 100, 500),
+                "max_depth": trial.suggest_int("max_depth", 3, 10),
+                "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
+                "subsample": trial.suggest_float("subsample", 0.6, 1.0),
+                "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
+                "min_child_weight": trial.suggest_int("min_child_weight", 1, 10),
+                "gamma": trial.suggest_float("gamma", 0.0, 1.0),
+                "reg_alpha": trial.suggest_float("reg_alpha", 0.0, 1.0),
+                "reg_lambda": trial.suggest_float("reg_lambda", 0.5, 3.0),
+                "random_state": 42,
+                "n_jobs": -1,
+            }
+
+            model = xgb.XGBClassifier(**params)
+            skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+            scores = cross_val_score(model, X_train, y_train, cv=skf, scoring="accuracy")
+            return scores.mean()
+
+        study = optuna.create_study(direction="maximize")
+        study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
+
+        print(f"\n최적 파라미터:")
+        for key, value in study.best_params.items():
+            print(f"  {key}: {value}")
+        print(f"\n최고 점수: {study.best_value:.4f}")
+
+        return study.best_params
+
 
 def main():
     parser = argparse.ArgumentParser(description="창업 성공 예측 모델 학습")
@@ -424,33 +495,41 @@ def main():
         else:
             raise ValueError("지원하지 않는 파일 형식입니다")
     else:
-        # 데모용 샘플 데이터 생성
+        # 데모용 샘플 데이터 생성 (BusinessFeatureEngineer 활용)
         print("⚠ 데이터 경로가 지정되지 않아 샘플 데이터를 사용합니다\n")
-        np.random.seed(42)
-        n_samples = 1000
 
-        df = pd.DataFrame({
-            "survival_rate": np.random.uniform(50, 90, n_samples),
-            "monthly_avg_sales": np.random.uniform(20000000, 80000000, n_samples),
-            "sales_growth_rate": np.random.uniform(-5, 10, n_samples),
-            "store_count": np.random.randint(50, 200, n_samples),
-            "franchise_ratio": np.random.uniform(0.1, 0.6, n_samples),
-            "competition_ratio": np.random.uniform(0.8, 2.0, n_samples),
-            "success_score": np.random.uniform(40, 90, n_samples),
-        })
+        import sys
+        from pathlib import Path as PathLib
+        sys.path.insert(0, str(PathLib(__file__).parent.parent))
+        from scripts.feature_engineering import BusinessFeatureEngineer
 
-        # 타겟 생성: success_score 60점 기준
-        df["success"] = (df["success_score"] >= 60).astype(int)
+        bfe = BusinessFeatureEngineer()
+        X_full, y_full, df = bfe.prepare_training_data(n_samples=2000)
+
+        # feature_engineering에서 생성한 피처를 사용
+        df_with_features = df.copy()
 
     # 트레이너 초기화
     trainer = BusinessSuccessTrainer()
 
     # 데이터 준비
-    X_train, X_test, y_train, y_test = trainer.prepare_data(df)
+    if args.data:
+        X_train, X_test, y_train, y_test = trainer.prepare_data(df)
+    else:
+        # BusinessFeatureEngineer에서 이미 준비된 데이터 사용
+        from sklearn.model_selection import train_test_split
+        X_train, X_test, y_train, y_test = train_test_split(
+            X_full, y_full, test_size=0.2, random_state=42, stratify=y_full
+        )
+        trainer.feature_names = list(X_full.columns)
+        print(f"\nTrain set: {len(X_train)}건")
+        print(f"Test set: {len(X_test)}건")
+        print(f"피처 수: {len(trainer.feature_names)}")
+        print(f"클래스 분포 (Train): {y_train.value_counts().to_dict()}")
 
     # 하이퍼파라미터 튜닝 (옵션)
     if args.tune:
-        best_params = trainer.tune_hyperparameters(X_train, y_train)
+        best_params = trainer.tune_with_optuna(X_train, y_train, n_trials=50)
         # 기본 파라미터에 최적 파라미터 병합
         params = {**trainer.DEFAULT_PARAMS, **best_params}
     else:

@@ -598,3 +598,241 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# ============================================================================
+# 창업 성공 예측용 Feature Engineering (P5-ML-T1)
+# ============================================================================
+
+class BusinessFeatureEngineer:
+    """창업 성공 예측 모델용 피처 엔지니어링
+
+    피처 카테고리:
+    - 생존율 피처: survival_rate, survival_rate_normalized
+    - 매출 피처: monthly_avg_sales, sales_growth_rate, sales_per_store, sales_volatility
+    - 경쟁 피처: store_count, density_level, franchise_ratio, competition_ratio, market_saturation
+    - 복합 피처: success_score, viability_index, growth_potential
+    - 유동인구 피처: foot_traffic_score, peak_hour_ratio, weekend_ratio
+    """
+
+    # 상권 밀집도 기준
+    DENSITY_THRESHOLDS = {
+        'low': (0, 50),
+        'medium': (50, 100),
+        'high': (100, 200),
+        'very_high': (200, float('inf')),
+    }
+
+    # 피처 컬럼 정의
+    FEATURE_COLUMNS = [
+        # 생존율 피처
+        'survival_rate',
+        'survival_rate_normalized',
+        # 매출 피처
+        'monthly_avg_sales',
+        'monthly_avg_sales_log',
+        'sales_growth_rate',
+        'sales_per_store',
+        'sales_volatility',
+        # 경쟁 피처
+        'store_count',
+        'store_count_log',
+        'density_level',
+        'franchise_ratio',
+        'competition_ratio',
+        'market_saturation',
+        # 복합 피처
+        'viability_index',
+        'growth_potential',
+        # 유동인구 피처
+        'foot_traffic_score',
+        'peak_hour_ratio',
+        'weekend_ratio',
+    ]
+
+    def __init__(self):
+        self.scaler = None
+        self.feature_names = self.FEATURE_COLUMNS.copy()
+        self.is_fitted = False
+
+    def create_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """상권 분석용 피처 생성"""
+        df = df.copy()
+
+        # 1. 생존율 피처
+        df['survival_rate'] = df['survival_rate'].fillna(70.0)
+        df['survival_rate_normalized'] = df['survival_rate'] / 100.0
+
+        # 2. 매출 피처
+        df['monthly_avg_sales'] = df['monthly_avg_sales'].fillna(df['monthly_avg_sales'].median() if len(df) > 0 else 30000000)
+        df['monthly_avg_sales_log'] = np.log1p(df['monthly_avg_sales'])
+        df['sales_growth_rate'] = df['sales_growth_rate'].fillna(0.0)
+
+        # 매출/점포수 비율
+        df['store_count'] = df['store_count'].fillna(100)
+        df['sales_per_store'] = df['monthly_avg_sales'] / df['store_count'].replace(0, 1)
+
+        # 매출 변동성 (성장률 절대값 기반 추정)
+        df['sales_volatility'] = df['sales_growth_rate'].abs()
+
+        # 3. 경쟁 피처
+        df['store_count_log'] = np.log1p(df['store_count'])
+
+        # 밀집도 레벨 (0=low, 1=medium, 2=high, 3=very_high)
+        df['density_level'] = pd.cut(
+            df['store_count'],
+            bins=[0, 50, 100, 200, float('inf')],
+            labels=[0, 1, 2, 3],
+            include_lowest=True
+        ).astype(float).fillna(1.0)
+
+        df['franchise_ratio'] = df['franchise_ratio'].fillna(0.3)
+        df['competition_ratio'] = df['competition_ratio'].fillna(1.0)
+
+        # 시장 포화도 (점포수 * 경쟁비율 / 매출)
+        sales_safe = df['monthly_avg_sales'].replace(0, 1)
+        df['market_saturation'] = (df['store_count'] * df['competition_ratio']) / (sales_safe / 10000000)
+        df['market_saturation'] = df['market_saturation'].clip(0, 100)
+
+        # 4. 복합 피처
+        # 사업 가능성 지수 (생존율 * 매출 성장률 가중)
+        df['viability_index'] = (
+            df['survival_rate_normalized'] * 0.4 +
+            (df['sales_growth_rate'].clip(-10, 20) + 10) / 30 * 0.3 +
+            (1 - df['competition_ratio'].clip(0, 2) / 2) * 0.3
+        ) * 100
+        df['viability_index'] = df['viability_index'].clip(0, 100)
+
+        # 성장 잠재력 (매출 성장률 + 낮은 포화도)
+        df['growth_potential'] = (
+            df['sales_growth_rate'].clip(-10, 20) / 20 * 50 +
+            (100 - df['market_saturation']) / 100 * 50
+        ).clip(0, 100)
+
+        # 5. 유동인구 피처 (시뮬레이션)
+        if 'foot_traffic_score' not in df.columns:
+            np.random.seed(42)
+            n = len(df)
+            df['foot_traffic_score'] = np.random.uniform(30, 95, n)
+            df['peak_hour_ratio'] = np.random.uniform(0.15, 0.45, n)
+            df['weekend_ratio'] = np.random.uniform(0.3, 0.7, n)
+
+        return df
+
+    def normalize_features(self, df: pd.DataFrame, fit: bool = True) -> pd.DataFrame:
+        """피처 정규화"""
+        df = df.copy()
+
+        numeric_cols = [col for col in self.FEATURE_COLUMNS if col in df.columns]
+
+        if fit:
+            from sklearn.preprocessing import StandardScaler
+            self.scaler = StandardScaler()
+            df[numeric_cols] = self.scaler.fit_transform(df[numeric_cols].fillna(0))
+            self.is_fitted = True
+        elif self.scaler is not None:
+            df[numeric_cols] = self.scaler.transform(df[numeric_cols].fillna(0))
+
+        return df
+
+    def prepare_training_data(self, df: pd.DataFrame = None, n_samples: int = 2000) -> Tuple:
+        """
+        학습용 X, y 데이터 준비
+
+        Args:
+            df: 외부 데이터프레임 (없으면 시뮬레이션 생성)
+            n_samples: 시뮬레이션 샘플 수
+
+        Returns:
+            (X, y, df_full) 튜플
+        """
+        if df is None or df.empty:
+            df = self._generate_training_data(n_samples)
+
+        # 피처 생성
+        df = self.create_features(df)
+
+        # 타겟 생성 (아직 없는 경우)
+        if 'success' not in df.columns:
+            df['success'] = (
+                (df['survival_rate'] > 65) &
+                (df['sales_growth_rate'] > -2) &
+                (df['viability_index'] > 50)
+            ).astype(int)
+
+        # X, y 분리
+        available_features = [col for col in self.FEATURE_COLUMNS if col in df.columns]
+        self.feature_names = available_features
+
+        X = df[available_features].fillna(0)
+        y = df['success']
+
+        print(f"BusinessFeatureEngineer: {len(X)}건, {len(available_features)}개 피처")
+        print(f"성공/실패 분포: {y.value_counts().to_dict()}")
+
+        return X, y, df
+
+    def _generate_training_data(self, n_samples: int = 2000) -> pd.DataFrame:
+        """현실적인 시뮬레이션 학습 데이터 생성"""
+        np.random.seed(42)
+
+        # 상권 유형별 특성 반영
+        data = {
+            'survival_rate': [],
+            'monthly_avg_sales': [],
+            'sales_growth_rate': [],
+            'store_count': [],
+            'franchise_ratio': [],
+            'competition_ratio': [],
+        }
+
+        # 성공 상권 (60%)
+        n_success = int(n_samples * 0.6)
+        data['survival_rate'].extend(np.random.normal(78, 8, n_success).clip(55, 98))
+        data['monthly_avg_sales'].extend(np.random.lognormal(17.5, 0.5, n_success).clip(15000000, 200000000))
+        data['sales_growth_rate'].extend(np.random.normal(3.5, 4, n_success).clip(-8, 25))
+        data['store_count'].extend(np.random.poisson(80, n_success).clip(10, 300))
+        data['franchise_ratio'].extend(np.random.beta(3, 7, n_success).clip(0.05, 0.8))
+        data['competition_ratio'].extend(np.random.normal(1.0, 0.25, n_success).clip(0.5, 1.8))
+
+        # 실패 상권 (40%)
+        n_fail = n_samples - n_success
+        data['survival_rate'].extend(np.random.normal(55, 12, n_fail).clip(20, 75))
+        data['monthly_avg_sales'].extend(np.random.lognormal(16.8, 0.6, n_fail).clip(5000000, 100000000))
+        data['sales_growth_rate'].extend(np.random.normal(-2.0, 5, n_fail).clip(-15, 10))
+        data['store_count'].extend(np.random.poisson(120, n_fail).clip(15, 400))
+        data['franchise_ratio'].extend(np.random.beta(2, 5, n_fail).clip(0.05, 0.9))
+        data['competition_ratio'].extend(np.random.normal(1.5, 0.35, n_fail).clip(0.7, 3.0))
+
+        df = pd.DataFrame(data)
+
+        # 타겟: 생존율 > 65 AND 매출 성장률 > -2
+        df['success'] = (
+            (df['survival_rate'] > 65) &
+            (df['sales_growth_rate'] > -2)
+        ).astype(int)
+
+        # 셔플
+        df = df.sample(frac=1, random_state=42).reset_index(drop=True)
+
+        return df
+
+    def save(self, path: str):
+        """피처 엔지니어 저장"""
+        artifacts = {
+            'scaler': self.scaler,
+            'feature_names': self.feature_names,
+            'feature_columns': self.FEATURE_COLUMNS,
+        }
+        with open(path, 'wb') as f:
+            pickle.dump(artifacts, f)
+        print(f"BusinessFeatureEngineer saved to {path}")
+
+    def load(self, path: str):
+        """피처 엔지니어 로드"""
+        with open(path, 'rb') as f:
+            artifacts = pickle.load(f)
+        self.scaler = artifacts.get('scaler')
+        self.feature_names = artifacts.get('feature_names', self.FEATURE_COLUMNS)
+        self.is_fitted = True
+        print(f"BusinessFeatureEngineer loaded from {path}")
