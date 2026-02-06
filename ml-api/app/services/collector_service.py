@@ -404,33 +404,25 @@ class CollectorService:
                     "sigungu": code_to_name.get(item.get("region_code", ""), ""),
                 })
 
-            # 배치 insert (500개씩)
+            # 배치 upsert (500개씩, 중복은 무시)
             inserted = 0
             batch_size = 500
             for i in range(0, len(rows), batch_size):
                 batch = rows[i:i + batch_size]
                 try:
-                    result = client.table("transactions").insert(batch).execute()
+                    result = (
+                        client.table("transactions")
+                        .upsert(batch, on_conflict="transaction_date,region_code,apt_name,area_exclusive,floor,price")
+                        .execute()
+                    )
                     inserted += len(result.data) if result.data else 0
                 except Exception as e:
-                    err_msg = str(e)
-                    # 컬럼이 아직 없으면 기본 컬럼만으로 재시도
-                    if "column" in err_msg and ("region_code" in err_msg or "apt_name" in err_msg or "built_year" in err_msg):
-                        print(f"[Supabase] 신규 컬럼 미적용, 기본 컬럼으로 재시도 (배치 {i//batch_size})")
-                        basic_batch = [{
-                            "transaction_date": r["transaction_date"],
-                            "price": r["price"],
-                            "area_exclusive": r["area_exclusive"],
-                            "floor": r["floor"],
-                            "dong": r["dong"],
-                        } for r in batch]
-                        try:
-                            result = client.table("transactions").insert(basic_batch).execute()
-                            inserted += len(result.data) if result.data else 0
-                        except Exception as e2:
-                            print(f"[Supabase] 기본 컬럼 저장도 실패: {e2}")
-                    else:
-                        print(f"[Supabase] 배치 {i//batch_size} 저장 실패: {e}")
+                    # upsert 실패 시 일반 insert로 fallback
+                    try:
+                        result = client.table("transactions").insert(batch).execute()
+                        inserted += len(result.data) if result.data else 0
+                    except Exception as e2:
+                        print(f"[Supabase] 배치 {i//batch_size} 저장 실패: {e2}")
 
             return inserted
         except Exception as e:

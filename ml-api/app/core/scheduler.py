@@ -3,6 +3,7 @@
 자동 수집-학습-서빙 파이프라인 스케줄러
 
 APScheduler를 사용한 정기 데이터 수집 및 모델 학습 자동화
+- 서버 시작 90초 후: 누락 데이터 캐치업 수집 + 학습
 - 매일 오전 6시: 전일 실거래가 수집
 - 매주 월요일 오전 7시: 주간 시세 지수 수집
 - 매주 화요일 오전 3시: 상권 모델 재학습
@@ -13,12 +14,13 @@ import asyncio
 import pickle
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
 
 from app.services.collector_service import collector_service
 from app.services.analyzer_service import analyzer_service
@@ -149,32 +151,36 @@ class DataScheduler:
     async def monthly_collection(self):
         """
         월간 수집 작업
-        - 전국 데이터 전월 수집
+        - 전국 데이터 최근 3개월 수집 (UPSERT로 중복 방지)
         - 매월 1일 오전 8시 실행
         """
         print(f"[스케줄러] 월간 전국 수집 시작: {datetime.now()}")
 
         now = datetime.now()
         year = now.year
-        month = now.month - 1 if now.month > 1 else 12
-        if month == 12:
-            year -= 1
+
+        # 최근 3개월 수집 (중복은 UPSERT가 처리)
+        months = []
+        for i in range(1, 4):  # 1~3개월 전
+            d = now.replace(day=1) - timedelta(days=i * 28)
+            if d.month not in months:
+                months.append(d.month)
 
         try:
             job = collector_service.create_job(
                 region_codes=collector_service.get_all_region_codes(),
                 year=year,
-                months=[month]
+                months=months
             )
 
             await collector_service.collect_nationwide(
                 year=year,
-                months=[month],
+                months=months,
                 job_id=job.job_id
             )
 
             self.last_collection_job = job.job_id
-            print(f"[스케줄러] 월간 수집 완료: {job.job_id}")
+            print(f"[스케줄러] 월간 수집 완료 (months={months}): {job.job_id}")
 
         except Exception as e:
             print(f"[스케줄러] 월간 수집 실패: {e}")
@@ -358,6 +364,113 @@ class DataScheduler:
         print(f"[스케줄러] 월간 전체 모델 학습 완료: {job_id}")
 
     # ─────────────────────────────────────────────
+    # 시작 시 캐치업 (놓친 데이터 자동 수집)
+    # ─────────────────────────────────────────────
+
+    async def startup_catchup(self):
+        """
+        서버 시작 시 놓친 데이터를 자동 수집 + 학습
+
+        Supabase에서 가장 최근 거래일을 조회하여,
+        그 이후 누락된 월들을 전국 수집 → 모델 재학습
+        """
+        print(f"[캐치업] 누락 데이터 캐치업 시작: {datetime.now()}")
+
+        try:
+            # Supabase에서 최근 거래일 조회
+            from app.core.database import get_supabase_client
+            client = get_supabase_client()
+
+            result = (
+                client.table("transactions")
+                .select("transaction_date")
+                .order("transaction_date", desc=True)
+                .limit(1)
+                .execute()
+            )
+
+            now = datetime.now()
+
+            if result.data and result.data[0].get("transaction_date"):
+                last_date_str = result.data[0]["transaction_date"]
+                last_date = datetime.strptime(last_date_str[:10], "%Y-%m-%d")
+                gap_days = (now - last_date).days
+                print(f"[캐치업] 최근 거래일: {last_date_str}, 갭: {gap_days}일")
+
+                if gap_days <= 15:
+                    print("[캐치업] 데이터 최신 상태, 캐치업 불필요")
+                    return
+
+                # 누락된 월 계산 (최대 6개월)
+                missing_months = []
+                cursor = last_date.replace(day=1)
+                end = now.replace(day=1)
+                while cursor <= end:
+                    missing_months.append((cursor.year, cursor.month))
+                    # 다음 달로
+                    if cursor.month == 12:
+                        cursor = cursor.replace(year=cursor.year + 1, month=1)
+                    else:
+                        cursor = cursor.replace(month=cursor.month + 1)
+
+                # 최대 6개월만
+                missing_months = missing_months[-6:]
+                print(f"[캐치업] 수집 대상: {missing_months}")
+
+            else:
+                # 데이터가 아예 없음 → 최근 3개월 전국 수집
+                print("[캐치업] 기존 데이터 없음, 최근 3개월 수집")
+                missing_months = []
+                for i in range(1, 4):
+                    d = now.replace(day=1) - timedelta(days=i * 28)
+                    missing_months.append((d.year, d.month))
+                missing_months.reverse()
+
+            if not missing_months:
+                print("[캐치업] 수집 대상 없음")
+                return
+
+            # 연도별로 그룹화하여 수집
+            from collections import defaultdict
+            by_year = defaultdict(list)
+            for y, m in missing_months:
+                by_year[y].append(m)
+
+            total_collected = 0
+            for year, months in by_year.items():
+                print(f"[캐치업] {year}년 {months}월 전국 수집 시작...")
+                try:
+                    job = collector_service.create_job(
+                        region_codes=collector_service.get_all_region_codes(),
+                        year=year,
+                        months=months
+                    )
+                    await collector_service.collect_nationwide(
+                        year=year,
+                        months=months,
+                        job_id=job.job_id
+                    )
+                    total_collected += job.molit_count
+                    self.last_collection_job = job.job_id
+                    print(f"[캐치업] {year}년 수집 완료: {job.molit_count}건")
+                except Exception as e:
+                    print(f"[캐치업] {year}년 수집 실패: {e}")
+
+            print(f"[캐치업] 전체 수집 완료: {total_collected}건")
+
+            # 수집 후 모델 재학습
+            if total_collected > 0:
+                print("[캐치업] 신규 데이터 수집됨, 모델 재학습 시작...")
+                await self.monthly_full_training()
+            else:
+                print("[캐치업] 신규 데이터 없음, 학습 건너뜀")
+
+        except Exception as e:
+            print(f"[캐치업] 캐치업 실패: {e}")
+            import traceback
+            traceback.print_exc()
+
+    # ─────────────────────────────────────────────
     # 스케줄러 제어
     # ─────────────────────────────────────────────
 
@@ -411,6 +524,16 @@ class DataScheduler:
             replace_existing=True,
         )
 
+        # 시작 90초 후 캐치업 (놓친 데이터 자동 수집)
+        catchup_time = datetime.now() + timedelta(seconds=90)
+        self.scheduler.add_job(
+            self.startup_catchup,
+            DateTrigger(run_date=catchup_time),
+            id="startup_catchup",
+            name="시작 시 누락 데이터 캐치업",
+            replace_existing=True,
+        )
+
         self.scheduler.start()
         self.is_running = True
         print("[스케줄러] 수집-학습 통합 스케줄러 시작")
@@ -450,6 +573,8 @@ class DataScheduler:
             await self.weekly_business_training()
         elif job_type == "train_all":
             await self.monthly_full_training()
+        elif job_type == "catchup":
+            await self.startup_catchup()
         else:
             raise ValueError(f"Unknown job type: {job_type}")
 
