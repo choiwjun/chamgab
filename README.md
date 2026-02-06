@@ -167,11 +167,30 @@ python -m scripts.train_model --csv scripts/kb_transactions.csv
 python -m scripts.train_model --tune --trials 50 --csv scripts/kb_transactions.csv
 ```
 
-### 모델 성능
+### 아파트 가격 예측 모델
 
+- **알고리즘**: XGBoost Regressor (43개 피처)
 - **MAPE**: 5.50%
 - **R²**: 0.9917
 - **주요 피처**: 지역(74%), 면적(18%), 브랜드(3%)
+
+### 창업 성공 예측 모델 (P5)
+
+```bash
+# 모델 학습
+python -m scripts.train_business_model
+
+# Optuna 하이퍼파라미터 튜닝
+python -m scripts.train_business_model --tune
+
+# 모델 평가
+python -m scripts.evaluate_business_model --retrain
+```
+
+- **알고리즘**: XGBoost Classifier (19개 피처)
+- **Accuracy**: 99.75% (5-Fold CV)
+- **F1 Score**: 1.0000
+- **피처**: 생존율, 매출, 경쟁, 복합, 유동인구
 
 ---
 
@@ -190,22 +209,41 @@ python -m scripts.train_model --tune --trials 50 --csv scripts/kb_transactions.c
 
 ### 상권 분석 API
 
-| 엔드포인트                                  | 설명              |
-| ------------------------------------------- | ----------------- |
-| `GET /api/business/success-probability`     | 창업 성공 확률    |
-| `GET /api/business/demographics`            | 인구통계 분석     |
-| `GET /api/business/peak-hours`              | 시간대별 유동인구 |
-| `GET /api/business/weekend-analysis`        | 주말/평일 비교    |
-| `GET /api/business/industry-recommendation` | AI 업종 추천      |
+| 엔드포인트                                                 | 설명              |
+| ---------------------------------------------------------- | ----------------- |
+| `POST /api/commercial/predict`                             | 창업 성공 확률    |
+| `GET /api/commercial/districts`                            | 상권 목록         |
+| `GET /api/commercial/industries`                           | 업종 목록         |
+| `POST /api/commercial/business/compare`                    | 지역 비교         |
+| `GET /api/commercial/industries/{code}/statistics`         | 업종 통계         |
+| `GET /api/commercial/districts/{code}/peak-hours`          | 시간대별 유동인구 |
+| `GET /api/commercial/districts/{code}/demographics`        | 연령대별 분석     |
+| `GET /api/commercial/districts/{code}/weekday-weekend`     | 주말/평일 비교    |
+| `GET /api/commercial/districts/{code}/profile`             | 상권 프로필       |
+| `GET /api/commercial/districts/{code}/growth-potential`    | 성장 가능성       |
+| `POST /api/commercial/districts/{code}/recommend-industry` | AI 업종 추천      |
+
+### 아파트 고도화 API
+
+| 엔드포인트                                | 설명           |
+| ----------------------------------------- | -------------- |
+| `GET /api/chamgab/{id}/investment-score`  | 투자 점수 분석 |
+| `GET /api/chamgab/{id}/future-prediction` | 미래 가격 예측 |
 
 ### 통합 분석 API
 
 | 엔드포인트                              | 설명            |
 | --------------------------------------- | --------------- |
 | `GET /api/integrated/analysis`          | 통합 투자 분석  |
-| `GET /api/integrated/alerts/:user`      | 알림 센터       |
+| `POST /api/integrated/alerts/subscribe` | 알림 구독       |
 | `POST /api/integrated/reports/generate` | PDF 리포트 생성 |
-| `GET /api/integrated/reports/:id`       | 리포트 다운로드 |
+
+### 게이미피케이션 API
+
+| 엔드포인트                                 | 설명          |
+| ------------------------------------------ | ------------- |
+| `GET /api/gamification/badges`             | 배지 목록     |
+| `GET /api/gamification/leaderboard/weekly` | 주간 리더보드 |
 
 ---
 
@@ -231,14 +269,21 @@ npx playwright test --headed
 
 ### 테스트 커버리지
 
-- **인증**: 로그인, 회원가입 (6 tests)
-- **홈 화면**: 검색, 매물 카드 (3 tests)
-- **매물 상세**: 참값 분석, 관심 매물 (4 tests)
-- **검색**: 필터링, 무한 스크롤, 지도 (5 tests)
-- **상권 분석**: 성공 확률, 업종 추천 (5 tests)
-- **통합 기능**: 대시보드, 알림, 리포트 (5 tests)
+| 파일                          | 범위                      | 테스트 수 |
+| ----------------------------- | ------------------------- | --------- |
+| `auth.spec.ts`                | 로그인, 회원가입          | 6         |
+| `home.spec.ts`                | 검색, 매물 카드           | 3         |
+| `property-detail.spec.ts`     | 참값 분석, 관심 매물      | 4         |
+| `search.spec.ts`              | 필터링, 무한 스크롤, 지도 | 5         |
+| `business-analysis.spec.ts`   | P6 고도화 기능            | 5         |
+| `business-main.spec.ts`       | P5-S1-V 메인 화면 검증    | 12        |
+| `business-result.spec.ts`     | P5-S2-V 결과 화면 검증    | 8         |
+| `business-compare.spec.ts`    | P5-S3-V 비교 화면 검증    | 10        |
+| `business-industry.spec.ts`   | P5-S4-V 업종 통계 검증    | 9         |
+| `business-flow.spec.ts`       | P5 전체 플로우 검증       | 10        |
+| `integrated-features.spec.ts` | P6 통합 기능              | 5         |
 
-**총 28개 테스트** (Chromium + Mobile)
+**총 77개 테스트** (Chromium + Mobile)
 
 ---
 
@@ -349,8 +394,8 @@ railway variables set DATABASE_URL=...
 
 ### 📈 향후 계획
 
-- 미래 가격 예측 (시계열 분석)
-- 게이미피케이션 (레벨, 뱃지, 리더보드)
+- ~~미래 가격 예측 (시계열 분석)~~ ✅ 완료
+- ~~게이미피케이션 (레벨, 뱃지, 리더보드)~~ ✅ 완료
 - 모바일 앱 (React Native)
 - 커뮤니티 기능 (댓글, 리뷰)
 

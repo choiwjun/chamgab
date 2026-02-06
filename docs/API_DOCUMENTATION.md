@@ -126,16 +126,67 @@ Find similar transactions for comparison.
 
 ## Commercial Analysis Endpoints
 
+> **Base Path**: All commercial analysis endpoints use the ML API base URL (e.g., `http://localhost:8002`)
+>
+> **Actual Paths**: Endpoints are served through FastAPI at `/api/commercial/*`
+
+### 3.5. Districts & Industries (Reference Data)
+
+#### `GET /api/commercial/districts`
+
+Get list of commercial districts.
+
+**Response:**
+
+```json
+[
+  {
+    "code": "11680-001",
+    "name": "역삼역 상권",
+    "district_type": "발달상권"
+  }
+]
+```
+
+#### `GET /api/commercial/industries`
+
+Get list of industry categories.
+
+**Response:**
+
+```json
+[
+  {
+    "code": "I56111",
+    "name": "커피전문점",
+    "category": "음식점업"
+  }
+]
+```
+
+---
+
 ### 4. Success Probability
 
-#### `GET /api/business/success-probability`
+#### `POST /api/commercial/predict`
 
 Calculate business success probability for a district and industry.
 
-**Query Parameters:**
+**Request Body:**
 
-- `district_code` (string): Commercial district code (e.g., "11680-001")
-- `industry_code` (string): Industry classification code (e.g., "I56111")
+```json
+{
+  "district_code": "11680-001",
+  "industry_code": "I56111"
+}
+```
+
+> **Legacy**: `GET /api/business/success-probability` (deprecated)
+>
+> **Query Parameters (legacy):**
+>
+> - `district_code` (string): Commercial district code (e.g., "11680-001")
+> - `industry_code` (string): Industry classification code (e.g., "I56111")
 
 **Response:**
 
@@ -747,6 +798,195 @@ async def predict_price(region: str, area_m2: float, **kwargs):
 
 ---
 
+## P5/P6 Advanced Commercial Endpoints
+
+### 15. Region Comparison
+
+#### `POST /api/commercial/business/compare`
+
+Compare multiple regions for the same industry.
+
+**Request Body:**
+
+```json
+{
+  "district_codes": ["11680-001", "11680-002", "11310-001"],
+  "industry_code": "I56111"
+}
+```
+
+**Response:**
+
+```json
+{
+  "industry_code": "I56111",
+  "industry_name": "커피전문점",
+  "comparisons": [
+    {
+      "district_code": "11680-001",
+      "district_name": "역삼역 상권",
+      "success_probability": 75.5,
+      "survival_rate": 78.2,
+      "monthly_avg_sales": 42000000,
+      "store_count": 48,
+      "competition_ratio": 1.2,
+      "growth_rate": 5.3,
+      "overall_score": 82,
+      "rank": 1
+    }
+  ]
+}
+```
+
+---
+
+### 16. Industry Statistics
+
+#### `GET /api/commercial/industries/{code}/statistics`
+
+Get nationwide statistics for a specific industry.
+
+**Response:**
+
+```json
+{
+  "industry_code": "I56111",
+  "industry_name": "커피전문점",
+  "total_stores": 85420,
+  "avg_survival_rate": 72.3,
+  "avg_monthly_sales": 32500000,
+  "top_districts": [
+    {
+      "rank": 1,
+      "district_name": "역삼역 상권",
+      "success_probability": 82.5,
+      "monthly_avg_sales": 55000000
+    }
+  ]
+}
+```
+
+---
+
+### 17. Investment Score (Apartment)
+
+#### `GET /api/chamgab/{property_id}/investment-score`
+
+Get comprehensive investment analysis for a property.
+
+**Response:**
+
+```json
+{
+  "property_id": "uuid",
+  "investment_score": 85,
+  "grade": "A",
+  "roi": { "year_1": 5.2, "year_3": 18.5 },
+  "jeonse_ratio": 68.5,
+  "liquidity_score": 78,
+  "recommendation": "투자 가치 우수"
+}
+```
+
+---
+
+### 18. Future Price Prediction
+
+#### `GET /api/chamgab/{property_id}/future-prediction`
+
+Predict future apartment prices using time-series analysis.
+
+**Query Parameters:**
+
+- `months` (int, optional): Prediction period in months (default: 12, max: 36)
+
+**Response:**
+
+```json
+{
+  "property_id": "uuid",
+  "property_name": "래미안 역삼",
+  "current_price": 1250000000,
+  "historical_prices": [
+    { "date": "2024-01", "price": 1200000000, "transaction_count": 3 }
+  ],
+  "predictions": [
+    {
+      "date": "2025-03",
+      "predicted_price": 1280000000,
+      "lower_bound": 1220000000,
+      "upper_bound": 1340000000
+    }
+  ],
+  "trend": {
+    "direction": "상승",
+    "monthly_change_rate": 0.45,
+    "annual_change_rate": 5.4,
+    "volatility": 12.3,
+    "confidence": 78.5
+  },
+  "signals": [
+    {
+      "signal_type": "positive",
+      "title": "완만한 상승 추세",
+      "description": "월평균 0.45% 안정적으로 상승 중입니다."
+    }
+  ],
+  "prediction_method": "Linear Regression with Seasonal Adjustment"
+}
+```
+
+---
+
+### 19. Gamification
+
+#### `GET /api/gamification/badges`
+
+Get all available badges.
+
+#### `GET /api/gamification/users/{user_id}/badges`
+
+Get user's earned badges.
+
+#### `POST /api/gamification/users/{user_id}/activity`
+
+Record user activity and award points/badges.
+
+#### `GET /api/gamification/leaderboard/weekly`
+
+Get weekly leaderboard (TOP 10).
+
+---
+
+## ML Model Documentation
+
+### Apartment Price Prediction Model
+
+- **Algorithm**: XGBoost Regressor
+- **Features**: 43개 (기존 13 + POI 12 + 시장/매물 18)
+- **Performance**: MAPE 5.50%, R² 0.9917
+- **Model File**: `ml-api/app/models/xgboost_model.pkl`
+
+### Business Success Prediction Model
+
+- **Algorithm**: XGBoost Classifier
+- **Features**: 19개 (생존율, 매출, 경쟁, 복합, 유동인구)
+- **Performance**: Accuracy 99.75% (5-Fold CV), F1 1.0000
+- **Hyperparameter Tuning**: Optuna (50 trials)
+- **Model File**: `ml-api/models/business_model.pkl`
+
+**Feature Categories:**
+
+| Category | Features                                                                                           |
+| -------- | -------------------------------------------------------------------------------------------------- |
+| 생존율   | survival_rate, survival_rate_normalized                                                            |
+| 매출     | monthly_avg_sales, monthly_avg_sales_log, sales_growth_rate, sales_per_store, sales_volatility     |
+| 경쟁     | store_count, store_count_log, density_level, franchise_ratio, competition_ratio, market_saturation |
+| 복합     | viability_index, growth_potential                                                                  |
+| 유동인구 | foot_traffic_score, peak_hour_ratio, weekend_ratio                                                 |
+
+---
+
 ## Testing
 
 API documentation is auto-generated and available at:
@@ -754,7 +994,17 @@ API documentation is auto-generated and available at:
 - **ML API Swagger UI**: `http://localhost:8002/docs`
 - **ML API ReDoc**: `http://localhost:8002/redoc`
 
-Use Postman collection: [Download](./postman_collection.json)
+### E2E Test Files
+
+| File                              | Coverage                    |
+| --------------------------------- | --------------------------- |
+| `e2e/business-main.spec.ts`       | P5-S1-V: 상권분석 메인 화면 |
+| `e2e/business-result.spec.ts`     | P5-S2-V: 분석 결과 화면     |
+| `e2e/business-compare.spec.ts`    | P5-S3-V: 지역 비교 화면     |
+| `e2e/business-industry.spec.ts`   | P5-S4-V: 업종별 통계 화면   |
+| `e2e/business-flow.spec.ts`       | P5-Integration: 전체 플로우 |
+| `e2e/business-analysis.spec.ts`   | P6: 고도화 기능             |
+| `e2e/integrated-features.spec.ts` | P6: 통합 기능               |
 
 ---
 
