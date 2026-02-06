@@ -19,6 +19,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from app.core.database import get_supabase_client
+from app.services.business_model_service import business_model_service
 
 
 router = APIRouter(prefix="/api/commercial", tags=["commercial"])
@@ -455,7 +456,7 @@ async def predict_business_success(
         )
 
     # 피처 준비 (없는 값은 기본값 사용)
-    features = {
+    feat = {
         "survival_rate": survival_rate or 75.0,
         "monthly_avg_sales": monthly_avg_sales or 40000000,
         "sales_growth_rate": sales_growth_rate or 3.0,
@@ -464,41 +465,48 @@ async def predict_business_success(
         "competition_ratio": competition_ratio or 1.2,
     }
 
-    # 성공 확률 계산 (간단한 규칙 기반)
-    # 실제로는 train_business_model.py의 모델을 사용
-    score = 0.0
-    score += features["survival_rate"] * 0.4  # 생존율 40%
-    score += min(features["sales_growth_rate"] * 5, 20)  # 매출 증가율 20%
-    score += max(20 - features["competition_ratio"] * 10, 0)  # 경쟁도 20%
-    score += features["franchise_ratio"] * 20  # 프랜차이즈 비율 20%
+    # 학습된 XGBoost 모델로 예측 (모델 미로드 시 규칙 기반 폴백)
+    result = business_model_service.predict(
+        survival_rate=feat["survival_rate"],
+        monthly_avg_sales=feat["monthly_avg_sales"],
+        sales_growth_rate=feat["sales_growth_rate"],
+        store_count=feat["store_count"],
+        franchise_ratio=feat["franchise_ratio"],
+        competition_ratio=feat["competition_ratio"],
+    )
 
-    success_probability = min(max(score, 0), 100)
+    success_probability = result["success_probability"]
+    confidence = result["confidence"]
 
-    # 신뢰도 계산
-    confidence = 85.0  # 기본 신뢰도
+    # 한국어 요인명 매핑
+    factor_name_map = {
+        "survival_rate": "생존율",
+        "survival_rate_normalized": "생존율(정규화)",
+        "monthly_avg_sales": "월평균 매출",
+        "monthly_avg_sales_log": "월평균 매출(로그)",
+        "sales_growth_rate": "매출 증가율",
+        "sales_per_store": "점포당 매출",
+        "sales_volatility": "매출 변동성",
+        "store_count": "점포 수",
+        "store_count_log": "점포 수(로그)",
+        "density_level": "밀집도",
+        "franchise_ratio": "프랜차이즈 비율",
+        "competition_ratio": "경쟁도",
+        "market_saturation": "시장 포화도",
+        "viability_index": "사업 생존 가능성",
+        "growth_potential": "성장 잠재력",
+        "foot_traffic_score": "유동인구 점수",
+        "peak_hour_ratio": "피크 시간 비율",
+        "weekend_ratio": "주말 비율",
+    }
 
-    # 요인 분석
     factors = [
         PredictionFactor(
-            name="생존율",
-            impact=features["survival_rate"] * 0.4,
-            direction="positive" if features["survival_rate"] > 70 else "negative"
-        ),
-        PredictionFactor(
-            name="매출 증가율",
-            impact=abs(features["sales_growth_rate"] * 5),
-            direction="positive" if features["sales_growth_rate"] > 0 else "negative"
-        ),
-        PredictionFactor(
-            name="경쟁도",
-            impact=abs(features["competition_ratio"] * 10),
-            direction="negative" if features["competition_ratio"] > 1.5 else "positive"
-        ),
-        PredictionFactor(
-            name="프랜차이즈 비율",
-            impact=features["franchise_ratio"] * 20,
-            direction="positive" if features["franchise_ratio"] > 0.2 else "neutral"
-        ),
+            name=factor_name_map.get(c["name"], c["name"]),
+            impact=c["importance"],
+            direction=c["direction"],
+        )
+        for c in result.get("feature_contributions", [])
     ]
 
     # 요인을 영향력 순으로 정렬

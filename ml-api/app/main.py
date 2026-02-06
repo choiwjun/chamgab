@@ -23,6 +23,7 @@ from app.api import predict, factors, similar, health, commercial, chamgab, inte
 from app.api import collect, analyze, scheduler
 from app.core.config import settings
 from app.core.scheduler import data_scheduler
+from app.services.business_model_service import business_model_service
 
 
 # 모델 경로
@@ -30,6 +31,7 @@ MODELS_DIR = Path(__file__).parent / "models"
 MODEL_PATH = MODELS_DIR / "xgboost_model.pkl"
 SHAP_PATH = MODELS_DIR / "shap_explainer.pkl"
 ARTIFACTS_PATH = MODELS_DIR / "feature_artifacts.pkl"
+BUSINESS_MODEL_PATH = MODELS_DIR / "business_model.pkl"
 
 
 @asynccontextmanager
@@ -56,6 +58,12 @@ async def lifespan(app: FastAPI):
             with open(ARTIFACTS_PATH, "rb") as f:
                 app.state.feature_artifacts = pickle.load(f)
             print(f"Feature artifacts loaded: {ARTIFACTS_PATH}")
+
+        # 상권 성공 예측 모델 로드
+        if BUSINESS_MODEL_PATH.exists():
+            business_model_service.load(str(BUSINESS_MODEL_PATH))
+        else:
+            print("Warning: No business model found. Run train_business_model.py first.")
 
         if app.state.model:
             print("ML models loaded successfully!")

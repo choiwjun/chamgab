@@ -479,7 +479,7 @@ def main():
     parser = argparse.ArgumentParser(description="창업 성공 예측 모델 학습")
     parser.add_argument("--data", type=str, help="학습 데이터 경로 (CSV/Parquet)")
     parser.add_argument("--tune", action="store_true", help="하이퍼파라미터 튜닝")
-    parser.add_argument("--output", type=str, default="models/business_model.pkl", help="모델 저장 경로")
+    parser.add_argument("--output", type=str, default="app/models/business_model.pkl", help="모델 저장 경로")
     args = parser.parse_args()
 
     print(f"\n{'='*60}")
