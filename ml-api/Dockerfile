@@ -15,8 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application
 COPY . .
 
-# Railway uses $PORT environment variable
-ENV PORT=8000
-EXPOSE ${PORT}
+# HuggingFace Spaces uses port 7860
+EXPOSE 7860
 
-CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT}
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7860"]
