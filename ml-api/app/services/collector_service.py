@@ -135,18 +135,22 @@ class CollectorService:
         try:
             async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=30)) as resp:
                 if resp.status == 200:
-                    text = await resp.text()
-                    return self._parse_molit_xml(text, year_month, region_code)
+                    # raw bytes로 읽어서 XML 파서가 인코딩을 직접 처리하도록 함
+                    raw_bytes = await resp.read()
+                    return self._parse_molit_xml(raw_bytes, year_month, region_code)
                 return []
         except Exception as e:
             print(f"[MOLIT] {region_code}/{year_month}: {e}")
             return []
 
-    def _parse_molit_xml(self, xml_text: str, year_month: str, region_code: str) -> List[dict]:
-        """국토부 XML 파싱"""
+    def _parse_molit_xml(self, xml_data, year_month: str, region_code: str) -> List[dict]:
+        """국토부 XML 파싱 (bytes → ET가 인코딩 자동 감지)"""
         data = []
         try:
-            root = ET.fromstring(xml_text)
+            # bytes면 ET가 XML 선언에서 인코딩 자동 감지, str이면 그대로 파싱
+            if isinstance(xml_data, str):
+                xml_data = xml_data.encode("utf-8")
+            root = ET.fromstring(xml_data)
             result_code = root.find(".//resultCode")
             if result_code is not None and result_code.text not in ("00", "000"):
                 return []
@@ -211,7 +215,8 @@ class CollectorService:
         try:
             async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=30)) as resp:
                 if resp.status == 200:
-                    text = await resp.text()
+                    raw_bytes = await resp.read()
+                    text = raw_bytes.decode("utf-8", errors="replace")
                     if text.strip().startswith("<"):
                         return []
                     json_data = json.loads(text)
