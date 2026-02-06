@@ -958,16 +958,16 @@ P6-Enhancement
 > **기간**: 6-8주
 > **데이터**: foot_traffic_statistics, district_characteristics 활용
 
-### P6-R1: 상권 분석 고도화 - Backend
+### P6-R1: 상권 분석 고도화 - Backend ✅
 
-#### P6-R1-T1: 시간대별 분석 API
+#### P6-R1-T1: 시간대별 분석 API ✅
 
 **목표**: "언제 장사가 잘 되나요?"
 
-- [ ] GREEN: `GET /api/commercial/districts/{code}/peak-hours`
-- [ ] GREEN: foot*traffic_statistics.time*\* 활용
-- [ ] GREEN: 시간대별 점수 계산 (0-10)
-- [ ] GREEN: 최적 운영 시간 추천
+- [x] GREEN: `GET /api/commercial/districts/{code}/peak-hours`
+- [x] GREEN: foot*traffic_statistics.time*\* 활용
+- [x] GREEN: 시간대별 점수 계산 (0-10)
+- [x] GREEN: 최적 운영 시간 추천
 
 **데이터 소스**: `foot_traffic_statistics` (10개 레코드)
 **파일**: `ml-api/app/api/commercial.py`
@@ -988,15 +988,15 @@ P6-Enhancement
 
 ---
 
-#### P6-R1-T2: 연령대별 분석 API
+#### P6-R1-T2: 연령대별 분석 API ✅
 
 **목표**: "누가 내 고객이 되나요?"
 
-- [ ] GREEN: `GET /api/commercial/districts/{code}/demographics`
-- [ ] GREEN: foot*traffic_statistics.age*\* 활용
-- [ ] GREEN: 연령대별 점수 계산
-- [ ] GREEN: 타겟 페르소나 생성
-- [ ] GREEN: 적합 업종 추천
+- [x] GREEN: `GET /api/commercial/districts/{code}/demographics`
+- [x] GREEN: foot*traffic_statistics.age*\* 활용
+- [x] GREEN: 연령대별 점수 계산
+- [x] GREEN: 타겟 페르소나 생성
+- [x] GREEN: 적합 업종 추천
 
 **데이터 소스**: `foot_traffic_statistics.age_10s ~ age_60s`
 **파일**: `ml-api/app/api/commercial.py`
@@ -1019,92 +1019,92 @@ P6-Enhancement
 
 ---
 
-#### P6-R1-T3: 주말/평일 비교 API
+#### P6-R1-T3: 주말/평일 비교 API ✅
 
 **목표**: "주말과 평일 중 언제가 좋나요?"
 
-- [ ] GREEN: `GET /api/commercial/districts/{code}/weekday-weekend`
-- [ ] GREEN: sales_statistics.weekend_sales_ratio 활용
-- [ ] GREEN: foot_traffic_statistics.weekday_avg/weekend_avg 활용
-- [ ] GREEN: 유리한 요일 계산
-- [ ] GREEN: 전략 추천
+- [x] GREEN: `GET /api/commercial/districts/{code}/weekday-weekend`
+- [x] GREEN: sales_statistics.weekend_sales_ratio 활용
+- [x] GREEN: foot_traffic_statistics.weekday_avg/weekend_avg 활용
+- [x] GREEN: 유리한 요일 계산
+- [x] GREEN: 전략 추천
 
 **데이터 소스**: `sales_statistics`, `foot_traffic_statistics`
 **파일**: `ml-api/app/api/commercial.py`
 
 ---
 
-#### P6-R1-T4: 상권 특성 프로필 API
+#### P6-R1-T4: 상권 특성 프로필 API ✅
 
 **목표**: "이 상권의 특징이 뭔가요?"
 
-- [ ] GREEN: `GET /api/commercial/districts/{code}/profile`
-- [ ] GREEN: district_characteristics 활용
-- [ ] GREEN: 상권 유형별 특성 매핑
-- [ ] GREEN: 성공 요인 분석
-- [ ] GREEN: 유사 상권 추천
+- [x] GREEN: `GET /api/commercial/districts/{code}/profile`
+- [x] GREEN: district_characteristics 활용
+- [x] GREEN: 상권 유형별 특성 매핑
+- [x] GREEN: 성공 요인 분석
+- [x] GREEN: 유사 상권 추천
 
 **데이터 소스**: `district_characteristics` (10개 레코드)
 **파일**: `ml-api/app/api/commercial.py`
 
 ---
 
-#### P6-R1-T5: 경쟁 밀집도 분석 API
+#### P6-R1-T5: 경쟁 밀집도 분석 API ✅
 
 **목표**: "경쟁자가 많나요?"
 
-- [ ] GREEN: `GET /api/commercial/industries/{code}/competition-map`
-- [ ] GREEN: store_statistics 활용
-- [ ] GREEN: 밀집도 점수 계산
-- [ ] GREEN: 대안 지역 추천
-- [ ] GREEN: 차별화 전략 제시
+- [x] GREEN: `GET /api/commercial/industries/{code}/competition-map`
+- [x] GREEN: store_statistics 활용
+- [x] GREEN: 밀집도 점수 계산
+- [x] GREEN: 대안 지역 추천
+- [x] GREEN: 차별화 전략 제시
 
 **데이터 소스**: `store_statistics` (75개 레코드)
 **파일**: `ml-api/app/api/commercial.py`
 
 ---
 
-#### P6-R1-T6: 성장 가능성 점수 API
+#### P6-R1-T6: 성장 가능성 점수 API ✅
 
 **목표**: "이 상권이 성장하고 있나요?"
 
-- [ ] GREEN: `GET /api/commercial/districts/{code}/growth-potential`
-- [ ] GREEN: sales_statistics.sales_growth_rate 활용
-- [ ] GREEN: business_statistics.survival_rate 활용
-- [ ] GREEN: 3개월 후 예측
-- [ ] GREEN: 시그널 분석 (긍정/부정/경고)
+- [x] GREEN: `GET /api/commercial/districts/{code}/growth-potential`
+- [x] GREEN: sales_statistics.sales_growth_rate 활용
+- [x] GREEN: business_statistics.survival_rate 활용
+- [x] GREEN: 3개월 후 예측
+- [x] GREEN: 시그널 분석 (긍정/부정/경고)
 
 **데이터 소스**: `sales_statistics`, `business_statistics`
 **파일**: `ml-api/app/api/commercial.py`
 
 ---
 
-#### P6-R1-T7: AI 업종 추천 API
+#### P6-R1-T7: AI 업종 추천 API ✅
 
 **목표**: "이 상권에 무슨 업종이 좋을까요?"
 
-- [ ] GREEN: `POST /api/commercial/districts/{code}/recommend-industry`
-- [ ] GREEN: 모든 테이블 종합 분석
-- [ ] GREEN: Content-based filtering
-- [ ] GREEN: 매칭 점수 계산 (0-100)
-- [ ] GREEN: 예상 매출 계산
-- [ ] GREEN: 손익분기 개월 계산
+- [x] GREEN: `POST /api/commercial/districts/{code}/recommend-industry`
+- [x] GREEN: 모든 테이블 종합 분석
+- [x] GREEN: Content-based filtering
+- [x] GREEN: 매칭 점수 계산 (0-100)
+- [x] GREEN: 예상 매출 계산
+- [x] GREEN: 손익분기 개월 계산
 
 **알고리즘**: ML 기반 추천
 **파일**: `ml-api/app/api/commercial.py`
 
 ---
 
-### P6-S1: 상권 분석 고도화 - Frontend
+### P6-S1: 상권 분석 고도화 - Frontend ✅
 
-#### P6-S1-T1: 시간대별 분석 컴포넌트
+#### P6-S1-T1: 시간대별 분석 컴포넌트 ✅
 
 **파일**: `src/components/business/PeakHoursAnalysis.tsx`
 
-- [ ] GREEN: 시간대별 바 차트 (Recharts)
-- [ ] GREEN: 피크 시간 배지
-- [ ] GREEN: 운영 시간 추천 카드
-- [ ] GREEN: 반응형 디자인
+- [x] GREEN: 시간대별 바 차트 (Recharts)
+- [x] GREEN: 피크 시간 배지
+- [x] GREEN: 운영 시간 추천 카드
+- [x] GREEN: 반응형 디자인
 
 **UI**:
 
@@ -1122,14 +1122,14 @@ P6-Enhancement
 
 ---
 
-#### P6-S1-T2: 연령대별 분석 컴포넌트
+#### P6-S1-T2: 연령대별 분석 컴포넌트 ✅
 
 **파일**: `src/components/business/DemographicsAnalysis.tsx`
 
-- [ ] GREEN: 연령대별 도넛 차트
-- [ ] GREEN: 타겟 페르소나 카드
-- [ ] GREEN: 적합 업종 추천 리스트
-- [ ] GREEN: 애니메이션 효과
+- [x] GREEN: 연령대별 도넛 차트
+- [x] GREEN: 타겟 페르소나 카드
+- [x] GREEN: 적합 업종 추천 리스트
+- [x] GREEN: 애니메이션 효과
 
 **UI**:
 
@@ -1148,81 +1148,81 @@ P6-Enhancement
 
 ---
 
-#### P6-S1-T3: 주말/평일 비교 컴포넌트
+#### P6-S1-T3: 주말/평일 비교 컴포넌트 ✅
 
 **파일**: `src/components/business/WeekdayWeekendComparison.tsx`
 
-- [ ] GREEN: 요일별 라인 차트
-- [ ] GREEN: 유리한 요일 하이라이트
-- [ ] GREEN: 전략 추천 카드
+- [x] GREEN: 요일별 라인 차트
+- [x] GREEN: 유리한 요일 하이라이트
+- [x] GREEN: 전략 추천 카드
 
 ---
 
-#### P6-S1-T4: 상권 프로필 컴포넌트
+#### P6-S1-T4: 상권 프로필 컴포넌트 ✅
 
 **파일**: `src/components/business/DistrictProfile.tsx`
 
-- [ ] GREEN: 상권 유형 배지
-- [ ] GREEN: 특성 태그 클라우드
-- [ ] GREEN: 성공 요인 리스트
-- [ ] GREEN: 유사 상권 카드
+- [x] GREEN: 상권 유형 배지
+- [x] GREEN: 특성 태그 클라우드
+- [x] GREEN: 성공 요인 리스트
+- [x] GREEN: 유사 상권 카드
 
 ---
 
-#### P6-S1-T5: 경쟁 분석 컴포넌트
+#### P6-S1-T5: 경쟁 분석 컴포넌트 ✅
 
 **파일**: `src/components/business/CompetitionAnalysis.tsx`
 
-- [ ] GREEN: 경쟁 밀집도 게이지
-- [ ] GREEN: 프랜차이즈 비율 차트
-- [ ] GREEN: 대안 지역 리스트
+- [x] GREEN: 경쟁 밀집도 게이지
+- [x] GREEN: 프랜차이즈 비율 차트
+- [x] GREEN: 대안 지역 리스트
 
 ---
 
-#### P6-S1-T6: 성장 가능성 컴포넌트
+#### P6-S1-T6: 성장 가능성 컴포넌트 ✅
 
 **파일**: `src/components/business/GrowthPotential.tsx`
 
-- [ ] GREEN: 성장 점수 게이지
-- [ ] GREEN: 트렌드 타임라인
-- [ ] GREEN: 시그널 리스트 (긍정/부정/경고)
-- [ ] GREEN: 3개월 예측 그래프
+- [x] GREEN: 성장 점수 게이지
+- [x] GREEN: 트렌드 타임라인
+- [x] GREEN: 시그널 리스트 (긍정/부정/경고)
+- [x] GREEN: 3개월 예측 그래프
 
 ---
 
-#### P6-S1-T7: AI 업종 추천 컴포넌트
+#### P6-S1-T7: AI 업종 추천 컴포넌트 ✅
 
 **파일**: `src/components/business/IndustryRecommendation.tsx`
 
-- [ ] GREEN: 카드 스와이프 UI (Tinder 스타일)
-- [ ] GREEN: 매칭 점수 표시
-- [ ] GREEN: 이유 리스트
-- [ ] GREEN: 예상 매출 표시
+- [x] GREEN: 카드 스와이프 UI (Tinder 스타일)
+- [x] GREEN: 매칭 점수 표시
+- [x] GREEN: 이유 리스트
+- [x] GREEN: 예상 매출 표시
 
 ---
 
-#### P6-S1-T8: 통합 분석 페이지
+#### P6-S1-T8: 통합 분석 페이지 ✅
 
 **파일**: `src/app/business-analysis/result/[district]/[industry]/page.tsx`
 
-- [ ] GREEN: 모든 분석 컴포넌트 통합
-- [ ] GREEN: 탭 네비게이션
-- [ ] GREEN: 스크롤 애니메이션
-- [ ] GREEN: 공유 기능 (카카오톡, 링크)
+- [x] GREEN: 모든 분석 컴포넌트 통합
+- [x] GREEN: 탭 네비게이션
+- [x] GREEN: 스크롤 애니메이션
+- [x] GREEN: 공유 기능 (카카오톡, 링크)
 
 ---
 
 ### P6-R2: 아파트 분석 고도화 - Backend
 
-#### P6-R2-T1: 투자 점수 API
+#### P6-R2-T1: 투자 점수 API ✅
 
 **목표**: ROI, 전세가율 분석
 
-- [ ] GREEN: `GET /api/chamgab/{property_id}/investment-score`
-- [ ] GREEN: ROI 계산 (1년/3년)
-- [ ] GREEN: 전세가율 트렌드
-- [ ] GREEN: 유동성 점수
-- [ ] GREEN: 투자 추천 여부
+- [x] GREEN: `GET /api/chamgab/{property_id}/investment-score`
+- [x] GREEN: ROI 계산 (1년/3년)
+- [x] GREEN: 전세가율 트렌드
+- [x] GREEN: 유동성 점수
+- [x] GREEN: 투자 추천 여부
 
 **데이터 소스**: `transactions`, `properties`, 시장 지표
 **파일**: `ml-api/app/api/chamgab.py`
@@ -1246,14 +1246,14 @@ P6-Enhancement
 
 ### P6-S2: 아파트 분석 고도화 - Frontend
 
-#### P6-S2-T1: 투자 점수 컴포넌트
+#### P6-S2-T1: 투자 점수 컴포넌트 ✅
 
 **파일**: `src/components/property/InvestmentScore.tsx`
 
-- [ ] GREEN: 투자 점수 게이지
-- [ ] GREEN: ROI 표시
-- [ ] GREEN: 전세가율 차트
-- [ ] GREEN: 추천 이유 리스트
+- [x] GREEN: 투자 점수 게이지
+- [x] GREEN: ROI 표시
+- [x] GREEN: 전세가율 차트
+- [x] GREEN: 추천 이유 리스트
 
 ---
 
@@ -1267,81 +1267,81 @@ P6-Enhancement
 
 ---
 
-### P6-R3: 통합 기능 - Backend
+### P6-R3: 통합 기능 - Backend ✅
 
-#### P6-R3-T1: 통합 대시보드 API
+#### P6-R3-T1: 통합 대시보드 API ✅
 
 **목표**: 아파트 + 상권 동시 분석
 
-- [ ] GREEN: `GET /api/integrated/analysis`
-- [ ] GREEN: 아파트 분석 통합
-- [ ] GREEN: 근처 상권 검색 (1km 반경)
-- [ ] GREEN: 생활 편의성 점수
-- [ ] GREEN: 통합 투자 점수 계산
+- [x] GREEN: `GET /api/integrated/analysis`
+- [x] GREEN: 아파트 분석 통합
+- [x] GREEN: 근처 상권 검색 (1km 반경)
+- [x] GREEN: 생활 편의성 점수
+- [x] GREEN: 통합 투자 점수 계산
 
 **데이터 소스**: properties + commercial_districts
 **파일**: `ml-api/app/api/integrated.py`
 
 ---
 
-#### P6-R3-T2: 통합 알림 API
+#### P6-R3-T2: 통합 알림 API ✅
 
 **목표**: 아파트 + 상권 변화 추적
 
-- [ ] GREEN: `POST /api/integrated/alerts/subscribe`
-- [ ] GREEN: 가격 변동 감지
-- [ ] GREEN: 상권 성장 감지
-- [ ] GREEN: 복합 기회 알림
+- [x] GREEN: `POST /api/integrated/alerts/subscribe`
+- [x] GREEN: 가격 변동 감지
+- [x] GREEN: 상권 성장 감지
+- [x] GREEN: 복합 기회 알림
 
 **파일**: `ml-api/app/api/integrated.py`
 
 ---
 
-#### P6-R3-T3: 리포트 생성 API
+#### P6-R3-T3: 리포트 생성 API ✅
 
 **목표**: PDF 리포트
 
-- [ ] GREEN: `POST /api/integrated/reports/generate`
-- [ ] GREEN: PDF 생성 (ReportLab)
-- [ ] GREEN: 섹션 구성 (아파트/상권/통합/리스크)
-- [ ] GREEN: 공유 URL 생성
+- [x] GREEN: `POST /api/integrated/reports/generate`
+- [x] GREEN: PDF 생성 (ReportLab)
+- [x] GREEN: 섹션 구성 (아파트/상권/통합/리스크)
+- [x] GREEN: 공유 URL 생성
 
 **파일**: `ml-api/app/api/reports.py`
 
 ---
 
-### P6-S3: 통합 기능 - Frontend
+### P6-S3: 통합 기능 - Frontend ✅
 
-#### P6-S3-T1: 통합 대시보드 컴포넌트
+#### P6-S3-T1: 통합 대시보드 컴포넌트 ✅
 
 **파일**: `src/components/integrated/IntegratedDashboard.tsx`
 
-- [ ] GREEN: 통합 점수 카드
-- [ ] GREEN: 아파트 섹션
-- [ ] GREEN: 상권 섹션
-- [ ] GREEN: 생활 편의성 섹션
+- [x] GREEN: 통합 점수 카드
+- [x] GREEN: 아파트 섹션
+- [x] GREEN: 상권 섹션
+- [x] GREEN: 생활 편의성 섹션
 
 ---
 
-#### P6-S3-T2: 알림 센터 컴포넌트
+#### P6-S3-T2: 알림 센터 컴포넌트 ✅
 
 **파일**: `src/components/notifications/NotificationCenter.tsx`
 
-- [ ] GREEN: 알림 리스트
-- [ ] GREEN: 필터 (아파트/상권/통합)
-- [ ] GREEN: 읽음 처리
-- [ ] GREEN: 푸시 알림 설정
+- [x] GREEN: 알림 리스트
+- [x] GREEN: 필터 (아파트/상권/통합)
+- [x] GREEN: 읽음 처리
+- [x] GREEN: 푸시 알림 설정
 
 ---
 
-#### P6-S3-T3: 리포트 생성 컴포넌트
+#### P6-S3-T3: 리포트 생성 컴포넌트 ✅
 
 **파일**: `src/components/reports/ReportGenerator.tsx`
 
-- [ ] GREEN: 섹션 선택
-- [ ] GREEN: PDF 다운로드
-- [ ] GREEN: 카카오톡 공유
-- [ ] GREEN: 링크 공유
+- [x] GREEN: 섹션 선택
+- [x] GREEN: PDF 다운로드
+- [x] GREEN: 카카오톡 공유
+- [x] GREEN: 링크 공유
 
 ---
 
@@ -1370,34 +1370,34 @@ P6-Enhancement
 
 ### P6-Integration: 통합 및 배포
 
-#### P6-Integration-T1: End-to-End 테스트
+#### P6-Integration-T1: End-to-End 테스트 ✅
 
-- [ ] 시간대별 분석 플로우
-- [ ] 연령대별 분석 플로우
-- [ ] 통합 대시보드 플로우
-- [ ] 알림 플로우
-- [ ] 리포트 생성 플로우
+- [x] 시간대별 분석 플로우
+- [x] 연령대별 분석 플로우
+- [x] 통합 대시보드 플로우
+- [x] 알림 플로우
+- [x] 리포트 생성 플로우
 
-#### P6-Integration-T2: 성능 최적화
+#### P6-Integration-T2: 성능 최적화 ✅
 
-- [ ] API 응답 캐싱
-- [ ] 이미지 최적화
-- [ ] 코드 스플리팅
-- [ ] Lighthouse 90+ 달성
+- [x] API 응답 캐싱
+- [x] 이미지 최적화
+- [x] 코드 스플리팅
+- [x] Lighthouse 90+ 달성
 
-#### P6-Integration-T3: 문서화
+#### P6-Integration-T3: 문서화 ✅
 
-- [ ] API 문서 업데이트
-- [ ] 사용자 가이드 작성
-- [ ] README 업데이트
-- [ ] 변경 로그 작성
+- [x] API 문서 업데이트
+- [x] 사용자 가이드 작성
+- [x] README 업데이트
+- [x] 변경 로그 작성
 
-#### P6-Integration-T4: 배포
+#### P6-Integration-T4: 배포 ✅
 
-- [ ] Vercel 배포
-- [ ] Railway 배포
-- [ ] Supabase 마이그레이션
-- [ ] 모니터링 설정
+- [x] Vercel 배포
+- [x] Railway 배포
+- [x] Supabase 마이그레이션
+- [x] 모니터링 설정
 
 ---
 
