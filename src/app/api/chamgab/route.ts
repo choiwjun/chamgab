@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
     // ML API 호출
     let prediction
     try {
-      const mlResponse = await fetch(`${ML_API_URL}/predict`, {
+      const mlResponse = await fetch(`${ML_API_URL}/api/predict`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
