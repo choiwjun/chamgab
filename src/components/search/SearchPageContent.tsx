@@ -17,7 +17,7 @@ type TabType = 'complexes' | 'properties'
 
 export function SearchPageContent() {
   const searchParams = useSearchParams()
-  const [activeTab, setActiveTab] = useState<TabType>('properties')
+  const [activeTab, setActiveTab] = useState<TabType>('complexes')
 
   // URL 쿼리 파라미터 파싱
   const filters: PropertyQueryParams = {

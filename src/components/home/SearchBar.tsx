@@ -62,7 +62,7 @@ export function SearchBar() {
     if (suggestion.type === 'property' && suggestion.id) {
       router.push(`/property/${suggestion.id}`)
     } else if (suggestion.type === 'complex' && suggestion.id) {
-      router.push(`/search?complex=${suggestion.id}`)
+      router.push(`/complex/${suggestion.id}`)
     } else if (suggestion.type === 'region' && suggestion.id) {
       router.push(
         `/search?region=${suggestion.id}&sigungu=${encodeURIComponent(suggestion.name)}`
