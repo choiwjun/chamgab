@@ -14,12 +14,12 @@ export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient()
 
-    // 인증 확인
+    // 인증 확인 - 비로그인 시 빈 목록 반환 (401 대신)
     const {
       data: { user },
     } = await supabase.auth.getUser()
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ items: [], total: 0, page: 1, limit: 20 })
     }
 
     const searchParams = request.nextUrl.searchParams
