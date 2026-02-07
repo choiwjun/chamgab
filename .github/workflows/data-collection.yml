@@ -2,8 +2,14 @@ name: Daily Data Collection
 
 on:
   schedule:
-    # 매일 한국시간 06:00 (UTC 21:00)
+    # 매일 한국시간 06:00 (UTC 21:00) - 실거래가 수집
     - cron: '0 21 * * *'
+    # 월요일 - REB 가격지수
+    - cron: '0 21 * * 1'
+    # 화요일 - 건축물대장
+    - cron: '0 21 * * 2'
+    # 수요일 - 유동인구
+    - cron: '0 21 * * 3'
   workflow_dispatch: # 수동 실행 가능
 
 env:
@@ -13,6 +19,7 @@ jobs:
   collect-transactions:
     name: 실거래가 수집
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
@@ -102,6 +109,7 @@ jobs:
   collect-building-info:
     name: 건축물대장 수집
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     # 화요일에만 실행 (주간) - 건물 정보는 자주 변하지 않음
     if: github.event.schedule == '0 21 * * 2' || github.event_name == 'workflow_dispatch'
 
@@ -178,7 +186,7 @@ jobs:
 
   notify-completion:
     name: 완료 알림
-    needs: [collect-transactions]
+    needs: [collect-transactions, collect-reb-index, collect-building-info, collect-footfall]
     runs-on: ubuntu-latest
     if: always()
 
@@ -187,3 +195,6 @@ jobs:
         run: |
           echo "Data collection completed at $(date)"
           echo "Transaction collection: ${{ needs.collect-transactions.result }}"
+          echo "REB index: ${{ needs.collect-reb-index.result }}"
+          echo "Building info: ${{ needs.collect-building-info.result }}"
+          echo "Footfall: ${{ needs.collect-footfall.result }}"

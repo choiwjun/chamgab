@@ -78,7 +78,7 @@ MAX_TOTAL_RETRIES = 10
 def normalize_name(name: str) -> str:
     """단지명 정규화 (공백/특수문자 제거, 소문자화)"""
     name = re.sub(r"[^\w가-힣]", "", name)
-    return name.strip()
+    return name.strip().lower()
 
 
 def names_match(api_name: str, complex_name: str) -> Tuple[bool, str]:
@@ -263,13 +263,23 @@ def find_matching_building(
 
 
 def _safe_int(value) -> int:
-    """안전하게 정수로 변환"""
+    """안전하게 정수로 변환 (None/빈값 → 0)"""
     if value is None:
         return 0
     try:
         return int(value)
     except (ValueError, TypeError):
         return 0
+
+
+def _safe_int_or_none(value) -> Optional[int]:
+    """안전하게 정수로 변환 (None/빈값 → None, 0은 0으로 유지)"""
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return None
 
 
 def _safe_float(value) -> Optional[float]:
@@ -598,9 +608,9 @@ class BuildingInfoCollector:
             "complex_id": complex_id,
             "sigungu_cd": sigungu_cd,
             "bjdong_cd": bjdong_cd,
-            "bun": (matched.get("bun") or "")[:4] or None,
-            "ji": (matched.get("ji") or "")[:4] or None,
-            "mgm_bld_rgst_pk": matched.get("mgmBldrgstPk") or None,
+            "bun": (matched.get("bun") or "0000")[:4],
+            "ji": (matched.get("ji") or "0000")[:4],
+            "mgm_bld_rgst_pk": matched.get("mgmBldrgstPk") or "",
             # 건물 기본 정보
             "bld_nm": matched.get("bldNm") or None,
             "plat_plc": matched.get("platPlc") or None,
@@ -608,12 +618,12 @@ class BuildingInfoCollector:
             "main_purps_cd_nm": matched.get("mainPurpsCdNm") or None,
             "etc_purps": matched.get("etcPurps") or None,
             # 규모 정보
-            "hhld_cnt": _safe_int(matched.get("hhldCnt")) or None,
-            "fmly_cnt": _safe_int(matched.get("fmlyCnt")) or None,
-            "ho_cnt": _safe_int(matched.get("hoCnt")) or None,
-            "grnd_flr_cnt": _safe_int(matched.get("grndFlrCnt")) or None,
-            "ugrnd_flr_cnt": _safe_int(matched.get("ugrndFlrCnt")) or None,
-            "tot_dong_cnt": _safe_int(matched.get("totDongTotCnt")) or None,
+            "hhld_cnt": _safe_int_or_none(matched.get("hhldCnt")),
+            "fmly_cnt": _safe_int_or_none(matched.get("fmlyCnt")),
+            "ho_cnt": _safe_int_or_none(matched.get("hoCnt")),
+            "grnd_flr_cnt": _safe_int_or_none(matched.get("grndFlrCnt")),
+            "ugrnd_flr_cnt": _safe_int_or_none(matched.get("ugrndFlrCnt")),
+            "tot_dong_cnt": _safe_int_or_none(matched.get("totDongTotCnt")),
             # 면적 정보
             "plat_area": _safe_float(matched.get("platArea")),
             "arch_area": _safe_float(matched.get("archArea")),
@@ -624,18 +634,18 @@ class BuildingInfoCollector:
             ),
             "vl_rat": _safe_float(matched.get("vlRat")),
             # 주차 정보
-            "tot_pkng_cnt": _safe_int(matched.get("totPkngCnt")) or None,
-            "indoor_mech_pkng_cnt": (
-                _safe_int(matched.get("indrMechUtcnt")) or None
+            "tot_pkng_cnt": _safe_int_or_none(matched.get("totPkngCnt")),
+            "indoor_mech_pkng_cnt": _safe_int_or_none(
+                matched.get("indrMechUtcnt")
             ),
-            "indoor_self_pkng_cnt": (
-                _safe_int(matched.get("indrAutoUtcnt")) or None
+            "indoor_self_pkng_cnt": _safe_int_or_none(
+                matched.get("indrAutoUtcnt")
             ),
-            "outdr_mech_pkng_cnt": (
-                _safe_int(matched.get("oudrMechUtcnt")) or None
+            "outdr_mech_pkng_cnt": _safe_int_or_none(
+                matched.get("oudrMechUtcnt")
             ),
-            "outdr_self_pkng_cnt": (
-                _safe_int(matched.get("oudrAutoUtcnt")) or None
+            "outdr_self_pkng_cnt": _safe_int_or_none(
+                matched.get("oudrAutoUtcnt")
             ),
             # 구조
             "strct_cd_nm": matched.get("strctCdNm") or None,
@@ -645,8 +655,8 @@ class BuildingInfoCollector:
             "stcns_day": matched.get("stcnsDay") or None,
             "use_apr_day": matched.get("useAprDay") or None,
             "crtn_day": matched.get("crtnDay") or None,
-            # 원본 API 응답 전체
-            "raw_data": json.dumps(matched, ensure_ascii=False),
+            # 원본 API 응답 전체 (dict 그대로 전달 → Supabase가 JSONB로 저장)
+            "raw_data": matched,
         }
 
     def insert_building_info(

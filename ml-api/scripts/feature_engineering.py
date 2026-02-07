@@ -818,12 +818,15 @@ class FeatureEngineer:
         ]
         bi_merge = bi_df[merge_cols].copy()
 
-        # 기존 df에 left join
-        orig_index = df.index
+        # 기존 df에 left join (complex_id 중복 시 1:1 보장을 위해 drop_duplicates)
+        bi_merge = bi_merge.drop_duplicates(subset=["complex_id"], keep="first")
+        orig_len = len(df)
         df = df.merge(bi_merge, left_on=merge_key, right_on="complex_id", how="left", suffixes=("", "_bi"))
 
-        # 병합으로 인덱스가 바뀔 수 있으므로 복원
-        df.index = orig_index
+        # merge 후 행 수가 변하지 않았는지 검증
+        if len(df) != orig_len:
+            print(f"  WARNING: merge 후 행 수 변경 ({orig_len} → {len(df)}), 중복 제거")
+            df = df.drop_duplicates(subset=[df.columns[0]], keep="first").reset_index(drop=True)
 
         # 중복된 complex_id_bi 컬럼 제거 (merge_key != "complex_id"인 경우 생성됨)
         drop_cols = [c for c in df.columns if c.endswith("_bi")]

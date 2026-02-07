@@ -2,17 +2,20 @@
 -- 건축물대장 API (getBrRecapTitleInfo)의 응답 데이터를 저장하기 위한 테이블
 -- 건물의 물리적 정보(규모, 면적, 구조, 주차 등)를 포함
 
+-- 0. pg_trgm 확장 (GIN 인덱스에 필요, 이미 존재하면 무시)
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
 -- 1. building_info 테이블 생성
 CREATE TABLE IF NOT EXISTS public.building_info (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
   -- 식별 정보
   complex_id UUID REFERENCES public.complexes(id) ON DELETE SET NULL,
-  sigungu_cd VARCHAR(5) NOT NULL,      -- 시군구코드 (e.g., '27710' for 강남구)
+  sigungu_cd VARCHAR(5) NOT NULL,      -- 시군구코드 (e.g., '11680' for 강남구)
   bjdong_cd VARCHAR(5) NOT NULL,       -- 법정동코드
-  bun VARCHAR(4),                       -- 번 (지번)
-  ji VARCHAR(4),                        -- 지 (지번)
-  mgm_bld_rgst_pk VARCHAR(50),         -- 관리건축물대장 PK (건물 고유 식별자)
+  bun VARCHAR(4) NOT NULL DEFAULT '0000',  -- 번 (지번, UNIQUE 제약에 필요)
+  ji VARCHAR(4) NOT NULL DEFAULT '0000',   -- 지 (지번, UNIQUE 제약에 필요)
+  mgm_bld_rgst_pk VARCHAR(50) NOT NULL DEFAULT '',  -- 관리건축물대장 PK (건물 고유 식별자)
 
   -- 건물 기본 정보
   bld_nm VARCHAR(200),                  -- 건물명
