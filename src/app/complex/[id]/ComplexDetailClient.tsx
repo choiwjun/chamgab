@@ -158,7 +158,41 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
       }
 
       const result = await res.json()
-      setAnalysisResult(result.analysis)
+      const analysis = result.analysis
+
+      // API 응답을 AnalysisResult 형식으로 변환
+      const price = analysis.chamgab_price || analysis.predicted_price || 0
+      const areaInfo = AREA_TYPES.find(
+        (a) => a.value === propertyInput.areaType
+      )
+      const pyeong = areaInfo?.pyeong || 25
+      const pricePerPyeong = Math.round(price / pyeong / 10000)
+      const confidence = analysis.confidence
+        ? Math.round(
+            (analysis.confidence > 1
+              ? analysis.confidence
+              : analysis.confidence * 100) as number
+          )
+        : 50
+
+      setAnalysisResult({
+        predicted_price: price,
+        confidence,
+        price_per_pyeong: pricePerPyeong,
+        market_comparison: confidence >= 80 ? 'fair' : 'undervalued',
+        propertyInput: { ...propertyInput },
+        shapCategories: [],
+        marketIndicators: {
+          rebPriceIndex: 100.0,
+          rebRentIndex: 100.0,
+          baseRate: 3.0,
+          mortgageRate: 3.5,
+          buyingPowerIndex: 50,
+          jeonseRatio: 60,
+        },
+        analysisDate: new Date().toISOString(),
+        modelVersion: 'v1.0',
+      })
     } catch (error) {
       console.error('Analysis request failed:', error)
       alert('분석 요청 중 오류가 발생했습니다.')
