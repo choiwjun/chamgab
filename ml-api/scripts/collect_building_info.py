@@ -18,6 +18,7 @@ import re
 import sys
 import time
 from datetime import date
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
@@ -366,6 +367,8 @@ def build_code_mappings(
 # 하드코딩 시군구 코드 (regions 테이블 보완용)
 # ------------------------------------------------------------------ #
 FALLBACK_SIGUNGU_CODES: Dict[str, str] = {
+    # 서울 (prefixed - ambiguous names)
+    "서울 중구": "11140", "서울 강서구": "11500",
     # 서울
     "종로구": "11110", "중구": "11140", "용산구": "11170", "성동구": "11200",
     "광진구": "11215", "동대문구": "11230", "중랑구": "11260", "성북구": "11290",
@@ -425,7 +428,85 @@ FALLBACK_SIGUNGU_CODES: Dict[str, str] = {
     "울산 북구": "31200", "울산 울주군": "31710",
     # 제주
     "제주시": "50110", "서귀포시": "50130",
+    # 경기 (약식 구명 - complexes에 "수지구" 등으로 저장된 경우)
+    "수지구": "41463", "기흥구": "41461", "처인구": "41460",
+    "권선구": "41113", "장안구": "41111", "팔달구": "41115",
+    "영통구": "41117",
+    "일산동구": "41281", "일산서구": "41285", "덕양구": "41280",
+    "단원구": "41273", "상록구": "41270",
+    "수정구": "41131", "중원구": "41133", "분당구": "41135",
+    "만안구": "41170", "동안구": "41173",
+    # 충북 (약식 구명)
+    "서원구": "43111", "상당구": "43110", "흥덕구": "43112",
+    "청원구": "43113",
+    # 충남 (약식 구명)
+    "동남구": "44130", "서북구": "44131",
 }
+
+# 시도 약칭 매핑 (ambiguous 시군구명 해결용)
+SIDO_SHORT: Dict[str, str] = {
+    "서울특별시": "서울", "부산광역시": "부산", "대구광역시": "대구",
+    "인천광역시": "인천", "광주광역시": "광주", "대전광역시": "대전",
+    "울산광역시": "울산",
+}
+
+# 여러 시도에 동일한 이름이 존재하는 시군구 (sido로 구별 필요)
+AMBIGUOUS_SIGUNGU = {"동구", "서구", "남구", "북구", "중구"}
+
+
+# ------------------------------------------------------------------ #
+# 법정동코드 JSON 로더
+# ------------------------------------------------------------------ #
+def load_bjdong_codes_json() -> Dict[str, Dict[str, str]]:
+    """
+    bjdong_codes.json 파일에서 법정동코드 매핑을 로드합니다.
+
+    Returns:
+        {"11680": {"역삼동": "10100", "대치동": "10600", ...}, ...}
+    """
+    json_path = Path(__file__).parent / "bjdong_codes.json"
+    if not json_path.exists():
+        print(f"  WARNING: {json_path} 파일이 없습니다.")
+        return {}
+
+    with open(json_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    total_entries = sum(len(v) for v in data.values())
+    print(
+        f"  bjdong_codes.json 로드: "
+        f"{total_entries}건 ({len(data)}개 시군구)"
+    )
+    return data
+
+
+def parse_address_bun_ji(
+    address: str,
+) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """
+    주소에서 동명, 번, 지를 추출합니다.
+
+    Args:
+        address: "서울특별시 강남구 자곡동 619" 또는 "...자곡동 619-3"
+
+    Returns:
+        (dong_name, bun_4digit, ji_4digit)
+        e.g., ("자곡동", "0619", "0000")
+    """
+    if not address:
+        return None, None, None
+
+    # 동/읍/면/리/가 + 번지 패턴
+    pattern = r"(\S+[동읍면리가])\s+(\d+)(?:-(\d+))?"
+    match = re.search(pattern, address)
+
+    if match:
+        dong = match.group(1)
+        bun = match.group(2).zfill(4)[:4]
+        ji = (match.group(3) or "0").zfill(4)[:4]
+        return dong, bun, ji
+
+    return None, None, None
 
 
 # ------------------------------------------------------------------ #
@@ -504,6 +585,7 @@ class BuildingInfoCollector:
         """
         sigungu_name = (complex_row.get("sigungu") or "").strip()
         emd_name = (complex_row.get("eupmyeondong") or "").strip()
+        sido_name = (complex_row.get("sido") or "").strip()
 
         # 1) regions 테이블 매핑에서 시군구코드 조회
         sigungu_cd = sigungu_map.get(sigungu_name)
@@ -511,6 +593,15 @@ class BuildingInfoCollector:
         # 2) 없으면 fallback 딕셔너리에서 조회
         if not sigungu_cd:
             sigungu_cd = FALLBACK_SIGUNGU_CODES.get(sigungu_name)
+
+        # 3) sido-prefixed lookup으로 ambiguous 시군구 해결
+        #    "중구", "강서구" 등이 여러 시도에 존재 → sido로 구별
+        sido_short = SIDO_SHORT.get(sido_name, "")
+        if sido_short:
+            prefixed = f"{sido_short} {sigungu_name}"
+            resolved = FALLBACK_SIGUNGU_CODES.get(prefixed)
+            if resolved:
+                sigungu_cd = resolved
 
         if not sigungu_cd:
             return None, None
@@ -532,6 +623,22 @@ class BuildingInfoCollector:
                     if clean_emd == clean_db:
                         bjdong_cd = code
                         break
+
+        # 4) 여전히 00000이면 주소에서 동명 파싱 후 재시도
+        if bjdong_cd == "00000":
+            address = (complex_row.get("address") or "").strip()
+            parsed_dong, _, _ = parse_address_bun_ji(address)
+            if parsed_dong and sigungu_cd in bjdong_map:
+                emd_codes = bjdong_map[sigungu_cd]
+                if parsed_dong in emd_codes:
+                    bjdong_cd = emd_codes[parsed_dong]
+                else:
+                    for db_name, code in emd_codes.items():
+                        clean_parsed = re.sub(r"\d+", "", parsed_dong)
+                        clean_db = re.sub(r"\d+", "", db_name)
+                        if clean_parsed == clean_db:
+                            bjdong_cd = code
+                            break
 
         return sigungu_cd, bjdong_cd
 
@@ -938,7 +1045,7 @@ class BuildingInfoCollector:
         print("=" * 70)
 
         # 1) 코드 매핑 구축
-        print("\n[1/4] regions 테이블에서 코드 매핑 구축...")
+        print("\n[1/5] regions 테이블에서 코드 매핑 구축...")
         sigungu_map, bjdong_map = build_code_mappings(self.client)
 
         # fallback 코드 병합
@@ -953,8 +1060,26 @@ class BuildingInfoCollector:
                 f"(총 {len(sigungu_map)}건)"
             )
 
-        # 2) NULL total_units 단지 조회
-        print("\n[2/4] total_units가 NULL인 complexes 조회...")
+        # 2) 법정동코드 JSON 보강
+        print("\n[2/5] 법정동코드 JSON 파일에서 보강...")
+        json_bjdong = load_bjdong_codes_json()
+        if json_bjdong:
+            merged_count = 0
+            for sg_cd, dong_map in json_bjdong.items():
+                if sg_cd not in bjdong_map:
+                    bjdong_map[sg_cd] = {}
+                for dong_name, bjdong_cd in dong_map.items():
+                    if dong_name not in bjdong_map[sg_cd]:
+                        bjdong_map[sg_cd][dong_name] = bjdong_cd
+                        merged_count += 1
+            print(
+                f"  법정동코드 {merged_count}건 보강 완료 "
+                f"(총 {sum(len(v) for v in bjdong_map.values())}건, "
+                f"{len(bjdong_map)}개 시군구)"
+            )
+
+        # 3) NULL total_units 단지 조회
+        print("\n[3/5] total_units가 NULL인 complexes 조회...")
         complexes = self.fetch_complexes_without_units()
         self.stats["total"] = len(complexes)
         print(f"  대상: {len(complexes)}건")
@@ -963,8 +1088,8 @@ class BuildingInfoCollector:
             print("\n모든 단지에 이미 total_units가 설정되어 있습니다.")
             return
 
-        # 3) 단지별 처리
-        print(f"\n[3/4] 건축물대장 API 조회 및 매칭 ({len(complexes)}건)...")
+        # 4) 단지별 처리
+        print(f"\n[4/5] 건축물대장 API 조회 및 매칭 ({len(complexes)}건)...")
         print("-" * 70)
 
         for idx, cx in enumerate(complexes, 1):
@@ -981,9 +1106,9 @@ class BuildingInfoCollector:
 
             self.process_complex(cx, sigungu_map, bjdong_map)
 
-        # 4) 결과 요약
+        # 5) 결과 요약
         print("\n" + "=" * 70)
-        print("[4/4] 수집 결과 요약")
+        print("[5/5] 수집 결과 요약")
         print("=" * 70)
         print(f"  전체 대상:       {self.stats['total']}건")
         print(f"  업데이트 성공:   {self.stats['updated']}건")
