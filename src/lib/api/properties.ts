@@ -21,7 +21,7 @@ const getBaseUrl = () => {
 export async function getPopularProperties(limit = 10): Promise<Property[]> {
   try {
     const res = await fetch(
-      `${getBaseUrl()}/api/properties?sort=views_desc&limit=${limit}`,
+      `${getBaseUrl()}/api/properties?sort=created_at:desc&limit=${limit}`,
       {
         next: { revalidate: 300 }, // 5분 캐시
       }

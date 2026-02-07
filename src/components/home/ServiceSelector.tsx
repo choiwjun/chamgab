@@ -8,121 +8,89 @@ const services = [
   {
     id: 'apartment',
     icon: Building2,
+    iconColor: 'text-blue-500',
     title: '아파트 적정가',
-    description: 'AI가 분석한 아파트의 참값을 확인하세요',
-    stats: '3,200만 건 실거래 데이터 기반',
+    description:
+      'AI가 분석한 아파트의 참값을 확인하세요. 실거래 데이터 기반으로 정확한 적정가를 산출합니다.',
     href: '/search',
     cta: '매물 검색하기',
-    accentColor: 'editorial-gold',
-    accentBg: 'bg-editorial-gold/10',
-    accentText: 'text-editorial-gold',
-    accentBorder: 'border-editorial-gold/20',
-    hoverBorder: 'hover:border-editorial-gold/50',
+    ctaColor: 'text-blue-500',
   },
   {
     id: 'business',
     icon: Store,
+    iconColor: 'text-green-500',
     title: '상권분석',
-    description: 'AI가 예측하는 창업 성공 확률을 확인하세요',
-    stats: '전국 상권 데이터 + XGBoost 예측',
+    description:
+      'AI가 예측하는 창업 성공 확률을 확인하세요. 전국 상권 데이터를 분석하여 핵심 인사이트를 제공합니다.',
     href: '/business-analysis',
     cta: '상권 분석하기',
-    accentColor: 'editorial-sage',
-    accentBg: 'bg-editorial-sage/10',
-    accentText: 'text-editorial-sage',
-    accentBorder: 'border-editorial-sage/20',
-    hoverBorder: 'hover:border-editorial-sage/50',
+    ctaColor: 'text-green-500',
   },
 ]
 
 export function ServiceSelector() {
   return (
-    <section className="relative bg-editorial-bg py-16 md:py-24">
-      <div className="mx-auto max-w-7xl px-6 md:px-8">
-        {/* 섹션 라벨 */}
+    <section className="bg-white py-20 md:py-24">
+      <div className="mx-auto max-w-5xl px-6">
+        {/* 섹션 헤더 */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
-          className="mb-12 text-center"
+          transition={{ duration: 0.5 }}
         >
-          <span className="inline-flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-editorial-ink/50">
-            <span className="h-px w-8 bg-editorial-dark/20" />
-            Our Services
-            <span className="h-px w-8 bg-editorial-dark/20" />
-          </span>
-          <h2 className="mt-4 font-serif text-3xl tracking-tight text-editorial-dark md:text-4xl">
+          <h2 className="text-2xl font-bold text-[#191F28]">
             무엇을 분석할까요?
           </h2>
+          <p className="mt-2 text-[#4E5968]">
+            AI 기반 분석 서비스를 선택하세요
+          </p>
         </motion.div>
 
-        {/* 서비스 카드 2열 */}
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:gap-8">
-          {services.map((service, index) => {
+        {/* 서비스 카드 - 2컬럼 그리드 */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.5, delay: 0.1 }}
+          className="mt-10 grid gap-4 md:grid-cols-2"
+        >
+          {services.map((service) => {
             const Icon = service.icon
             return (
-              <motion.div
-                key={service.id}
-                initial={{ opacity: 0, y: 30 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.6, delay: index * 0.15 }}
-              >
-                <Link href={service.href as never}>
-                  <motion.div
-                    whileHover={{ y: -4 }}
-                    transition={{ duration: 0.2 }}
-                    className={`group relative border ${service.accentBorder} ${service.hoverBorder} cursor-pointer bg-white p-8 transition-all duration-300 md:p-10`}
-                  >
-                    {/* 아이콘 + 제목 */}
-                    <div className="mb-6 flex items-start gap-4">
-                      <div className={`${service.accentBg} rounded-none p-3`}>
-                        <Icon
-                          className={`h-6 w-6 ${service.accentText}`}
-                          strokeWidth={1.5}
-                        />
-                      </div>
-                      <div>
-                        <h3 className="font-serif text-2xl tracking-tight text-editorial-dark md:text-3xl">
-                          {service.title}
-                        </h3>
-                        <p className="mt-2 leading-relaxed text-editorial-ink/60">
-                          {service.description}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* 통계 */}
-                    <div className="mb-8 pl-[3.5rem]">
-                      <span className="text-xs uppercase tracking-wide text-editorial-ink/40">
-                        {service.stats}
-                      </span>
-                    </div>
-
-                    {/* CTA */}
-                    <div className="flex items-center justify-between pl-[3.5rem]">
-                      <span
-                        className={`text-sm font-medium tracking-wide ${service.accentText}`}
-                      >
-                        {service.cta}
-                      </span>
-                      <ArrowRight
-                        className={`h-5 w-5 ${service.accentText} transform transition-transform group-hover:translate-x-1`}
-                        strokeWidth={1.5}
-                      />
-                    </div>
-
-                    {/* 하단 악센트 라인 */}
-                    <div
-                      className={`absolute bottom-0 left-0 h-0.5 w-0 ${service.id === 'apartment' ? 'bg-editorial-gold' : 'bg-editorial-sage'} transition-all duration-500 group-hover:w-full`}
+              <Link key={service.id} href={service.href as never}>
+                <div className="group h-full rounded-xl border border-[#E5E8EB] p-6 transition-colors hover:border-[#8B95A1]">
+                  {/* 아이콘 */}
+                  <div className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-[#F2F4F6]">
+                    <Icon
+                      className={`h-5 w-5 ${service.iconColor}`}
+                      strokeWidth={2}
                     />
-                  </motion.div>
-                </Link>
-              </motion.div>
+                  </div>
+
+                  {/* 제목 */}
+                  <h3 className="mt-4 text-lg font-semibold text-[#191F28]">
+                    {service.title}
+                  </h3>
+
+                  {/* 설명 */}
+                  <p className="mt-2 text-sm leading-relaxed text-[#4E5968]">
+                    {service.description}
+                  </p>
+
+                  {/* CTA */}
+                  <div
+                    className={`mt-4 inline-flex items-center gap-1 text-sm font-medium ${service.ctaColor} transition-all group-hover:gap-2`}
+                  >
+                    {service.cta}
+                    <ArrowRight className="h-4 w-4" strokeWidth={2} />
+                  </div>
+                </div>
+              </Link>
             )
           })}
-        </div>
+        </motion.div>
       </div>
     </section>
   )

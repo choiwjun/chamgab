@@ -123,7 +123,7 @@ export function BottomSheet({
             dragElastic={{ top: 0, bottom: 0.5 }}
             onDragEnd={handleDragEnd}
             style={{ y, opacity }}
-            className={`absolute bottom-0 left-0 right-0 rounded-t-2xl bg-white shadow-xl ${heightClasses[height]} flex touch-none flex-col`}
+            className={`absolute bottom-0 left-0 right-0 rounded-t-xl bg-white shadow-sm ${heightClasses[height]} flex touch-none flex-col`}
           >
             {/* 드래그 핸들 */}
             {draggable && (
@@ -192,8 +192,8 @@ export function ConfirmBottomSheet({
 
   const confirmButtonClass =
     variant === 'danger'
-      ? 'bg-red-600 hover:bg-red-700 text-white'
-      : 'bg-[#1E3A5F] hover:bg-[#2E5A8F] text-white'
+      ? 'bg-red-500 hover:bg-red-600 text-white'
+      : 'bg-blue-500 hover:bg-blue-600 text-white'
 
   return (
     <BottomSheet isOpen={isOpen} onClose={onClose} title={title} height="auto">

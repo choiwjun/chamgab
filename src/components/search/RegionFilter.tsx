@@ -85,7 +85,7 @@ export function RegionFilter({
       <div>
         <label
           htmlFor="region-sido"
-          className="mb-2 block text-sm font-medium text-gray-700"
+          className="mb-2 block text-xs font-semibold text-gray-700"
         >
           시·도
         </label>
@@ -94,7 +94,7 @@ export function RegionFilter({
           value={sido || ''}
           onChange={(e) => handleSidoChange(e.target.value)}
           disabled={isSidoLoading}
-          className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-gray-100"
+          className="w-full rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:bg-gray-100"
         >
           <option value="">전체</option>
           {sidoList.map((region) => (
@@ -109,7 +109,7 @@ export function RegionFilter({
       <div>
         <label
           htmlFor="region-sigungu"
-          className="mb-2 block text-sm font-medium text-gray-700"
+          className="mb-2 block text-xs font-semibold text-gray-700"
         >
           시·군·구
         </label>
@@ -118,7 +118,7 @@ export function RegionFilter({
           value={sigungu || ''}
           onChange={(e) => onSigunguChange(e.target.value || undefined)}
           disabled={!selectedSidoCode || isSigunguLoading}
-          className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-gray-100"
+          className="w-full rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:bg-gray-100"
         >
           <option value="">전체</option>
           {sigunguList.map((region) => (

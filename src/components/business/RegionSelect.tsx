@@ -11,7 +11,11 @@ interface RegionSelectProps {
   placeholder?: string
 }
 
-export function RegionSelect({ value, onChange, placeholder = '상권 선택' }: RegionSelectProps) {
+export function RegionSelect({
+  value,
+  onChange,
+  placeholder = '상권 선택',
+}: RegionSelectProps) {
   const [districts, setDistricts] = useState<DistrictBasic[]>([])
   const [isOpen, setIsOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
@@ -42,7 +46,10 @@ export function RegionSelect({ value, onChange, placeholder = '상권 선택' }:
   // 외부 클릭 감지
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node)
+      ) {
         setIsOpen(false)
       }
     }
@@ -68,8 +75,8 @@ export function RegionSelect({ value, onChange, placeholder = '상권 선택' }:
   if (error) {
     return (
       <div className="w-full">
-        <div className="w-full flex items-center gap-2 px-4 py-3 bg-red-50 border border-red-300 rounded-lg text-red-700">
-          <AlertCircle className="w-5 h-5 flex-shrink-0" />
+        <div className="flex w-full items-center gap-2 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-red-700">
+          <AlertCircle className="h-5 w-5 flex-shrink-0" />
           <span className="text-sm">{error}</span>
         </div>
         <button
@@ -78,7 +85,7 @@ export function RegionSelect({ value, onChange, placeholder = '상권 선택' }:
             setError(null)
             window.location.reload()
           }}
-          className="mt-2 text-sm text-primary-600 hover:text-primary-700 underline"
+          className="mt-2 text-sm text-blue-600 underline hover:text-blue-700"
         >
           다시 시도
         </button>
@@ -93,7 +100,7 @@ export function RegionSelect({ value, onChange, placeholder = '상권 선택' }:
         onClick={() => !isLoading && setIsOpen(!isOpen)}
         onKeyDown={handleKeyDown}
         disabled={isLoading}
-        className="w-full flex items-center justify-between px-4 py-3 bg-white border border-gray-300 rounded-lg hover:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-colors disabled:bg-gray-100 disabled:cursor-not-allowed"
+        className="flex w-full items-center justify-between rounded-lg border border-gray-300 bg-white px-4 py-3 transition-colors hover:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:bg-gray-100"
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         aria-label={placeholder}
@@ -102,17 +109,17 @@ export function RegionSelect({ value, onChange, placeholder = '상권 선택' }:
           {isLoading ? '로딩 중...' : selectedDistrict?.name || placeholder}
         </span>
         <ChevronDown
-          className={`w-5 h-5 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+          className={`h-5 w-5 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
         />
       </button>
 
       {isOpen && (
         <ul
-          className="absolute z-20 w-full mt-2 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto"
+          className="absolute z-20 mt-2 max-h-60 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg"
           role="listbox"
         >
           {districts.length === 0 ? (
-            <li className="px-4 py-6 text-center text-gray-500 text-sm">
+            <li className="px-4 py-6 text-center text-sm text-gray-500">
               선택 가능한 상권이 없습니다
             </li>
           ) : (
@@ -130,14 +137,18 @@ export function RegionSelect({ value, onChange, placeholder = '상권 선택' }:
                   }
                 }}
                 tabIndex={0}
-                className={`px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors focus:outline-none focus:bg-gray-50 ${
-                  value === district.code ? 'bg-primary-50 text-primary-700' : 'text-gray-900'
+                className={`cursor-pointer px-4 py-3 transition-colors hover:bg-gray-50 focus:bg-gray-50 focus:outline-none ${
+                  value === district.code
+                    ? 'bg-blue-50 text-blue-700'
+                    : 'text-gray-900'
                 }`}
                 role="option"
                 aria-selected={value === district.code}
               >
                 <div className="font-medium">{district.name}</div>
-                <div className="text-sm text-gray-500 mt-0.5">{district.description}</div>
+                <div className="mt-0.5 text-sm text-gray-500">
+                  {district.description}
+                </div>
               </li>
             ))
           )}

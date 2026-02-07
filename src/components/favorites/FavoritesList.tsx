@@ -131,7 +131,7 @@ export function FavoritesList({
         {[...Array(6)].map((_, i) => (
           <div
             key={i}
-            className="h-52 animate-pulse border border-editorial-dark/5 bg-editorial-sand/30"
+            className="h-52 animate-pulse rounded-xl border border-[#E5E8EB] bg-[#F9FAFB]"
           />
         ))}
       </div>
@@ -143,10 +143,10 @@ export function FavoritesList({
     return (
       <div className="flex min-h-[50vh] items-center justify-center">
         <div className="text-center">
-          <p className="mb-6 text-editorial-ink/70">{error}</p>
+          <p className="mb-6 text-[#4E5968]">{error}</p>
           <button
             onClick={() => fetchFavorites(1)}
-            className="border border-editorial-dark bg-editorial-dark px-6 py-2.5 text-sm tracking-wide text-white transition-colors hover:border-editorial-gold hover:bg-editorial-gold"
+            className="rounded-xl bg-[#3182F6] px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#1B64DA]"
           >
             다시 시도
           </button>
@@ -164,21 +164,17 @@ export function FavoritesList({
     <div>
       {/* 정렬 옵션 */}
       <div className="mb-8 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <span className="text-sm tracking-wide text-editorial-ink/50">
-            총
-          </span>
-          <span className="font-serif text-2xl text-editorial-gold">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-[#8B95A1]">총</span>
+          <span className="text-2xl font-bold text-[#3182F6]">
             {favorites.length}
           </span>
-          <span className="text-sm tracking-wide text-editorial-ink/50">
-            개
-          </span>
+          <span className="text-sm text-[#8B95A1]">개</span>
         </div>
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value as 'created_at' | 'price')}
-          className="border border-editorial-dark/10 bg-white px-4 py-2 text-sm text-editorial-dark transition-colors focus:border-editorial-gold focus:outline-none"
+          className="rounded-xl border border-[#E5E8EB] bg-white px-4 py-2 text-sm text-[#191F28] transition-colors focus:border-[#3182F6] focus:outline-none"
         >
           <option value="created_at">최신순</option>
           <option value="price">가격순</option>
@@ -206,9 +202,9 @@ export function FavoritesList({
           <button
             onClick={handleLoadMore}
             disabled={isLoading}
-            className="border border-editorial-dark/20 px-8 py-3 text-sm uppercase tracking-widest text-editorial-dark transition-colors hover:bg-editorial-dark hover:text-white disabled:opacity-50"
+            className="rounded-xl border border-[#E5E8EB] px-8 py-3 text-sm font-medium text-[#191F28] transition-colors hover:bg-[#F9FAFB] disabled:opacity-50"
           >
-            {isLoading ? 'Loading...' : 'Load More'}
+            {isLoading ? '로딩 중...' : '더 보기'}
           </button>
         </div>
       )}

@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 export default function MyPage() {
   return (
-    <main className="min-h-screen bg-editorial-bg">
+    <main className="min-h-screen bg-white">
       <MyPageContent />
     </main>
   )

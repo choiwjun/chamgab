@@ -61,18 +61,53 @@ export async function GET(
       return NextResponse.json({ error: 'Property not found' }, { status: 404 })
     }
 
-    // 유사 거래 조회 (같은 단지 또는 같은 지역)
-    let query = supabase
-      .from('transactions')
-      .select('*')
-      .order('transaction_date', { ascending: false })
-      .limit(limit)
+    // 유사 거래 조회: 같은 단지 → 같은 시군구+유사면적 → 같은 시군구 순으로 탐색
+    let transactions = null
+    let error = null
 
+    // 1차: 같은 단지의 거래
     if (property.complex_id) {
-      query = query.eq('complex_id', property.complex_id)
+      const result = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('complex_id', property.complex_id)
+        .order('transaction_date', { ascending: false })
+        .limit(limit)
+      transactions = result.data
+      error = result.error
     }
 
-    const { data: transactions, error } = await query
+    // 2차: 같은 시군구에서 유사 면적 거래
+    if ((!transactions || transactions.length === 0) && property.sigungu) {
+      const areaMin = property.area_exclusive
+        ? property.area_exclusive * 0.8
+        : 0
+      const areaMax = property.area_exclusive
+        ? property.area_exclusive * 1.2
+        : 999
+      const result = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('sigungu', property.sigungu)
+        .gte('area_exclusive', areaMin)
+        .lte('area_exclusive', areaMax)
+        .order('transaction_date', { ascending: false })
+        .limit(limit)
+      transactions = result.data
+      error = result.error
+    }
+
+    // 3차: 같은 시군구 전체
+    if ((!transactions || transactions.length === 0) && property.sigungu) {
+      const result = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('sigungu', property.sigungu)
+        .order('transaction_date', { ascending: false })
+        .limit(limit)
+      transactions = result.data
+      error = result.error
+    }
 
     if (error) {
       console.error('[Similar API] Supabase error:', error.message)

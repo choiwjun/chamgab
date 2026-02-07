@@ -29,15 +29,15 @@ export function ViewToggle({ currentView }: ViewToggleProps) {
   }
 
   return (
-    <div className="inline-flex border border-editorial-dark/10 bg-white">
+    <div className="inline-flex rounded-lg border border-gray-200 bg-white">
       {/* 리스트 뷰 버튼 */}
       <motion.button
         onClick={() => handleViewChange('list')}
         className={cn(
-          'relative flex items-center gap-2 px-4 py-2 text-sm tracking-wide transition-colors',
+          'relative flex items-center gap-2 rounded-l-lg px-4 py-2 text-sm font-medium transition-colors',
           currentView === 'list'
-            ? 'bg-editorial-dark text-white'
-            : 'text-editorial-ink/50 hover:text-editorial-dark hover:bg-editorial-sand/30'
+            ? 'bg-gray-100 text-gray-900'
+            : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
         )}
         whileTap={{ scale: 0.98 }}
       >
@@ -49,10 +49,10 @@ export function ViewToggle({ currentView }: ViewToggleProps) {
       <motion.button
         onClick={() => handleViewChange('map')}
         className={cn(
-          'relative flex items-center gap-2 px-4 py-2 text-sm tracking-wide transition-colors border-l border-editorial-dark/10',
+          'relative flex items-center gap-2 rounded-r-lg border-l border-gray-200 px-4 py-2 text-sm font-medium transition-colors',
           currentView === 'map'
-            ? 'bg-editorial-dark text-white'
-            : 'text-editorial-ink/50 hover:text-editorial-dark hover:bg-editorial-sand/30'
+            ? 'bg-gray-100 text-gray-900'
+            : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
         )}
         whileTap={{ scale: 0.98 }}
       >

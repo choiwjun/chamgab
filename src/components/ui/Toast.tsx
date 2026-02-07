@@ -56,12 +56,17 @@ export const toast = {
 
 const toastConfig: Record<
   ToastType,
-  { icon: typeof CheckCircle; bgColor: string; iconColor: string; borderColor: string }
+  {
+    icon: typeof CheckCircle
+    bgColor: string
+    iconColor: string
+    borderColor: string
+  }
 > = {
   success: {
     icon: CheckCircle,
     bgColor: 'bg-green-50',
-    iconColor: 'text-green-600',
+    iconColor: 'text-green-500',
     borderColor: 'border-green-200',
   },
   warning: {
@@ -73,13 +78,13 @@ const toastConfig: Record<
   error: {
     icon: XCircle,
     bgColor: 'bg-red-50',
-    iconColor: 'text-red-600',
+    iconColor: 'text-red-500',
     borderColor: 'border-red-200',
   },
   info: {
     icon: Info,
     bgColor: 'bg-blue-50',
-    iconColor: 'text-blue-600',
+    iconColor: 'text-blue-500',
     borderColor: 'border-blue-200',
   },
 }
@@ -105,18 +110,17 @@ function ToastItem({ toast: toastData }: { toast: Toast }) {
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -10, scale: 0.95 }}
       transition={{ duration: 0.2 }}
-      className={`
-        flex items-start gap-3 p-4 rounded-lg border shadow-lg
-        ${config.bgColor} ${config.borderColor}
-        max-w-md w-full
-      `}
+      className={`flex items-start gap-3 rounded-xl border p-4 shadow-sm ${config.bgColor} ${config.borderColor} w-full max-w-md`}
       role="alert"
       aria-live="polite"
     >
-      <Icon className={`w-5 h-5 flex-shrink-0 ${config.iconColor}`} aria-hidden="true" />
+      <Icon
+        className={`h-5 w-5 flex-shrink-0 ${config.iconColor}`}
+        aria-hidden="true"
+      />
 
-      <div className="flex-1 min-w-0">
-        <p className="text-sm text-gray-900 break-words">{toastData.message}</p>
+      <div className="min-w-0 flex-1">
+        <p className="break-words text-sm text-gray-900">{toastData.message}</p>
         {toastData.action && (
           <button
             onClick={toastData.action.onClick}
@@ -129,10 +133,10 @@ function ToastItem({ toast: toastData }: { toast: Toast }) {
 
       <button
         onClick={() => removeToast(toastData.id)}
-        className="flex-shrink-0 p-1 rounded hover:bg-white/50 transition-colors"
+        className="flex-shrink-0 rounded p-1 transition-colors hover:bg-white/50"
         aria-label="알림 닫기"
       >
-        <X className="w-4 h-4 text-gray-500" aria-hidden="true" />
+        <X className="h-4 w-4 text-gray-500" aria-hidden="true" />
       </button>
     </motion.div>
   )
@@ -143,7 +147,7 @@ export function ToastContainer() {
 
   return (
     <div
-      className="fixed top-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none"
+      className="pointer-events-none fixed right-4 top-4 z-[100] flex flex-col gap-2"
       aria-live="polite"
       aria-atomic="false"
     >

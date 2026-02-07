@@ -227,9 +227,9 @@ export default function GrowthPotential({
       </div>
 
       {/* 추천 */}
-      <div className="mt-6 rounded-lg border border-purple-200 bg-purple-50 p-4">
-        <h4 className="mb-2 font-bold text-purple-900">💡 투자 추천</h4>
-        <p className="text-sm text-purple-800">{data.recommendation}</p>
+      <div className="mt-6 rounded-lg border border-blue-200 bg-blue-50 p-4">
+        <h4 className="mb-2 font-bold text-blue-900">💡 투자 추천</h4>
+        <p className="text-sm text-blue-800">{data.recommendation}</p>
       </div>
     </div>
   )

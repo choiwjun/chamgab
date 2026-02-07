@@ -151,7 +151,7 @@ export default function Leaderboard({ userId }: LeaderboardProps) {
               onClick={() => setSelectedCategory(category.id)}
               className={`flex items-center gap-2 whitespace-nowrap rounded-lg px-4 py-2.5 text-sm font-medium transition-all duration-200 ${
                 selectedCategory === category.id
-                  ? 'bg-indigo-600 text-white shadow-md'
+                  ? 'bg-blue-600 text-white shadow-md'
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               } `}
             >
@@ -168,24 +168,24 @@ export default function Leaderboard({ userId }: LeaderboardProps) {
         <>
           {/* My Rank Card */}
           {userId && userRank && (
-            <div className="rounded-xl border-2 border-indigo-300 bg-indigo-50 p-6">
+            <div className="rounded-xl border-2 border-blue-300 bg-blue-50 p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="mb-1 text-sm font-medium text-indigo-600">
+                  <p className="mb-1 text-sm font-medium text-blue-600">
                     내 순위
                   </p>
                   <div className="flex items-baseline gap-3">
-                    <span className="text-3xl font-bold text-indigo-900">
+                    <span className="text-3xl font-bold text-blue-900">
                       #{userRank.rank}
                     </span>
-                    <span className="text-sm text-indigo-700">
+                    <span className="text-sm text-blue-700">
                       상위 {userRank.percentile}%
                     </span>
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="mb-1 text-sm text-indigo-600">총 포인트</p>
-                  <p className="text-2xl font-bold text-indigo-900">
+                  <p className="mb-1 text-sm text-blue-600">총 포인트</p>
+                  <p className="text-2xl font-bold text-blue-900">
                     {formatPoints(userRank.total_points)}
                   </p>
                 </div>
@@ -196,7 +196,7 @@ export default function Leaderboard({ userId }: LeaderboardProps) {
                 >
                   Lv.{userRank.level} {userRank.level_name}
                 </span>
-                <span className="text-sm text-indigo-700">
+                <span className="text-sm text-blue-700">
                   당신은 상위 {userRank.percentile}%입니다! 🎉
                 </span>
               </div>
@@ -214,7 +214,7 @@ export default function Leaderboard({ userId }: LeaderboardProps) {
                 return (
                   <div
                     key={entry.user_id}
-                    className={`rounded-xl border-2 p-6 ${isCurrentUser ? 'border-indigo-300 bg-indigo-50' : rankStyle.bg} ${entry.rank === 1 ? 'md:col-span-3 md:row-start-1' : ''} transition-all duration-200 hover:shadow-lg`}
+                    className={`rounded-xl border-2 p-6 ${isCurrentUser ? 'border-blue-300 bg-blue-50' : rankStyle.bg} ${entry.rank === 1 ? 'md:col-span-3 md:row-start-1' : ''} border-gray-100 transition-all duration-200 hover:border`}
                   >
                     <div className="text-center">
                       <div className="mb-2 text-4xl">{rankStyle.emoji}</div>
@@ -241,7 +241,7 @@ export default function Leaderboard({ userId }: LeaderboardProps) {
                         <div className="flex justify-center gap-4 text-sm">
                           <div>
                             <p className="text-gray-600">주간 포인트</p>
-                            <p className="font-semibold text-indigo-600">
+                            <p className="font-semibold text-blue-600">
                               +{formatPoints(entry.weekly_points)}
                             </p>
                           </div>
@@ -301,7 +301,7 @@ export default function Leaderboard({ userId }: LeaderboardProps) {
                       return (
                         <tr
                           key={entry.user_id}
-                          className={` ${isCurrentUser ? 'border-indigo-300 bg-indigo-50' : 'hover:bg-gray-50'} transition-colors duration-150`}
+                          className={` ${isCurrentUser ? 'border-blue-300 bg-blue-50' : 'hover:bg-gray-50'} transition-colors duration-150`}
                         >
                           <td className="whitespace-nowrap px-6 py-4">
                             <span className="text-lg font-bold text-gray-900">
@@ -326,7 +326,7 @@ export default function Leaderboard({ userId }: LeaderboardProps) {
                             </span>
                           </td>
                           <td className="hidden whitespace-nowrap px-6 py-4 text-right sm:table-cell">
-                            <span className="font-medium text-indigo-600">
+                            <span className="font-medium text-blue-600">
                               +{formatPoints(entry.weekly_points)}
                             </span>
                           </td>

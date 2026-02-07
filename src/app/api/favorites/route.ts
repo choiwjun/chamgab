@@ -3,15 +3,8 @@
 // 동적 렌더링 강제 (Supabase 사용)
 export const dynamic = 'force-dynamic'
 
-import { createClient } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
-
-function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-  )
-}
 
 /**
  * GET /api/favorites
@@ -19,36 +12,34 @@ function getSupabase() {
  */
 export async function GET(request: NextRequest) {
   try {
-    const supabase = getSupabase()
+    const supabase = await createClient()
+
+    // 인증 확인
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const searchParams = request.nextUrl.searchParams
     const page = parseInt(searchParams.get('page') || '1')
     const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 50)
-
-    // 인증 확인 (실제로는 서버 클라이언트 사용)
-    // const supabaseServer = await createServerClient()
-    // const { data: { user } } = await supabaseServer.auth.getUser()
-
-    // Mock: 인증 없이 조회 (개발용)
-    const mockUserId = searchParams.get('user_id') || 'mock-user'
-
     const offset = (page - 1) * limit
 
     const { data, count, error } = await supabase
       .from('favorites')
       .select('*, properties(*)', { count: 'exact' })
-      .eq('user_id', mockUserId)
+      .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1)
 
     if (error) {
-      // Mock 데이터 반환
-      return NextResponse.json({
-        items: [],
-        total: 0,
-        page,
-        limit,
-        is_mock: true,
-      })
+      console.error('[Favorites API] Supabase query error:', error)
+      return NextResponse.json(
+        { error: 'Failed to fetch favorites' },
+        { status: 500 }
+      )
     }
 
     return NextResponse.json({
@@ -72,9 +63,18 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const supabase = getSupabase()
+    const supabase = await createClient()
+
+    // 인증 확인
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const body = await request.json()
-    const { property_id, user_id } = body
+    const { property_id } = body
 
     if (!property_id) {
       return NextResponse.json(
@@ -83,14 +83,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Mock: 인증 없이 추가 (개발용)
-    const userId = user_id || 'mock-user'
-
     // 중복 확인
     const { data: existing } = await supabase
       .from('favorites')
       .select('id')
-      .eq('user_id', userId)
+      .eq('user_id', user.id)
       .eq('property_id', property_id)
       .single()
 
@@ -103,7 +100,7 @@ export async function POST(request: NextRequest) {
 
     const { data, error } = await supabase
       .from('favorites')
-      .insert({ user_id: userId, property_id })
+      .insert({ user_id: user.id, property_id })
       .select()
       .single()
 

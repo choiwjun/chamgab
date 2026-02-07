@@ -153,7 +153,7 @@ function BusinessAnalysisResultContent() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gray-50">
         <div className="text-center">
-          <div className="border-primary-500 mx-auto mb-4 h-16 w-16 animate-spin rounded-full border-4 border-t-transparent" />
+          <div className="mx-auto mb-4 h-16 w-16 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" />
           <p className="text-gray-600">분석 중입니다...</p>
         </div>
       </div>
@@ -182,7 +182,7 @@ function BusinessAnalysisResultContent() {
           </p>
           <button
             onClick={() => router.push('/business-analysis')}
-            className="bg-primary-500 hover:bg-primary-600 rounded-lg px-6 py-3 text-white"
+            className="rounded-lg bg-blue-500 px-6 py-3 text-white hover:bg-blue-600"
           >
             다시 시도하기
           </button>
@@ -275,7 +275,7 @@ function BusinessAnalysisResultContent() {
         </div>
 
         {/* 하단 CTA */}
-        <div className="mt-8 rounded-xl bg-white p-6 text-center shadow-sm">
+        <div className="mt-8 rounded-xl border border-gray-200 bg-white p-6 text-center">
           <h3 className="mb-2 font-semibold text-gray-900">
             더 자세한 분석이 필요하신가요?
           </h3>
@@ -293,7 +293,7 @@ function BusinessAnalysisResultContent() {
               onClick={() =>
                 router.push(`/business-analysis/industry/${industryCode}`)
               }
-              className="bg-primary-500 hover:bg-primary-600 rounded-lg px-6 py-3 text-white"
+              className="rounded-lg bg-blue-500 px-6 py-3 text-white hover:bg-blue-600"
             >
               업종 통계 보기
             </button>
@@ -310,7 +310,7 @@ export default function BusinessAnalysisResultPage() {
       fallback={
         <div className="flex min-h-screen items-center justify-center bg-gray-50">
           <div className="text-center">
-            <div className="border-primary-500 mx-auto mb-4 h-16 w-16 animate-spin rounded-full border-4 border-t-transparent" />
+            <div className="mx-auto mb-4 h-16 w-16 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" />
             <p className="text-gray-600">분석 중입니다...</p>
           </div>
         </div>

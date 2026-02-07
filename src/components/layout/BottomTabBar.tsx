@@ -37,7 +37,7 @@ const tabs: TabItem[] = [
   {
     id: 'mypage',
     icon: User,
-    label: 'MY',
+    label: '내정보',
     route: '/mypage',
     requiresAuth: true,
   },
@@ -49,7 +49,7 @@ export function BottomTabBar() {
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-40 border-t border-editorial-dark/5 bg-editorial-bg/95 backdrop-blur-sm md:hidden"
+      className="fixed bottom-0 left-0 right-0 z-40 border-t border-gray-200 bg-white md:hidden"
       aria-label="하단 네비게이션"
     >
       <div className="flex h-16 items-center justify-around px-2">
@@ -67,7 +67,7 @@ export function BottomTabBar() {
             <Link
               key={tab.id}
               href={href}
-              className={`relative flex h-full flex-1 flex-col items-center justify-center transition-colors ${isDisabled ? 'opacity-40' : ''} ${isActive ? 'text-editorial-dark' : 'text-editorial-ink/40 hover:text-editorial-ink/60'} `}
+              className={`relative flex h-full flex-1 flex-col items-center justify-center transition-colors ${isDisabled ? 'opacity-40' : ''} ${isActive ? 'text-blue-500' : 'text-gray-500 hover:text-gray-700'} `}
               aria-label={tab.label}
               aria-current={isActive ? 'page' : undefined}
             >
@@ -75,7 +75,7 @@ export function BottomTabBar() {
               {isActive && (
                 <motion.div
                   layoutId="activeTab"
-                  className="absolute left-1/2 top-0 h-0.5 w-8 -translate-x-1/2 bg-editorial-gold"
+                  className="absolute left-1/2 top-0 h-0.5 w-8 -translate-x-1/2 bg-blue-500"
                   transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                 />
               )}

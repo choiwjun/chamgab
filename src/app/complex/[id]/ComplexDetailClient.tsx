@@ -195,14 +195,14 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
   }, [complex.id])
 
   return (
-    <div className="min-h-screen bg-editorial-bg pb-24">
+    <div className="min-h-screen bg-white pb-24">
       {/* 헤더 */}
-      <div className="border-b border-editorial-dark/5 bg-white">
+      <div className="border-b border-gray-200 bg-white">
         <div className="px-6 py-8">
           {/* 섹션 레이블 */}
           <div className="mb-6 flex items-center gap-3">
-            <span className="h-px w-8 bg-editorial-gold" />
-            <span className="text-xs uppercase tracking-[0.2em] text-editorial-ink/50">
+            <span className="h-px w-8 bg-blue-500" />
+            <span className="text-xs uppercase tracking-wide text-gray-500">
               Complex Detail
             </span>
           </div>
@@ -210,22 +210,22 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
           {/* 브랜드 배지 */}
           <div className="mb-4 flex items-center gap-3">
             {complex.brand && (
-              <span className="border border-editorial-gold/30 bg-editorial-gold/5 px-3 py-1.5 text-xs uppercase tracking-wider text-editorial-gold">
+              <span className="rounded-lg border border-blue-500/20 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-600">
                 {complex.brand}
               </span>
             )}
-            <span className="text-sm tracking-wide text-editorial-ink/50">
+            <span className="text-sm font-medium text-gray-500">
               {complex.sigungu}
             </span>
           </div>
 
           {/* 단지명 */}
-          <h1 className="mb-3 font-serif text-2xl text-editorial-dark md:text-3xl">
+          <h1 className="mb-3 text-2xl font-bold text-[#191F28] md:text-3xl">
             {complex.name}
           </h1>
 
           {/* 주소 */}
-          <div className="flex items-center gap-2 text-editorial-ink/60">
+          <div className="flex items-center gap-2 text-[#4E5968]">
             <MapPin className="h-4 w-4" />
             <span className="text-sm tracking-wide">{complex.address}</span>
           </div>
@@ -233,62 +233,54 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
       </div>
 
       {/* 단지 정보 */}
-      <div className="mt-px border-b border-editorial-dark/5 bg-white">
+      <div className="mt-px border-b border-gray-200 bg-white">
         <div className="px-6 py-8">
           <div className="mb-6 flex items-center gap-3">
-            <span className="h-px w-8 bg-editorial-gold" />
-            <span className="text-xs uppercase tracking-[0.2em] text-editorial-ink/50">
+            <span className="h-px w-8 bg-blue-500" />
+            <span className="text-xs uppercase tracking-wide text-gray-500">
               Complex Info
             </span>
           </div>
           <div className="grid grid-cols-2 gap-3">
             {complex.total_units && (
-              <div className="flex items-center gap-4 border border-editorial-dark/5 p-4">
-                <Building className="h-5 w-5 text-editorial-gold" />
+              <div className="flex items-center gap-4 rounded-xl border border-gray-200 bg-[#F9FAFB] p-4">
+                <Building className="h-5 w-5 text-blue-500" />
                 <div>
-                  <p className="text-xs uppercase tracking-wide text-editorial-ink/50">
-                    총 세대수
-                  </p>
-                  <p className="font-serif text-lg text-editorial-dark">
+                  <p className="text-xs font-medium text-gray-500">총 세대수</p>
+                  <p className="text-lg font-bold text-[#191F28]">
                     {complex.total_units.toLocaleString()}
                   </p>
                 </div>
               </div>
             )}
             {complex.total_buildings && (
-              <div className="flex items-center gap-4 border border-editorial-dark/5 p-4">
-                <Building className="h-5 w-5 text-editorial-gold" />
+              <div className="flex items-center gap-4 rounded-xl border border-gray-200 bg-[#F9FAFB] p-4">
+                <Building className="h-5 w-5 text-blue-500" />
                 <div>
-                  <p className="text-xs uppercase tracking-wide text-editorial-ink/50">
-                    총 동수
-                  </p>
-                  <p className="font-serif text-lg text-editorial-dark">
+                  <p className="text-xs font-medium text-gray-500">총 동수</p>
+                  <p className="text-lg font-bold text-[#191F28]">
                     {complex.total_buildings}동
                   </p>
                 </div>
               </div>
             )}
             {complex.built_year && (
-              <div className="flex items-center gap-4 border border-editorial-dark/5 p-4">
-                <Calendar className="h-5 w-5 text-editorial-gold" />
+              <div className="flex items-center gap-4 rounded-xl border border-gray-200 bg-[#F9FAFB] p-4">
+                <Calendar className="h-5 w-5 text-blue-500" />
                 <div>
-                  <p className="text-xs uppercase tracking-wide text-editorial-ink/50">
-                    준공년도
-                  </p>
-                  <p className="font-serif text-lg text-editorial-dark">
+                  <p className="text-xs font-medium text-gray-500">준공년도</p>
+                  <p className="text-lg font-bold text-[#191F28]">
                     {complex.built_year}
                   </p>
                 </div>
               </div>
             )}
             {complex.parking_ratio && (
-              <div className="flex items-center gap-4 border border-editorial-dark/5 p-4">
-                <Car className="h-5 w-5 text-editorial-gold" />
+              <div className="flex items-center gap-4 rounded-xl border border-gray-200 bg-[#F9FAFB] p-4">
+                <Car className="h-5 w-5 text-blue-500" />
                 <div>
-                  <p className="text-xs uppercase tracking-wide text-editorial-ink/50">
-                    주차대수
-                  </p>
-                  <p className="font-serif text-lg text-editorial-dark">
+                  <p className="text-xs font-medium text-gray-500">주차대수</p>
+                  <p className="text-lg font-bold text-[#191F28]">
                     {complex.parking_ratio.toFixed(1)}대/세대
                   </p>
                 </div>
@@ -299,11 +291,11 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
       </div>
 
       {/* 참값 분석 */}
-      <div className="mt-px border-b border-editorial-dark/5 bg-white">
+      <div className="mt-px border-b border-gray-200 bg-white">
         <div className="px-6 py-8">
           <div className="mb-6 flex items-center gap-3">
-            <span className="h-px w-8 bg-editorial-gold" />
-            <span className="text-xs uppercase tracking-[0.2em] text-editorial-ink/50">
+            <span className="h-px w-8 bg-blue-500" />
+            <span className="text-xs uppercase tracking-wide text-gray-500">
               AI Analysis
             </span>
           </div>
@@ -312,11 +304,11 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
             // 분석 결과 표시
             <div className="space-y-6">
               {/* 분석 대상 정보 */}
-              <div className="border-l-2 border-editorial-gold bg-editorial-sand/30 px-4 py-3">
-                <p className="mb-1 text-xs uppercase tracking-widest text-editorial-ink/50">
+              <div className="border-l-2 border-blue-500 bg-blue-50 px-4 py-3">
+                <p className="mb-1 text-xs uppercase tracking-widest text-gray-500">
                   분석 대상
                 </p>
-                <p className="text-sm text-editorial-dark">
+                <p className="text-sm text-[#191F28]">
                   {AREA_TYPES.find(
                     (a) => a.value === analysisResult.propertyInput.areaType
                   )?.label || analysisResult.propertyInput.areaType}{' '}
@@ -328,31 +320,31 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
                 </p>
               </div>
 
-              {/* 예측 가격 카드 - Editorial Style */}
-              <div className="relative border border-editorial-dark bg-editorial-dark p-6 text-white">
-                <div className="absolute left-0 top-0 h-0.5 w-full bg-editorial-gold" />
-                <p className="mb-3 text-xs uppercase tracking-[0.2em] text-white/60">
+              {/* 예측 가격 카드 */}
+              <div className="relative rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+                <div className="absolute left-0 top-0 h-1 w-full rounded-t-xl bg-blue-500" />
+                <p className="mb-3 text-xs font-medium text-gray-500">
                   AI 예측 적정가
                 </p>
-                <p className="mb-3 font-serif text-3xl md:text-4xl">
+                <p className="mb-3 text-3xl font-bold text-[#191F28] md:text-4xl">
                   {formatPrice(analysisResult.predicted_price)}
                 </p>
                 <div className="flex items-center gap-4 text-sm">
-                  <span className="text-white/70">
+                  <span className="text-[#4E5968]">
                     평당 {analysisResult.price_per_pyeong.toLocaleString()}만원
                   </span>
-                  <span className="border border-white/30 px-3 py-1 text-xs tracking-wide">
+                  <span className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-medium">
                     신뢰도 {analysisResult.confidence}%
                   </span>
                 </div>
-                <div className="mt-4 flex items-center gap-2 border-t border-white/20 pt-4">
+                <div className="mt-4 flex items-center gap-2 border-t border-gray-200 pt-4">
                   <span
-                    className={`px-3 py-1 text-xs uppercase tracking-wider ${
+                    className={`rounded-lg px-3 py-1 text-xs font-semibold ${
                       analysisResult.market_comparison === 'undervalued'
-                        ? 'bg-green-600'
+                        ? 'bg-green-50 text-[#00C471]'
                         : analysisResult.market_comparison === 'overvalued'
-                          ? 'bg-red-600'
-                          : 'bg-white/20'
+                          ? 'bg-red-50 text-[#F04452]'
+                          : 'bg-gray-100 text-gray-600'
                     }`}
                   >
                     {analysisResult.market_comparison === 'undervalued'
@@ -365,37 +357,37 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
               </div>
 
               {/* 시장 지표 요약 */}
-              <div className="border border-editorial-dark/10 p-5">
-                <h3 className="mb-4 flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-editorial-ink/60">
+              <div className="rounded-xl border border-gray-200 p-5">
+                <h3 className="mb-4 flex items-center gap-2 text-xs uppercase tracking-wide text-[#4E5968]">
                   현재 시장 지표
                 </h3>
                 <div className="grid grid-cols-3 gap-3">
-                  <div className="border border-editorial-dark/5 p-3 text-center">
-                    <p className="mb-1 text-xs uppercase tracking-wide text-editorial-ink/50">
+                  <div className="border border-gray-200 p-3 text-center">
+                    <p className="mb-1 text-xs uppercase tracking-wide text-gray-500">
                       기준금리
                     </p>
-                    <p className="font-serif text-lg text-editorial-dark">
+                    <p className="text-lg font-bold text-[#191F28]">
                       {analysisResult.marketIndicators.baseRate}%
                     </p>
                   </div>
-                  <div className="border border-editorial-dark/5 p-3 text-center">
-                    <p className="mb-1 text-xs uppercase tracking-wide text-editorial-ink/50">
+                  <div className="border border-gray-200 p-3 text-center">
+                    <p className="mb-1 text-xs uppercase tracking-wide text-gray-500">
                       매수우위
                     </p>
-                    <p className="font-serif text-lg text-editorial-dark">
+                    <p className="text-lg font-bold text-[#191F28]">
                       {analysisResult.marketIndicators.buyingPowerIndex}
                     </p>
                   </div>
-                  <div className="border border-editorial-dark/5 p-3 text-center">
-                    <p className="mb-1 text-xs uppercase tracking-wide text-editorial-ink/50">
+                  <div className="border border-gray-200 p-3 text-center">
+                    <p className="mb-1 text-xs uppercase tracking-wide text-gray-500">
                       가격지수
                     </p>
-                    <p className="font-serif text-lg text-editorial-gold">
+                    <p className="text-lg font-bold text-blue-600">
                       {analysisResult.marketIndicators.rebPriceIndex}
                     </p>
                   </div>
                 </div>
-                <p className="mt-3 text-right text-xs text-editorial-ink/40">
+                <p className="mt-3 text-right text-xs text-gray-400">
                   출처: 한국부동산원 R-ONE, 한국은행
                 </p>
               </div>
@@ -403,28 +395,28 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
               {/* 카테고리별 SHAP 분석 - Premium Accordion */}
               <div className="space-y-6">
                 {/* 섹션 헤더 */}
-                <div className="border-b border-editorial-dark/10 pb-4">
-                  <h3 className="mb-2 font-serif text-lg text-editorial-dark">
+                <div className="border-b border-[#191F28]/10 pb-4">
+                  <h3 className="mb-2 text-lg font-bold text-[#191F28]">
                     Price Impact Analysis
                   </h3>
-                  <p className="text-xs tracking-wide text-editorial-ink/50">
+                  <p className="text-xs tracking-wide text-gray-500">
                     {analysisResult.modelVersion} · SHAP Explainability
                   </p>
                 </div>
 
                 {/* 카테고리 아코디언 */}
-                <div className="divide-y divide-editorial-dark/5">
+                <div className="divide-y divide-gray-200">
                   {analysisResult.shapCategories.map((category, catIdx) => (
                     <details key={catIdx} className="group" open={catIdx === 0}>
                       <summary className="flex cursor-pointer list-none items-center py-5 [&::-webkit-details-marker]:hidden">
                         {/* 카테고리 번호 */}
-                        <div className="mr-4 flex h-8 w-8 flex-shrink-0 items-center justify-center border border-editorial-dark/10 text-xs font-medium text-editorial-ink/40 transition-colors group-open:border-editorial-gold group-open:text-editorial-gold">
+                        <div className="mr-4 flex h-8 w-8 flex-shrink-0 items-center justify-center border border-[#191F28]/10 text-xs font-medium text-gray-400 transition-colors group-open:border-blue-500 group-open:text-blue-600">
                           {String(catIdx + 1).padStart(2, '0')}
                         </div>
 
                         {/* 카테고리명 */}
                         <div className="min-w-0 flex-1">
-                          <span className="text-sm tracking-wide text-editorial-dark transition-colors group-hover:text-editorial-gold">
+                          <span className="text-sm tracking-wide text-[#191F28] transition-colors group-hover:text-blue-600">
                             {category.category}
                           </span>
                         </div>
@@ -433,7 +425,7 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
                         <div className="ml-4 flex items-center gap-4">
                           <div className="text-right">
                             <span
-                              className={`font-serif text-lg ${
+                              className={`text-lg font-bold ${
                                 category.totalImpact > 0
                                   ? 'text-red-600'
                                   : 'text-blue-600'
@@ -443,25 +435,25 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
                               {category.totalImpact.toFixed(1)}%
                             </span>
                           </div>
-                          <div className="h-6 w-px bg-editorial-dark/10" />
-                          <ChevronRight className="h-4 w-4 text-editorial-ink/30 transition-transform duration-300 group-open:rotate-90" />
+                          <div className="h-6 w-px bg-[#191F28]/10" />
+                          <ChevronRight className="h-4 w-4 text-gray-400 transition-transform duration-300 group-open:rotate-90" />
                         </div>
                       </summary>
 
                       {/* 세부 요인 리스트 */}
                       <div className="pb-6 pl-12">
-                        <div className="space-y-0 border-l border-editorial-gold/30 pl-6">
+                        <div className="space-y-0 border-l border-blue-500/20 pl-6">
                           {category.factors.map((factor, factorIdx) => (
                             <div
                               key={factorIdx}
-                              className="relative border-b border-editorial-dark/5 py-4 first:pt-0 last:border-b-0"
+                              className="relative border-b border-gray-200 py-4 first:pt-0 last:border-b-0"
                             >
                               {/* 타임라인 도트 */}
-                              <div className="absolute -left-6 top-4 h-2 w-2 -translate-x-1/2 border border-editorial-gold/50 bg-editorial-bg first:top-0" />
+                              <div className="absolute -left-6 top-4 h-2 w-2 -translate-x-1/2 border border-blue-500/50 bg-white first:top-0" />
 
                               {/* 요인 헤더 */}
                               <div className="mb-2 flex items-baseline justify-between">
-                                <h4 className="text-sm text-editorial-dark">
+                                <h4 className="text-sm text-[#191F28]">
                                   {factor.name}
                                 </h4>
                                 <span
@@ -478,7 +470,7 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
 
                               {/* 영향도 바 */}
                               <div className="mb-3">
-                                <div className="h-1 overflow-hidden bg-editorial-dark/5">
+                                <div className="h-1 overflow-hidden bg-[#191F28]/5">
                                   <div
                                     className={`h-full transition-all duration-500 ${
                                       factor.impact > 0
@@ -493,14 +485,14 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
                               </div>
 
                               {/* 설명 */}
-                              <p className="text-xs leading-relaxed text-editorial-ink/60">
+                              <p className="text-xs leading-relaxed text-[#4E5968]">
                                 {factor.description}
                               </p>
 
                               {/* 상세 설명 */}
                               {factor.detail && (
-                                <div className="mt-3 bg-editorial-sand/40 px-4 py-3">
-                                  <p className="text-xs leading-relaxed text-editorial-ink/70">
+                                <div className="mt-3 bg-gray-50 px-4 py-3">
+                                  <p className="text-xs leading-relaxed text-[#4E5968]">
                                     {factor.detail}
                                   </p>
                                 </div>
@@ -515,37 +507,37 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
               </div>
 
               {/* 분석 메타데이터 */}
-              <div className="flex items-center justify-between border-t border-editorial-dark/10 py-4">
+              <div className="flex items-center justify-between border-t border-[#191F28]/10 py-4">
                 <div className="space-y-0.5">
-                  <p className="text-[10px] uppercase tracking-wider text-editorial-ink/40">
+                  <p className="text-[10px] uppercase tracking-wider text-gray-400">
                     Analysis Date
                   </p>
-                  <p className="text-xs text-editorial-ink/60">
+                  <p className="text-xs text-[#4E5968]">
                     {analysisResult.analysisDate}
                   </p>
                 </div>
-                <div className="h-8 w-px bg-editorial-dark/10" />
+                <div className="h-8 w-px bg-[#191F28]/10" />
                 <div className="space-y-0.5 text-center">
-                  <p className="text-[10px] uppercase tracking-wider text-editorial-ink/40">
+                  <p className="text-[10px] uppercase tracking-wider text-gray-400">
                     Model
                   </p>
-                  <p className="text-xs text-editorial-ink/60">
+                  <p className="text-xs text-[#4E5968]">
                     {analysisResult.modelVersion}
                   </p>
                 </div>
-                <div className="h-8 w-px bg-editorial-dark/10" />
+                <div className="h-8 w-px bg-[#191F28]/10" />
                 <div className="space-y-0.5 text-right">
-                  <p className="text-[10px] uppercase tracking-wider text-editorial-ink/40">
+                  <p className="text-[10px] uppercase tracking-wider text-gray-400">
                     Features
                   </p>
-                  <p className="text-xs text-editorial-ink/60">48 Variables</p>
+                  <p className="text-xs text-[#4E5968]">48 Variables</p>
                 </div>
               </div>
 
               {/* 다시 분석 버튼 */}
               <button
                 onClick={() => setAnalysisResult(null)}
-                className="w-full border border-editorial-dark py-3.5 text-sm uppercase tracking-widest text-editorial-dark transition-colors hover:bg-editorial-dark hover:text-white"
+                className="w-full rounded-lg border-2 border-blue-500 bg-white py-3.5 text-sm font-semibold text-blue-500 transition-colors hover:bg-blue-500 hover:text-white"
               >
                 다시 분석하기
               </button>
@@ -554,23 +546,23 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
             // 분석 요청 전 - 매물 정보 입력 폼
             <div className="space-y-6">
               {/* 안내 메시지 */}
-              <div className="border-l-2 border-editorial-gold bg-editorial-sand/30 px-4 py-3">
-                <p className="text-sm text-editorial-ink/70">
+              <div className="rounded-xl border-l-4 border-blue-500 bg-blue-50 px-4 py-3">
+                <p className="text-sm text-[#191F28]">
                   정확한 가격 분석을 위해 매물 정보를 입력해주세요.
                 </p>
               </div>
 
               {/* 매물 정보 입력 폼 */}
-              <div className="border border-editorial-dark/10 p-5">
-                <h3 className="mb-5 flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-editorial-ink/60">
-                  <Home className="h-4 w-4 text-editorial-gold" />
+              <div className="rounded-xl border border-gray-200 p-5">
+                <h3 className="mb-5 flex items-center gap-3 text-xs font-semibold tracking-wide text-[#4E5968]">
+                  <Home className="h-4 w-4 text-blue-500" />
                   매물 정보 입력
                 </h3>
 
                 <div className="space-y-5">
                   {/* 평형 선택 (필수) */}
                   <div>
-                    <label className="mb-2 flex items-center gap-2 text-xs uppercase tracking-widest text-editorial-ink/60">
+                    <label className="mb-2 flex items-center gap-2 text-xs uppercase tracking-widest text-[#4E5968]">
                       <Layers className="h-3.5 w-3.5" />
                       평형 <span className="text-red-500">*</span>
                     </label>
@@ -582,10 +574,10 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
                           areaType: e.target.value,
                         }))
                       }
-                      className={`w-full border bg-white px-4 py-3.5 text-sm transition-colors focus:border-editorial-gold focus:outline-none ${
+                      className={`w-full rounded-lg border bg-white px-4 py-3.5 text-sm transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
                         inputErrors.areaType
-                          ? 'border-red-500'
-                          : 'border-editorial-dark/10'
+                          ? 'border-[#F04452]'
+                          : 'border-gray-200'
                       }`}
                     >
                       <option value="">평형을 선택하세요</option>
@@ -604,7 +596,7 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
 
                   {/* 층수 입력 (필수) */}
                   <div>
-                    <label className="mb-2 flex items-center gap-2 text-xs uppercase tracking-widest text-editorial-ink/60">
+                    <label className="mb-2 flex items-center gap-2 text-xs uppercase tracking-widest text-[#4E5968]">
                       <Building className="h-3.5 w-3.5" />
                       층수 <span className="text-red-500">*</span>
                     </label>
@@ -620,10 +612,10 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
                           floor: parseInt(e.target.value) || 0,
                         }))
                       }
-                      className={`w-full border bg-white px-4 py-3.5 text-sm transition-colors focus:border-editorial-gold focus:outline-none ${
+                      className={`w-full rounded-lg border bg-white px-4 py-3.5 text-sm transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
                         inputErrors.floor
-                          ? 'border-red-500'
-                          : 'border-editorial-dark/10'
+                          ? 'border-[#F04452]'
+                          : 'border-gray-200'
                       }`}
                     />
                     {inputErrors.floor && (
@@ -635,9 +627,9 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
 
                   {/* 동 입력 (선택) */}
                   <div>
-                    <label className="mb-2 flex items-center gap-2 text-xs uppercase tracking-widest text-editorial-ink/60">
+                    <label className="mb-2 flex items-center gap-2 text-xs uppercase tracking-widest text-[#4E5968]">
                       <Building className="h-3.5 w-3.5" />동{' '}
-                      <span className="text-editorial-ink/40">(선택)</span>
+                      <span className="text-gray-400">(선택)</span>
                     </label>
                     <input
                       type="text"
@@ -649,15 +641,15 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
                           dong: e.target.value,
                         }))
                       }
-                      className="w-full border border-editorial-dark/10 bg-white px-4 py-3.5 text-sm transition-colors focus:border-editorial-gold focus:outline-none"
+                      className="w-full rounded-lg border border-gray-200 bg-white px-4 py-3.5 text-sm transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
 
                   {/* 향 선택 (선택) */}
                   <div>
-                    <label className="mb-2 flex items-center gap-2 text-xs uppercase tracking-widest text-editorial-ink/60">
+                    <label className="mb-2 flex items-center gap-2 text-xs uppercase tracking-widest text-[#4E5968]">
                       <Compass className="h-3.5 w-3.5" />향{' '}
-                      <span className="text-editorial-ink/40">(선택)</span>
+                      <span className="text-gray-400">(선택)</span>
                     </label>
                     <select
                       value={propertyInput.direction}
@@ -667,7 +659,7 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
                           direction: e.target.value,
                         }))
                       }
-                      className="w-full border border-editorial-dark/10 bg-white px-4 py-3.5 text-sm transition-colors focus:border-editorial-gold focus:outline-none"
+                      className="w-full rounded-lg border border-gray-200 bg-white px-4 py-3.5 text-sm transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     >
                       {DIRECTIONS.map((dir) => (
                         <option key={dir.value} value={dir.value}>
@@ -683,7 +675,7 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
               <button
                 onClick={handleRequestAnalysis}
                 disabled={isRequesting}
-                className="w-full bg-editorial-dark py-4 text-sm uppercase tracking-widest text-white transition-colors hover:bg-editorial-gold disabled:cursor-not-allowed disabled:opacity-50"
+                className="w-full rounded-lg bg-blue-500 py-4 text-sm font-semibold text-white transition-colors hover:bg-[#1B64DA] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isRequesting ? (
                   <span className="flex items-center justify-center gap-3">
@@ -718,16 +710,16 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
       </div>
 
       {/* 최근 실거래 */}
-      <div className="mt-px border-b border-editorial-dark/5 bg-white">
+      <div className="mt-px border-b border-gray-200 bg-white">
         <div className="px-6 py-8">
           <div className="mb-6 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <span className="h-px w-8 bg-editorial-gold" />
-              <span className="text-xs uppercase tracking-[0.2em] text-editorial-ink/50">
+              <span className="h-px w-8 bg-blue-500" />
+              <span className="text-xs uppercase tracking-wide text-gray-500">
                 Recent Transactions
               </span>
             </div>
-            <button className="flex items-center gap-1 text-xs tracking-wide text-editorial-gold transition-colors hover:text-editorial-dark">
+            <button className="flex items-center gap-1 text-xs tracking-wide text-blue-600 transition-colors hover:text-[#191F28]">
               전체보기 <ChevronRight className="h-3.5 w-3.5" />
             </button>
           </div>
@@ -735,10 +727,7 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
           {isLoading ? (
             <div className="space-y-3">
               {Array.from({ length: 3 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="h-20 animate-pulse bg-editorial-sand/50"
-                />
+                <div key={i} className="h-20 animate-pulse bg-gray-100" />
               ))}
             </div>
           ) : transactions.length > 0 ? (
@@ -746,18 +735,18 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
               {transactions.map((tx, index) => (
                 <div
                   key={tx.id}
-                  className="flex items-center justify-between border border-editorial-dark/5 p-4 transition-colors hover:border-editorial-gold/30"
+                  className="flex items-center justify-between border border-gray-200 p-4 transition-colors hover:border-blue-500/20"
                 >
                   <div>
-                    <p className="font-serif text-lg text-editorial-dark">
+                    <p className="text-lg font-bold text-[#191F28]">
                       {formatPrice(tx.price)}
                     </p>
-                    <p className="mt-1 text-sm text-editorial-ink/50">
+                    <p className="mt-1 text-sm text-gray-500">
                       {tx.area_exclusive}㎡ · {tx.floor}층
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className="text-xs tracking-wide text-editorial-ink/40">
+                    <p className="text-xs tracking-wide text-gray-400">
                       {tx.transaction_date}
                     </p>
                     {index > 0 && (
@@ -787,21 +776,19 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
             </div>
           ) : (
             <div className="py-12 text-center">
-              <div className="mx-auto mb-4 h-px w-12 bg-editorial-gold" />
-              <p className="text-sm text-editorial-ink/50">
-                실거래 내역이 없습니다
-              </p>
+              <div className="mx-auto mb-4 h-px w-12 bg-blue-500" />
+              <p className="text-sm text-gray-500">실거래 내역이 없습니다</p>
             </div>
           )}
         </div>
       </div>
 
       {/* 하단 CTA */}
-      <div className="fixed bottom-0 left-0 right-0 border-t border-editorial-dark/10 bg-white px-6 py-4">
+      <div className="fixed bottom-0 left-0 right-0 border-t border-gray-200 bg-white px-6 py-4 shadow-lg">
         <div className="mx-auto max-w-2xl">
           <Link
             href={`/search?q=${encodeURIComponent(complex.name)}` as '/search'}
-            className="block w-full bg-editorial-dark py-3.5 text-center text-sm uppercase tracking-widest text-white transition-colors hover:bg-editorial-gold"
+            className="block w-full rounded-lg bg-blue-500 py-3.5 text-center text-sm font-semibold text-white transition-colors hover:bg-[#1B64DA]"
           >
             이 단지 매물 보기
           </Link>

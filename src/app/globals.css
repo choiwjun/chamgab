@@ -3,7 +3,6 @@
 @tailwind utilities;
 
 @layer utilities {
-  /* 스크롤바 숨김 (가로 스크롤용) */
   .scrollbar-hide {
     -ms-overflow-style: none;
     scrollbar-width: none;
@@ -14,25 +13,23 @@
 }
 
 :root {
-  --primary: #1e3a5f;
-  --primary-light: #2e5a8f;
-  --accent: #d4a853;
-  --chamgab-up: #10b981;
-  --chamgab-down: #ef4444;
-  --chamgab-neutral: #64748b;
-  --background: #faf8f5;
-  --foreground: #3d3d3d;
+  --primary: #3182f6;
+  --primary-dark: #1b64da;
+  --chamgab-up: #00c471;
+  --chamgab-down: #f04452;
+  --chamgab-neutral: #8b95a1;
+  --background: #ffffff;
+  --foreground: #191f28;
 }
 
 .dark {
-  --primary: #93b5d6;
-  --primary-light: #a8c8e8;
-  --accent: #d4b896;
-  --chamgab-up: #34d399;
-  --chamgab-down: #f87171;
-  --chamgab-neutral: #94a3b8;
-  --background: #0f0f1a;
-  --foreground: #e8e4dc;
+  --primary: #3182f6;
+  --primary-dark: #1b64da;
+  --chamgab-up: #00c471;
+  --chamgab-down: #f04452;
+  --chamgab-neutral: #8b95a1;
+  --background: #191f28;
+  --foreground: #f9fafb;
 }
 
 body {
@@ -42,22 +39,18 @@ body {
     -apple-system,
     BlinkMacSystemFont,
     system-ui,
-    Roboto,
-    'Helvetica Neue',
-    'Segoe UI',
-    'Apple SD Gothic Neo',
-    'Noto Sans KR',
-    'Malgun Gothic',
-    'Apple Color Emoji',
-    'Segoe UI Emoji',
-    'Segoe UI Symbol',
     sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--background);
+  color: var(--foreground);
 }
 
-/* 참값 가격 표시 */
+/* 가격 표시 */
 .chamgab-price {
   font-weight: 700;
-  color: var(--primary);
+  font-variant-numeric: tabular-nums;
+  color: var(--foreground);
 }
 
 .chamgab-price.up {
@@ -68,11 +61,11 @@ body {
   color: var(--chamgab-down);
 }
 
-/* 신뢰도 프로그레스 바 */
+/* 신뢰도 바 */
 .confidence-bar {
   background: linear-gradient(
     90deg,
     var(--chamgab-up) var(--confidence),
-    #e5e7eb var(--confidence)
+    #e5e8eb var(--confidence)
   );
 }

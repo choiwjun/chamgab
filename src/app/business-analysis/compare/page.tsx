@@ -16,7 +16,8 @@ function CompareRegionsContent() {
   const [selectedDistricts, setSelectedDistricts] = useState<string[]>([])
   const [industryCode, setIndustryCode] = useState('')
   const [industry, setIndustry] = useState<Industry | null>(null)
-  const [comparisonResult, setComparisonResult] = useState<RegionComparisonResult | null>(null)
+  const [comparisonResult, setComparisonResult] =
+    useState<RegionComparisonResult | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -97,36 +98,45 @@ function CompareRegionsContent() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 py-8">
+      <div className="mx-auto max-w-7xl px-4 py-8">
         {/* 헤더 */}
         <div className="mb-8">
           <button
             onClick={() => router.push('/business-analysis')}
-            className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-4"
+            className="mb-4 flex items-center gap-2 text-gray-600 hover:text-gray-900"
           >
-            <ArrowLeft className="w-5 h-5" />
+            <ArrowLeft className="h-5 w-5" />
             <span>돌아가기</span>
           </button>
 
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">지역 비교</h1>
-          <p className="text-gray-600">최대 3개 지역의 창업 성공 확률을 비교합니다.</p>
+          <h1 className="mb-2 text-3xl font-bold text-gray-900">지역 비교</h1>
+          <p className="text-gray-600">
+            최대 3개 지역의 창업 성공 확률을 비교합니다.
+          </p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
           {/* 왼쪽: 선택 패널 */}
           <div className="lg:col-span-1">
-            <div className="bg-white rounded-2xl shadow-xl p-6 sticky top-8">
-              <h2 className="text-xl font-bold text-gray-900 mb-4">비교 설정</h2>
+            <div className="sticky top-8 rounded-xl border border-gray-200 bg-white p-6">
+              <h2 className="mb-4 text-xl font-bold text-gray-900">
+                비교 설정
+              </h2>
 
               {/* 업종 선택 */}
               <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">업종 선택</label>
-                <IndustrySelect value={industryCode} onChange={setIndustryCode} />
+                <label className="mb-2 block text-sm font-medium text-gray-700">
+                  업종 선택
+                </label>
+                <IndustrySelect
+                  value={industryCode}
+                  onChange={setIndustryCode}
+                />
               </div>
 
               {/* 지역 추가 */}
               <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="mb-2 block text-sm font-medium text-gray-700">
                   지역 추가 ({selectedDistricts.length}/3)
                 </label>
                 <RegionSelect
@@ -138,11 +148,11 @@ function CompareRegionsContent() {
 
               {/* 선택된 지역 목록 */}
               <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="mb-2 block text-sm font-medium text-gray-700">
                   선택된 지역
                 </label>
                 {selectedDistricts.length === 0 ? (
-                  <p className="text-sm text-gray-500 text-center py-4">
+                  <p className="py-4 text-center text-sm text-gray-500">
                     비교할 지역을 선택해주세요
                   </p>
                 ) : (
@@ -150,19 +160,21 @@ function CompareRegionsContent() {
                     {selectedDistricts.map((code, index) => (
                       <div
                         key={code}
-                        className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                        className="flex items-center justify-between rounded-lg bg-gray-50 p-3"
                       >
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-semibold text-gray-500">
                             #{index + 1}
                           </span>
-                          <span className="text-sm font-medium text-gray-900">{code}</span>
+                          <span className="text-sm font-medium text-gray-900">
+                            {code}
+                          </span>
                         </div>
                         <button
                           onClick={() => removeDistrict(code)}
-                          className="p-1 text-gray-400 hover:text-red-600 transition-colors"
+                          className="p-1 text-gray-400 transition-colors hover:text-red-600"
                         >
-                          <X className="w-4 h-4" />
+                          <X className="h-4 w-4" />
                         </button>
                       </div>
                     ))}
@@ -173,8 +185,10 @@ function CompareRegionsContent() {
               {/* 비교 버튼 */}
               <button
                 onClick={handleCompare}
-                disabled={selectedDistricts.length < 2 || !industryCode || isLoading}
-                className="w-full bg-primary-500 text-white py-3 rounded-lg font-semibold hover:bg-primary-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                disabled={
+                  selectedDistricts.length < 2 || !industryCode || isLoading
+                }
+                className="w-full rounded-lg bg-blue-500 py-3 font-semibold text-white transition-colors hover:bg-blue-600 disabled:cursor-not-allowed disabled:bg-gray-300"
               >
                 {isLoading ? '분석 중...' : '비교하기'}
               </button>
@@ -184,17 +198,19 @@ function CompareRegionsContent() {
           {/* 오른쪽: 결과 */}
           <div className="lg:col-span-2">
             {error && (
-              <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
+              <div className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4">
                 <p className="text-red-600">{error}</p>
               </div>
             )}
 
             {!comparisonResult && !error && (
-              <div className="bg-white rounded-2xl shadow-xl p-12 text-center">
-                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Plus className="w-8 h-8 text-gray-400" />
+              <div className="rounded-xl border border-gray-200 bg-white p-12 text-center">
+                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gray-100">
+                  <Plus className="h-8 w-8 text-gray-400" />
                 </div>
-                <h3 className="text-xl font-semibold text-gray-900 mb-2">비교를 시작하세요</h3>
+                <h3 className="mb-2 text-xl font-semibold text-gray-900">
+                  비교를 시작하세요
+                </h3>
                 <p className="text-gray-600">
                   왼쪽에서 업종과 지역을 선택한 후 비교 버튼을 클릭하세요.
                 </p>
@@ -218,9 +234,9 @@ export default function CompareRegionsPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="flex min-h-screen items-center justify-center bg-gray-50">
           <div className="text-center">
-            <div className="w-16 h-16 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+            <div className="mx-auto mb-4 h-16 w-16 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" />
             <p className="text-gray-600">로딩 중...</p>
           </div>
         </div>

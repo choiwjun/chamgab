@@ -11,39 +11,29 @@ export const metadata = {
 
 export default function ComparePage() {
   return (
-    <main className="min-h-screen bg-editorial-bg">
+    <main className="min-h-screen bg-white">
       {/* 헤더 */}
-      <div className="border-b border-editorial-dark/5 bg-editorial-bg">
-        <div className="max-w-7xl mx-auto px-6 md:px-8 py-12">
-          {/* 섹션 라벨 */}
-          <div className="mb-6">
-            <span className="inline-flex items-center gap-3 text-xs tracking-[0.2em] uppercase text-editorial-ink/50">
-              <span className="w-8 h-px bg-editorial-gold" />
-              Compare
-            </span>
-          </div>
-
-          <h1 className="font-serif text-4xl md:text-5xl text-editorial-dark tracking-tight mb-4">
-            매물 <span className="text-editorial-gold italic">비교</span>
+      <div className="border-b border-[#E5E8EB] bg-white">
+        <div className="mx-auto max-w-7xl px-6 py-12 md:px-8">
+          <h1 className="mb-4 text-4xl font-bold tracking-tight text-[#191F28] md:text-5xl">
+            매물 비교
           </h1>
-          <p className="text-editorial-ink/60 max-w-xl">
+          <p className="max-w-xl text-[#4E5968]">
             최대 4개 매물의 참값, 실거래가, 가격요인을 비교해보세요
           </p>
         </div>
       </div>
 
       {/* 비교 테이블 */}
-      <div className="max-w-7xl mx-auto px-6 md:px-8 py-12">
+      <div className="mx-auto max-w-7xl px-6 py-12 md:px-8">
         <Suspense
           fallback={
-            <div className="flex items-center justify-center min-h-[400px]">
+            <div className="flex min-h-[400px] items-center justify-center">
               <div className="text-center">
                 <div className="mb-6 flex justify-center">
-                  <div className="h-px w-12 bg-editorial-gold animate-pulse" />
+                  <div className="h-1 w-12 animate-pulse rounded-full bg-[#3182F6]" />
                 </div>
-                <p className="text-sm tracking-widest uppercase text-editorial-ink/50">
-                  Loading
-                </p>
+                <p className="text-sm text-[#8B95A1]">로딩 중...</p>
               </div>
             </div>
           }

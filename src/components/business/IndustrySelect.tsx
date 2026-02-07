@@ -47,7 +47,10 @@ export function IndustrySelect({
   // 외부 클릭 감지
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node)
+      ) {
         setIsOpen(false)
       }
     }
@@ -79,8 +82,8 @@ export function IndustrySelect({
   if (error) {
     return (
       <div className="w-full">
-        <div className="w-full flex items-center gap-2 px-4 py-3 bg-red-50 border border-red-300 rounded-lg text-red-700">
-          <AlertCircle className="w-5 h-5 flex-shrink-0" />
+        <div className="flex w-full items-center gap-2 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-red-700">
+          <AlertCircle className="h-5 w-5 flex-shrink-0" />
           <span className="text-sm">{error}</span>
         </div>
         <button
@@ -89,7 +92,7 @@ export function IndustrySelect({
             setError(null)
             window.location.reload()
           }}
-          className="mt-2 text-sm text-primary-600 hover:text-primary-700 underline"
+          className="mt-2 text-sm text-blue-600 underline hover:text-blue-700"
         >
           다시 시도
         </button>
@@ -104,7 +107,7 @@ export function IndustrySelect({
         onClick={() => !isLoading && setIsOpen(!isOpen)}
         onKeyDown={handleKeyDown}
         disabled={isLoading}
-        className="w-full flex items-center justify-between px-4 py-3 bg-white border border-gray-300 rounded-lg hover:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-colors disabled:bg-gray-100 disabled:cursor-not-allowed"
+        className="flex w-full items-center justify-between rounded-lg border border-gray-300 bg-white px-4 py-3 transition-colors hover:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:bg-gray-100"
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         aria-label={placeholder}
@@ -113,19 +116,19 @@ export function IndustrySelect({
           {isLoading ? '로딩 중...' : selectedIndustry?.name || placeholder}
         </span>
         <ChevronDown
-          className={`w-5 h-5 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+          className={`h-5 w-5 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
         />
       </button>
 
       {isOpen && (
-        <div className="absolute z-20 w-full mt-2 bg-white border border-gray-200 rounded-lg shadow-lg">
+        <div className="absolute z-20 mt-2 w-full rounded-lg border border-gray-200 bg-white shadow-lg">
           {/* 카테고리 필터 */}
-          <div className="flex gap-2 p-3 border-b border-gray-200 overflow-x-auto">
+          <div className="flex gap-2 overflow-x-auto border-b border-gray-200 p-3">
             <button
               onClick={() => setSelectedCategory(null)}
-              className={`px-3 py-1.5 text-sm rounded-full transition-colors whitespace-nowrap ${
+              className={`whitespace-nowrap rounded-full px-3 py-1.5 text-sm transition-colors ${
                 selectedCategory === null
-                  ? 'bg-primary-500 text-white'
+                  ? 'bg-blue-500 text-white'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
@@ -135,9 +138,9 @@ export function IndustrySelect({
               <button
                 key={category}
                 onClick={() => setSelectedCategory(category)}
-                className={`px-3 py-1.5 text-sm rounded-full transition-colors whitespace-nowrap ${
+                className={`whitespace-nowrap rounded-full px-3 py-1.5 text-sm transition-colors ${
                   selectedCategory === category
-                    ? 'bg-primary-500 text-white'
+                    ? 'bg-blue-500 text-white'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
               >
@@ -149,7 +152,7 @@ export function IndustrySelect({
           {/* 업종 목록 */}
           <ul className="max-h-60 overflow-y-auto" role="listbox">
             {filteredIndustries.length === 0 ? (
-              <li className="px-4 py-6 text-center text-gray-500 text-sm">
+              <li className="px-4 py-6 text-center text-sm text-gray-500">
                 선택 가능한 업종이 없습니다
               </li>
             ) : (
@@ -167,8 +170,10 @@ export function IndustrySelect({
                     }
                   }}
                   tabIndex={0}
-                  className={`px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors focus:outline-none focus:bg-gray-50 ${
-                    value === industry.code ? 'bg-primary-50 text-primary-700' : 'text-gray-900'
+                  className={`cursor-pointer px-4 py-3 transition-colors hover:bg-gray-50 focus:bg-gray-50 focus:outline-none ${
+                    value === industry.code
+                      ? 'bg-blue-50 text-blue-700'
+                      : 'text-gray-900'
                   }`}
                   role="option"
                   aria-selected={value === industry.code}
@@ -177,10 +182,12 @@ export function IndustrySelect({
                     <div>
                       <div className="font-medium">{industry.name}</div>
                       {industry.description && (
-                        <div className="text-sm text-gray-500 mt-0.5">{industry.description}</div>
+                        <div className="mt-0.5 text-sm text-gray-500">
+                          {industry.description}
+                        </div>
                       )}
                     </div>
-                    <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded">
+                    <span className="rounded bg-gray-100 px-2 py-1 text-xs text-gray-400">
                       {industry.category}
                     </span>
                   </div>

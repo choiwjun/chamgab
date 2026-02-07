@@ -90,7 +90,7 @@ function formatChartPrice(value: number): string {
 const TrendIcon = ({ direction }: { direction: string }) => {
   switch (direction) {
     case '상승':
-      return <TrendingUp className="h-5 w-5 text-red-500" />
+      return <TrendingUp className="h-5 w-5 text-[#F04452]" />
     case '하락':
       return <TrendingDown className="h-5 w-5 text-blue-500" />
     default:
@@ -101,9 +101,9 @@ const TrendIcon = ({ direction }: { direction: string }) => {
 const SignalIcon = ({ type }: { type: string }) => {
   switch (type) {
     case 'positive':
-      return <CheckCircle className="h-5 w-5 text-green-500" />
+      return <CheckCircle className="h-5 w-5 text-[#00C471]" />
     case 'negative':
-      return <AlertCircle className="h-5 w-5 text-red-500" />
+      return <AlertCircle className="h-5 w-5 text-[#F04452]" />
     case 'warning':
       return <AlertTriangle className="h-5 w-5 text-yellow-500" />
     default:
@@ -112,9 +112,9 @@ const SignalIcon = ({ type }: { type: string }) => {
 }
 
 const signalBgColor: Record<string, string> = {
-  positive: 'bg-green-50 border-green-200',
-  negative: 'bg-red-50 border-red-200',
-  warning: 'bg-yellow-50 border-yellow-200',
+  positive: 'bg-green-50 border-[#00C471]/20',
+  negative: 'bg-red-50 border-[#F04452]/20',
+  warning: 'bg-yellow-50 border-yellow-500/20',
 }
 
 export default function FuturePrediction({
@@ -151,8 +151,10 @@ export default function FuturePrediction({
   if (error || !data) {
     return (
       <div className="rounded-xl border border-gray-200 bg-white p-6">
-        <h3 className="mb-2 text-lg font-bold text-gray-900">미래 가격 예측</h3>
-        <p className="text-sm text-gray-500">
+        <h3 className="mb-2 text-lg font-bold text-[#191F28]">
+          미래 가격 예측
+        </h3>
+        <p className="text-sm text-[#4E5968]">
           예측 데이터를 불러올 수 없습니다.
         </p>
       </div>
@@ -206,17 +208,17 @@ export default function FuturePrediction({
       {/* 헤더 */}
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <BarChart3 className="h-5 w-5 text-indigo-600" />
-          <h3 className="text-lg font-bold text-gray-900">미래 가격 예측</h3>
+          <BarChart3 className="h-5 w-5 text-blue-500" />
+          <h3 className="text-lg font-bold text-[#191F28]">미래 가격 예측</h3>
         </div>
         <div className="flex gap-2">
           {[6, 12, 24].map((m) => (
             <button
               key={m}
               onClick={() => setPredictionMonths(m)}
-              className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+              className={`rounded-lg px-3 py-1 text-xs font-medium transition ${
                 predictionMonths === m
-                  ? 'bg-indigo-600 text-white'
+                  ? 'bg-blue-500 text-white'
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
@@ -227,19 +229,19 @@ export default function FuturePrediction({
       </div>
 
       {/* 트렌드 요약 */}
-      <div className="mb-6 flex items-center gap-4 rounded-lg bg-gray-50 p-4">
+      <div className="mb-6 flex items-center gap-4 rounded-xl bg-[#F9FAFB] p-4">
         <TrendIcon direction={data.trend.direction} />
         <div>
-          <p className="font-semibold text-gray-900">
+          <p className="font-semibold text-[#191F28]">
             {data.trend.direction} 추세
-            <span className="ml-2 text-sm font-normal text-gray-500">
+            <span className="ml-2 text-sm font-normal text-[#4E5968]">
               (월 {data.trend.monthly_change_rate > 0 ? '+' : ''}
               {data.trend.monthly_change_rate}%, 연{' '}
               {data.trend.annual_change_rate > 0 ? '+' : ''}
               {data.trend.annual_change_rate}%)
             </span>
           </p>
-          <div className="mt-1 flex items-center gap-3 text-xs text-gray-500">
+          <div className="mt-1 flex items-center gap-3 text-xs text-[#4E5968]">
             <span className="flex items-center gap-1">
               <Shield className="h-3 w-3" />
               신뢰도 {data.trend.confidence}%
@@ -267,16 +269,16 @@ export default function FuturePrediction({
           return (
             <div
               key={label}
-              className="rounded-lg border border-gray-200 p-3 text-center"
+              className="rounded-xl border border-gray-200 bg-[#F9FAFB] p-3 text-center"
             >
-              <p className="text-xs text-gray-500">{label}</p>
-              <p className="mt-1 text-sm font-bold text-gray-900">
+              <p className="text-xs text-[#4E5968]">{label}</p>
+              <p className="mt-1 text-sm font-bold text-[#191F28]">
                 {formatPrice(pred.predicted_price)}
               </p>
               <p
                 className={`mt-0.5 text-xs font-medium ${
                   change > 0
-                    ? 'text-red-500'
+                    ? 'text-[#F04452]'
                     : change < 0
                       ? 'text-blue-500'
                       : 'text-gray-500'
@@ -333,7 +335,7 @@ export default function FuturePrediction({
               type="monotone"
               dataKey="upper"
               stroke="none"
-              fill="#818cf8"
+              fill="#3182F6"
               fillOpacity={0.1}
               name="upper"
               legendType="none"
@@ -351,7 +353,7 @@ export default function FuturePrediction({
             <Line
               type="monotone"
               dataKey="actual"
-              stroke="#1f2937"
+              stroke="#191F28"
               strokeWidth={2}
               dot={{ r: 2 }}
               name="actual"
@@ -361,7 +363,7 @@ export default function FuturePrediction({
             <Line
               type="monotone"
               dataKey="predicted"
-              stroke="#6366f1"
+              stroke="#3182F6"
               strokeWidth={2}
               strokeDasharray="5 5"
               dot={{ r: 2 }}
@@ -375,21 +377,21 @@ export default function FuturePrediction({
       {/* 시장 시그널 */}
       {data.signals.length > 0 && (
         <div className="space-y-2">
-          <h4 className="text-sm font-semibold text-gray-700">시장 시그널</h4>
+          <h4 className="text-sm font-semibold text-[#191F28]">시장 시그널</h4>
           {data.signals.map((signal, idx) => (
             <div
               key={idx}
-              className={`flex items-start gap-3 rounded-lg border p-3 ${
+              className={`flex items-start gap-3 rounded-xl border p-3 ${
                 signalBgColor[signal.signal_type] ||
                 'border-gray-200 bg-gray-50'
               }`}
             >
               <SignalIcon type={signal.signal_type} />
               <div>
-                <p className="text-sm font-medium text-gray-900">
+                <p className="text-sm font-medium text-[#191F28]">
                   {signal.title}
                 </p>
-                <p className="text-xs text-gray-600">{signal.description}</p>
+                <p className="text-xs text-[#4E5968]">{signal.description}</p>
               </div>
             </div>
           ))}

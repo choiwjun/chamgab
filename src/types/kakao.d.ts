@@ -12,7 +12,9 @@ declare namespace kakao {
     }
 
     class LatLngBounds {
+      constructor()
       constructor(sw: LatLng, ne: LatLng)
+      extend(latlng: LatLng): void
       getSouthWest(): LatLng
       getNorthEast(): LatLng
       contain(latlng: LatLng): boolean
@@ -25,6 +27,7 @@ declare namespace kakao {
       setLevel(level: number, options?: { animate: boolean }): void
       getLevel(): number
       getBounds(): LatLngBounds
+      setBounds(bounds: LatLngBounds): void
       panTo(latlng: LatLng): void
       relayout(): void
     }

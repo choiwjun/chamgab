@@ -11,28 +11,20 @@ export const metadata: Metadata = {
 
 export default function FavoritesPage() {
   return (
-    <main className="min-h-screen bg-editorial-bg">
-      <div className="mx-auto max-w-7xl px-6 md:px-8 py-12 md:py-16">
-        {/* 섹션 라벨 */}
-        <div className="mb-6">
-          <span className="inline-flex items-center gap-3 text-xs tracking-[0.2em] uppercase text-editorial-ink/50">
-            <span className="w-8 h-px bg-editorial-gold" />
-            My Collection
-          </span>
-        </div>
-
+    <main className="min-h-screen bg-white">
+      <div className="mx-auto max-w-7xl px-6 py-12 md:px-8 md:py-16">
         {/* 헤더 */}
         <div className="mb-12">
-          <h1 className="font-serif text-4xl md:text-5xl text-editorial-dark tracking-tight mb-4">
-            관심 <span className="text-editorial-gold italic">매물</span>
+          <h1 className="mb-4 text-4xl font-bold tracking-tight text-[#191F28] md:text-5xl">
+            관심 매물
           </h1>
-          <p className="text-editorial-ink/60 max-w-xl">
+          <p className="max-w-xl text-[#4E5968]">
             저장한 매물을 확인하고 가격 변동 알림을 받아보세요
           </p>
         </div>
 
         {/* 구분선 */}
-        <div className="h-px bg-editorial-dark/10 mb-12" />
+        <div className="mb-12 h-px bg-[#E5E8EB]" />
 
         {/* 리스트 */}
         <FavoritesList />

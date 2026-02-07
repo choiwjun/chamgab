@@ -343,19 +343,45 @@ async def get_investment_score(property_id: str):
             raise HTTPException(status_code=404, detail="매물을 찾을 수 없습니다.")
 
         property_data = property_result.data[0]
-        current_price = property_data.get("price", 0)
+
+        # 최근 거래 가격 조회 (properties 테이블에 price 없으므로 transactions에서 가져옴)
+        complex_id = property_data.get("complex_id")
+        sigungu = property_data.get("sigungu")
 
         # 거래 내역 조회 (transactions 테이블)
         # 최근 3년간 거래 내역
         three_years_ago = (datetime.now() - timedelta(days=365*3)).strftime("%Y-%m-%d")
 
-        transactions_result = client.table("transactions").select("*").eq(
-            "complex_code", property_data.get("complex_code")
-        ).gte("transaction_date", three_years_ago).order(
-            "transaction_date", desc=True
-        ).execute()
+        transactions_result = None
+        if complex_id:
+            transactions_result = client.table("transactions").select("*").eq(
+                "complex_id", complex_id
+            ).gte("transaction_date", three_years_ago).order(
+                "transaction_date", desc=True
+            ).execute()
 
-        transactions = transactions_result.data if transactions_result.data else []
+        # complex_id로 못 찾으면 sigungu + 유사면적으로 조회
+        if (not transactions_result or not transactions_result.data) and sigungu:
+            area = property_data.get("area_exclusive", 84)
+            area_min = area * 0.8
+            area_max = area * 1.2
+            transactions_result = client.table("transactions").select("*").eq(
+                "sigungu", sigungu
+            ).gte("area_exclusive", area_min).lte(
+                "area_exclusive", area_max
+            ).gte("transaction_date", three_years_ago).order(
+                "transaction_date", desc=True
+            ).limit(50).execute()
+
+        transactions = transactions_result.data if (transactions_result and transactions_result.data) else []
+
+        # 현재 가격 추정 (가장 최근 거래 가격 사용)
+        current_price = 0
+        if transactions:
+            current_price = transactions[0].get("price", 0)
+        if not current_price:
+            # 거래 내역 없으면 기본값
+            current_price = 500000000  # 5억 기본값
 
         # ROI 계산을 위한 과거 가격 추정
         # 1년 전 가격
@@ -365,11 +391,11 @@ async def get_investment_score(property_id: str):
 
         if len(transactions) > 0:
             # 가장 오래된 거래 가격을 3년 전 가격으로 사용
-            three_year_ago_price = transactions[-1].get("transaction_price", current_price)
+            three_year_ago_price = transactions[-1].get("price", current_price)
 
             # 중간 거래를 1년 전 가격으로 사용
             if len(transactions) >= 2:
-                one_year_ago_price = transactions[len(transactions) // 2].get("transaction_price", current_price)
+                one_year_ago_price = transactions[len(transactions) // 2].get("price", current_price)
 
         # ROI 계산
         roi_1year = calculate_roi(
@@ -394,10 +420,17 @@ async def get_investment_score(property_id: str):
         )
 
         # 유동성 점수 계산
-        transaction_count_3months = len([
-            t for t in transactions
-            if datetime.strptime(t.get("transaction_date"), "%Y-%m-%d") >= datetime.now() - timedelta(days=90)
-        ])
+        three_months_ago = datetime.now() - timedelta(days=90)
+        transaction_count_3months = 0
+        for t in transactions:
+            try:
+                td = t.get("transaction_date", "")
+                if td:
+                    tx_date = datetime.strptime(str(td)[:10], "%Y-%m-%d")
+                    if tx_date >= three_months_ago:
+                        transaction_count_3months += 1
+            except (ValueError, TypeError):
+                pass
 
         # 평균 매물 체류 일수 (임의 값, 실제로는 listing_date 등을 활용)
         days_on_market_avg = 60
@@ -678,29 +711,56 @@ async def get_future_prediction(property_id: str, months: int = 12):
             raise HTTPException(status_code=404, detail="매물을 찾을 수 없습니다.")
 
         property_data = property_result.data[0]
-        current_price = property_data.get("price", 0)
         property_name = property_data.get("name", "알 수 없음")
+        complex_id = property_data.get("complex_id")
+        sigungu = property_data.get("sigungu")
 
         # 최근 5년간 거래 내역 조회
         five_years_ago = (datetime.now() - timedelta(days=365 * 5)).strftime("%Y-%m-%d")
 
-        transactions_result = client.table("transactions").select(
-            "transaction_price, transaction_date"
-        ).eq(
-            "complex_code", property_data.get("complex_code")
-        ).gte(
-            "transaction_date", five_years_ago
-        ).order(
-            "transaction_date", desc=False
-        ).execute()
+        transactions_result = None
+        if complex_id:
+            transactions_result = client.table("transactions").select(
+                "price, transaction_date"
+            ).eq(
+                "complex_id", complex_id
+            ).gte(
+                "transaction_date", five_years_ago
+            ).order(
+                "transaction_date", desc=False
+            ).execute()
 
-        transactions = transactions_result.data if transactions_result.data else []
+        # complex_id로 못 찾으면 sigungu + 유사면적으로 조회
+        if (not transactions_result or not transactions_result.data) and sigungu:
+            area = property_data.get("area_exclusive", 84)
+            area_min = area * 0.8
+            area_max = area * 1.2
+            transactions_result = client.table("transactions").select(
+                "price, transaction_date"
+            ).eq(
+                "sigungu", sigungu
+            ).gte("area_exclusive", area_min).lte(
+                "area_exclusive", area_max
+            ).gte(
+                "transaction_date", five_years_ago
+            ).order(
+                "transaction_date", desc=False
+            ).limit(200).execute()
+
+        transactions = transactions_result.data if (transactions_result and transactions_result.data) else []
+
+        # 현재 가격 (가장 최근 거래 가격)
+        current_price = 0
+        if transactions:
+            current_price = transactions[-1].get("price", 0)
+        if not current_price:
+            current_price = 500000000  # 5억 기본값
 
         # 월별 평균 가격 집계
         monthly_prices: Dict[str, List[int]] = {}
         for t in transactions:
             date_str = t.get("transaction_date", "")
-            price = t.get("transaction_price", 0)
+            price = t.get("price", 0)
             if date_str and price > 0:
                 month_key = date_str[:7]  # "2024-01"
                 if month_key not in monthly_prices:

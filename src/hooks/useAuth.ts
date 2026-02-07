@@ -30,21 +30,21 @@ export function useAuth() {
     }
   }, [authContext.isLoading, authContext.isAuthenticated, router])
 
-  // 읽지 않은 알림 개수 가져오기 (mock)
+  // 읽지 않은 알림 개수 가져오기
   useEffect(() => {
     if (authContext.isAuthenticated) {
-      // TODO: 실제 API 호출로 대체
-      // const fetchNotifications = async () => {
-      //   const { data } = await supabase
-      //     .from('notifications')
-      //     .select('count')
-      //     .eq('user_id', authContext.user!.id)
-      //     .eq('is_read', false)
-      //   setUnreadNotificationCount(data?.[0]?.count || 0)
-      // }
-      // fetchNotifications()
-
-      setUnreadNotificationCount(3)
+      const fetchUnreadCount = async () => {
+        try {
+          const res = await fetch('/api/notifications?limit=1&unread_only=true')
+          if (res.ok) {
+            const data = await res.json()
+            setUnreadNotificationCount(data.unread_count || 0)
+          }
+        } catch {
+          setUnreadNotificationCount(0)
+        }
+      }
+      fetchUnreadCount()
     } else {
       setUnreadNotificationCount(0)
     }

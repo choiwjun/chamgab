@@ -36,11 +36,8 @@ export async function GET(
       .single()
 
     if (error || !analysis) {
-      // 분석 결과 없음
-      return NextResponse.json(
-        { analysis: null, message: 'No analysis found' },
-        { status: 404 }
-      )
+      // 분석 결과 없음 (정상 응답 - 아직 분석 안 됨)
+      return NextResponse.json({ analysis: null })
     }
 
     return NextResponse.json({ analysis })

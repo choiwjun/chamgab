@@ -8,18 +8,21 @@ interface ComparisonTableProps {
   industryName: string
 }
 
-export function ComparisonTable({ comparisons, industryName }: ComparisonTableProps) {
+export function ComparisonTable({
+  comparisons,
+  industryName,
+}: ComparisonTableProps) {
   // 순위 아이콘
   const getRankIcon = (ranking: number) => {
     switch (ranking) {
       case 1:
-        return <Trophy className="w-5 h-5 text-yellow-500" />
+        return <Trophy className="h-5 w-5 text-yellow-500" />
       case 2:
-        return <Award className="w-5 h-5 text-gray-400" />
+        return <Award className="h-5 w-5 text-gray-400" />
       case 3:
-        return <Medal className="w-5 h-5 text-orange-600" />
+        return <Medal className="h-5 w-5 text-orange-600" />
       default:
-        return <span className="text-gray-500 font-semibold">#{ranking}</span>
+        return <span className="font-semibold text-gray-500">#{ranking}</span>
     }
   }
 
@@ -31,10 +34,12 @@ export function ComparisonTable({ comparisons, industryName }: ComparisonTablePr
   }
 
   return (
-    <div className="bg-white rounded-2xl shadow-xl p-8">
+    <div className="rounded-xl border border-gray-200 bg-white p-8">
       <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">지역 비교</h2>
-        <p className="text-gray-600">{industryName} 업종의 지역별 창업 성공 확률 비교</p>
+        <h2 className="mb-2 text-2xl font-bold text-gray-900">지역 비교</h2>
+        <p className="text-gray-600">
+          {industryName} 업종의 지역별 창업 성공 확률 비교
+        </p>
       </div>
 
       {/* 테이블 */}
@@ -42,19 +47,25 @@ export function ComparisonTable({ comparisons, industryName }: ComparisonTablePr
         <table className="w-full">
           <thead>
             <tr className="border-b-2 border-gray-200">
-              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">순위</th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">상권명</th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">
+                순위
+              </th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">
+                상권명
+              </th>
               <th className="px-4 py-3 text-right text-sm font-semibold text-gray-600">
                 성공 확률
               </th>
-              <th className="px-4 py-3 text-center text-sm font-semibold text-gray-600">평가</th>
+              <th className="px-4 py-3 text-center text-sm font-semibold text-gray-600">
+                평가
+              </th>
             </tr>
           </thead>
           <tbody>
             {comparisons.map((comparison, index) => (
               <tr
                 key={comparison.district_code}
-                className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${
+                className={`border-b border-gray-100 transition-colors hover:bg-gray-50 ${
                   index === 0 ? 'bg-yellow-50/30' : ''
                 }`}
               >
@@ -67,17 +78,23 @@ export function ComparisonTable({ comparisons, industryName }: ComparisonTablePr
 
                 {/* 상권명 */}
                 <td className="px-4 py-4">
-                  <div className="font-medium text-gray-900">{comparison.district_name}</div>
-                  <div className="text-sm text-gray-500">{comparison.district_code}</div>
+                  <div className="font-medium text-gray-900">
+                    {comparison.district_name}
+                  </div>
+                  <div className="text-sm text-gray-500">
+                    {comparison.district_code}
+                  </div>
                 </td>
 
                 {/* 성공 확률 */}
                 <td className="px-4 py-4 text-right">
                   <div className="flex items-center justify-end gap-2">
                     <div
-                      className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full font-semibold ${getProbabilityColor(comparison.success_probability)}`}
+                      className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 font-semibold ${getProbabilityColor(comparison.success_probability)}`}
                     >
-                      <span className="text-lg">{comparison.success_probability.toFixed(1)}%</span>
+                      <span className="text-lg">
+                        {comparison.success_probability.toFixed(1)}%
+                      </span>
                     </div>
                   </div>
                 </td>
@@ -86,7 +103,7 @@ export function ComparisonTable({ comparisons, industryName }: ComparisonTablePr
                 <td className="px-4 py-4 text-center">
                   {comparison.success_probability >= 70 ? (
                     <div className="inline-flex items-center gap-1 text-green-600">
-                      <TrendingUp className="w-4 h-4" />
+                      <TrendingUp className="h-4 w-4" />
                       <span className="text-sm font-medium">추천</span>
                     </div>
                   ) : comparison.success_probability >= 50 ? (
@@ -95,7 +112,7 @@ export function ComparisonTable({ comparisons, industryName }: ComparisonTablePr
                     </div>
                   ) : (
                     <div className="inline-flex items-center gap-1 text-red-600">
-                      <TrendingDown className="w-4 h-4" />
+                      <TrendingDown className="h-4 w-4" />
                       <span className="text-sm font-medium">비추천</span>
                     </div>
                   )}
@@ -108,13 +125,14 @@ export function ComparisonTable({ comparisons, industryName }: ComparisonTablePr
 
       {/* 요약 */}
       {comparisons.length > 0 && (
-        <div className="mt-6 p-4 bg-blue-50 rounded-xl">
+        <div className="mt-6 rounded-xl bg-blue-50 p-4">
           <div className="flex items-start gap-3">
-            <TrendingUp className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+            <TrendingUp className="mt-0.5 h-5 w-5 flex-shrink-0 text-blue-600" />
             <div className="flex-1">
-              <h3 className="font-semibold text-blue-900 mb-1">추천 상권</h3>
+              <h3 className="mb-1 font-semibold text-blue-900">추천 상권</h3>
               <p className="text-sm text-blue-700">
-                <strong>{comparisons[0].district_name}</strong>이(가) 가장 높은 성공 확률(
+                <strong>{comparisons[0].district_name}</strong>이(가) 가장 높은
+                성공 확률(
                 {comparisons[0].success_probability.toFixed(1)}%)을 보입니다.{' '}
                 {comparisons[0].success_probability >= 70
                   ? '이 지역에서의 창업을 적극 추천합니다.'

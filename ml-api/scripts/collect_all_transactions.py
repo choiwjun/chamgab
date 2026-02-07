@@ -154,29 +154,42 @@ class TransactionCollector:
         region_code: str,
         region_name: str
     ) -> List[Dict[str, Any]]:
-        """XML 응답 파싱"""
+        """XML 응답 파싱 (MOLIT API는 영문 태그 사용)"""
         try:
             root = etree.fromstring(xml_text.encode('utf-8'))
             items = root.findall('.//item')
 
             transactions = []
             for item in items:
-                # 거래일자 조합
-                year = int(self._get_text(item, '년') or 0)
-                month = int(self._get_text(item, '월') or 0)
-                day = int(self._get_text(item, '일') or 0)
+                # 거래일자 조합 (영문 태그: dealYear, dealMonth, dealDay)
+                year = int(self._get_text(item, 'dealYear') or 0)
+                month = int(self._get_text(item, 'dealMonth') or 0)
+                day = int(self._get_text(item, 'dealDay') or 0)
                 transaction_date = f"{year:04d}-{month:02d}-{day:02d}" if year else None
 
+                # transaction_date가 없으면 NOT NULL 제약조건 위반 → 건너뜀
+                if not transaction_date:
+                    continue
+
                 # 가격 (만원 → 원)
-                price_str = self._get_text(item, '거래금액', '').replace(',', '').strip()
+                price_str = self._get_text(item, 'dealAmount', '').replace(',', '').strip()
                 price = int(price_str) * 10000 if price_str else 0
+
+                # price가 0이면 의미 없는 데이터 → 건너뜀
+                if price == 0:
+                    continue
 
                 tx = {
                     'transaction_date': transaction_date,
                     'price': price,
-                    'area_exclusive': float(self._get_text(item, '전용면적') or 0),
-                    'floor': int(self._get_text(item, '층') or 0),
-                    'dong': self._get_text(item, '법정동'),
+                    'area_exclusive': float(self._get_text(item, 'excluUseAr') or 0),
+                    'floor': int(self._get_text(item, 'floor') or 0),
+                    'dong': self._get_text(item, 'umdNm'),
+                    'region_code': region_code,
+                    'sigungu': region_name.split(' ')[-1] if ' ' in region_name else region_name,
+                    'apt_name': self._get_text(item, 'aptNm'),
+                    'built_year': int(self._get_text(item, 'buildYear') or 0) or None,
+                    'jibun': self._get_text(item, 'jibun'),
                 }
                 transactions.append(tx)
 

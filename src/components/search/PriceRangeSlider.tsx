@@ -50,11 +50,11 @@ export function PriceRangeSlider({
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-4">
       <div className="mb-4 flex items-center justify-between">
-        <label className="text-sm font-medium text-gray-700">가격 범위</label>
+        <label className="text-xs font-semibold text-gray-700">가격 범위</label>
         {(localMin || localMax) && (
           <button
             onClick={handleReset}
-            className="text-xs text-gray-500 hover:text-gray-700"
+            className="text-xs text-gray-500 hover:text-gray-900"
           >
             초기화
           </button>
@@ -68,7 +68,7 @@ export function PriceRangeSlider({
           <select
             value={localMin || 0}
             onChange={(e) => setLocalMin(Number(e.target.value) || undefined)}
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
           >
             {PRICE_RANGES.map((range) => (
               <option key={`min-${range.value}`} value={range.value}>
@@ -84,7 +84,7 @@ export function PriceRangeSlider({
           <select
             value={localMax || 0}
             onChange={(e) => setLocalMax(Number(e.target.value) || undefined)}
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
           >
             {PRICE_RANGES.map((range) => (
               <option key={`max-${range.value}`} value={range.value}>
@@ -107,7 +107,7 @@ export function PriceRangeSlider({
       {/* 적용 버튼 */}
       <button
         onClick={handleApply}
-        className="mt-4 w-full rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark"
+        className="mt-4 w-full rounded-lg bg-blue-500 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-600"
       >
         적용
       </button>

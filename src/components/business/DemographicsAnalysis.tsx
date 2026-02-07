@@ -131,13 +131,13 @@ export default function DemographicsAnalysis({
         {/* 타겟 고객 및 추천 */}
         <div className="space-y-4">
           {/* 타겟 고객 페르소나 */}
-          <div className="rounded-lg bg-purple-50 p-4">
-            <h4 className="mb-2 font-bold text-purple-900">🎯 타겟 고객</h4>
-            <p className="text-lg font-semibold text-purple-900">
+          <div className="rounded-lg bg-blue-50 p-4">
+            <h4 className="mb-2 font-bold text-blue-900">🎯 타겟 고객</h4>
+            <p className="text-lg font-semibold text-blue-900">
               {data.persona.name}
             </p>
-            <p className="text-sm text-purple-700">{data.persona.age}</p>
-            <p className="mt-1 text-xs text-purple-600">
+            <p className="text-sm text-blue-700">{data.persona.age}</p>
+            <p className="mt-1 text-xs text-blue-600">
               {data.persona.lifestyle}
             </p>
           </div>
@@ -179,7 +179,7 @@ export default function DemographicsAnalysis({
               key={age}
               className={`rounded-lg border p-3 ${
                 age === data.primary_target
-                  ? 'border-purple-500 bg-purple-50'
+                  ? 'border-blue-500 bg-blue-50'
                   : 'border-gray-200'
               }`}
             >
@@ -191,7 +191,7 @@ export default function DemographicsAnalysis({
                 {info.count.toLocaleString()}명
               </p>
               {age === data.primary_target && (
-                <span className="mt-1 inline-block rounded bg-purple-500 px-2 py-0.5 text-xs text-white">
+                <span className="mt-1 inline-block rounded bg-blue-500 px-2 py-0.5 text-xs text-white">
                   주 타겟
                 </span>
               )}

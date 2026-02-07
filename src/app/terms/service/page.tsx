@@ -8,23 +8,21 @@ export const metadata = {
 
 export default function TermsOfServicePage() {
   return (
-    <div className="min-h-screen bg-editorial-bg">
+    <div className="min-h-screen bg-white">
       <div className="mx-auto max-w-3xl px-6 py-12">
         <Link
           href={'/auth/signup' as never}
-          className="mb-8 inline-flex items-center gap-2 text-sm text-editorial-ink/60 hover:text-editorial-dark"
+          className="mb-8 inline-flex items-center gap-2 text-sm text-[#4E5968] hover:text-[#191F28]"
         >
           <ArrowLeft className="h-4 w-4" />
           돌아가기
         </Link>
 
-        <h1 className="mb-8 text-3xl font-bold text-editorial-dark">
-          이용약관
-        </h1>
+        <h1 className="mb-8 text-3xl font-bold text-[#191F28]">이용약관</h1>
 
-        <div className="space-y-8 leading-relaxed text-editorial-ink/80">
+        <div className="space-y-8 leading-relaxed text-[#4E5968]">
           <section>
-            <h2 className="mb-3 text-xl font-semibold text-editorial-dark">
+            <h2 className="mb-3 text-xl font-semibold text-[#191F28]">
               제1조 (목적)
             </h2>
             <p>
@@ -35,7 +33,7 @@ export default function TermsOfServicePage() {
           </section>
 
           <section>
-            <h2 className="mb-3 text-xl font-semibold text-editorial-dark">
+            <h2 className="mb-3 text-xl font-semibold text-[#191F28]">
               제2조 (정의)
             </h2>
             <ol className="list-decimal space-y-2 pl-6">
@@ -55,7 +53,7 @@ export default function TermsOfServicePage() {
           </section>
 
           <section>
-            <h2 className="mb-3 text-xl font-semibold text-editorial-dark">
+            <h2 className="mb-3 text-xl font-semibold text-[#191F28]">
               제3조 (서비스의 내용)
             </h2>
             <ol className="list-decimal space-y-2 pl-6">
@@ -68,7 +66,7 @@ export default function TermsOfServicePage() {
           </section>
 
           <section>
-            <h2 className="mb-3 text-xl font-semibold text-editorial-dark">
+            <h2 className="mb-3 text-xl font-semibold text-[#191F28]">
               제4조 (면책조항)
             </h2>
             <p>
@@ -80,7 +78,7 @@ export default function TermsOfServicePage() {
           </section>
 
           <section>
-            <h2 className="mb-3 text-xl font-semibold text-editorial-dark">
+            <h2 className="mb-3 text-xl font-semibold text-[#191F28]">
               제5조 (개인정보 보호)
             </h2>
             <p>
@@ -88,7 +86,7 @@ export default function TermsOfServicePage() {
               내용은{' '}
               <Link
                 href={'/terms/privacy' as never}
-                className="text-editorial-gold hover:underline"
+                className="font-medium text-[#3182F6] hover:underline"
               >
                 개인정보처리방침
               </Link>
@@ -96,9 +94,7 @@ export default function TermsOfServicePage() {
             </p>
           </section>
 
-          <p className="pt-4 text-sm text-editorial-ink/40">
-            시행일: 2026년 2월 6일
-          </p>
+          <p className="pt-4 text-sm text-[#8B95A1]">시행일: 2026년 2월 6일</p>
         </div>
       </div>
     </div>

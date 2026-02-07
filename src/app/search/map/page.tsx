@@ -180,16 +180,16 @@ function SearchMapContent() {
       <div className="fixed inset-0 flex flex-col">
         {/* 상단 필터 오버레이 */}
         <div className="absolute left-0 right-0 top-0 z-10 bg-gradient-to-b from-black/30 to-transparent p-4">
-          <div className="flex items-center justify-between rounded-lg bg-white px-4 py-2 shadow-lg">
+          <div className="flex items-center justify-between rounded-xl bg-white px-4 py-2 shadow-sm">
             <div className="flex gap-2 overflow-x-auto">
               {/* 간단한 필터 칩 */}
               {region && (
-                <span className="rounded-full bg-[#1E3A5F] px-3 py-1 text-sm text-white">
+                <span className="rounded-full bg-blue-500 px-3 py-1 text-sm text-white">
                   {region}
                 </span>
               )}
               {type && (
-                <span className="rounded-full bg-[#1E3A5F] px-3 py-1 text-sm text-white">
+                <span className="rounded-full bg-blue-500 px-3 py-1 text-sm text-white">
                   {type}
                 </span>
               )}
@@ -220,7 +220,7 @@ function SearchMapContent() {
         {/* 리스트 뷰 전환 버튼 (FAB) */}
         <button
           onClick={handleViewToggle}
-          className="fixed bottom-8 right-4 z-20 flex items-center gap-2 rounded-full bg-[#1E3A5F] px-4 py-3 text-sm font-medium text-white shadow-lg transition-colors hover:bg-[#2E5A8F]"
+          className="fixed bottom-8 right-4 z-20 flex items-center gap-2 rounded-full bg-blue-500 px-4 py-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-600"
           aria-label="리스트로 보기"
         >
           <List className="h-5 w-5" />

@@ -140,9 +140,9 @@ export function SignupForm() {
 
       if (authData.user) {
         // 이메일 인증 안내 페이지로 이동
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         router.push(
-          ('/auth/verify-email?email=' + encodeURIComponent(data.email)) as any
+          ('/auth/verify-email?email=' +
+            encodeURIComponent(data.email)) as never
         )
       }
     } catch {
@@ -186,10 +186,10 @@ export function SignupForm() {
           type="button"
           onClick={() => handleSocialSignup('google')}
           disabled={!!socialLoading}
-          className="flex w-full items-center justify-center gap-3 border border-editorial-dark/10 bg-white px-4 py-3.5 text-sm tracking-wide text-editorial-dark transition-colors hover:border-editorial-dark/30 hover:bg-editorial-sand/20 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex w-full items-center justify-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3.5 text-sm text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {socialLoading === 'google' ? (
-            <Loader2 className="h-5 w-5 animate-spin text-editorial-ink/50" />
+            <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
           ) : (
             <svg className="h-5 w-5" viewBox="0 0 24 24">
               <path
@@ -217,7 +217,7 @@ export function SignupForm() {
           type="button"
           onClick={() => handleSocialSignup('kakao')}
           disabled={!!socialLoading}
-          className="flex w-full items-center justify-center gap-3 bg-[#FEE500] px-4 py-3.5 text-sm tracking-wide text-[#191919] transition-colors hover:bg-[#FDD800] disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex w-full items-center justify-center gap-3 rounded-lg bg-[#FEE500] px-4 py-3.5 text-sm text-[#191919] transition-colors hover:bg-[#FDD800] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {socialLoading === 'kakao' ? (
             <Loader2 className="h-5 w-5 animate-spin" />
@@ -236,7 +236,7 @@ export function SignupForm() {
           type="button"
           onClick={() => handleSocialSignup('naver')}
           disabled={!!socialLoading}
-          className="flex w-full items-center justify-center gap-3 bg-[#03C75A] px-4 py-3.5 text-sm tracking-wide text-white transition-colors hover:bg-[#02B350] disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex w-full items-center justify-center gap-3 rounded-lg bg-[#03C75A] px-4 py-3.5 text-sm text-white transition-colors hover:bg-[#02B350] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {socialLoading === 'naver' ? (
             <Loader2 className="h-5 w-5 animate-spin" />
@@ -255,12 +255,10 @@ export function SignupForm() {
       {/* 구분선 */}
       <div className="relative">
         <div className="absolute inset-0 flex items-center">
-          <span className="w-full border-t border-editorial-dark/10" />
+          <span className="w-full border-t border-gray-200" />
         </div>
         <div className="relative flex justify-center">
-          <span className="bg-editorial-bg px-6 text-xs uppercase tracking-widest text-editorial-ink/40">
-            or
-          </span>
+          <span className="bg-white px-4 text-sm text-gray-500">또는</span>
         </div>
       </div>
 
@@ -270,9 +268,9 @@ export function SignupForm() {
         <div>
           <label
             htmlFor="email"
-            className="mb-2 block text-xs uppercase tracking-widest text-editorial-ink/60"
+            className="mb-2 block text-sm font-medium text-gray-700"
           >
-            Email
+            이메일
           </label>
           <div className="relative">
             <input
@@ -281,23 +279,23 @@ export function SignupForm() {
               id="email"
               placeholder="email@example.com"
               onBlur={(e) => checkEmailAvailability(e.target.value)}
-              className="block w-full border border-editorial-dark/10 bg-white px-4 py-3.5 pr-12 text-sm text-editorial-dark placeholder-editorial-ink/30 transition-colors focus:border-editorial-gold focus:outline-none"
+              className="block w-full rounded-lg border border-gray-200 bg-white px-4 py-3.5 pr-12 text-sm text-gray-900 placeholder-gray-400 transition-colors focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
             {emailChecking && (
-              <Loader2 className="absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-editorial-ink/40" />
+              <Loader2 className="absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-gray-400" />
             )}
             {!emailChecking && emailAvailable === true && (
-              <Check className="absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-green-600" />
+              <Check className="absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-green-500" />
             )}
             {!emailChecking && emailAvailable === false && (
-              <X className="absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-red-600" />
+              <X className="absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-red-500" />
             )}
           </div>
           {errors.email && (
-            <p className="mt-2 text-xs text-red-600">{errors.email.message}</p>
+            <p className="mt-2 text-xs text-red-500">{errors.email.message}</p>
           )}
           {emailAvailable === false && (
-            <p className="mt-2 text-xs text-red-600">
+            <p className="mt-2 text-xs text-red-500">
               이미 사용 중인 이메일입니다.
             </p>
           )}
@@ -307,9 +305,9 @@ export function SignupForm() {
         <div>
           <label
             htmlFor="password"
-            className="mb-2 block text-xs uppercase tracking-widest text-editorial-ink/60"
+            className="mb-2 block text-sm font-medium text-gray-700"
           >
-            Password
+            비밀번호
           </label>
           <div className="relative">
             <input
@@ -317,12 +315,12 @@ export function SignupForm() {
               type={showPassword ? 'text' : 'password'}
               id="password"
               placeholder="8자 이상, 영문+숫자"
-              className="block w-full border border-editorial-dark/10 bg-white px-4 py-3.5 pr-12 text-sm text-editorial-dark placeholder-editorial-ink/30 transition-colors focus:border-editorial-gold focus:outline-none"
+              className="block w-full rounded-lg border border-gray-200 bg-white px-4 py-3.5 pr-12 text-sm text-gray-900 placeholder-gray-400 transition-colors focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-editorial-ink/40 transition-colors hover:text-editorial-dark"
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-gray-600"
             >
               {showPassword ? (
                 <EyeOff className="h-4 w-4" />
@@ -332,7 +330,7 @@ export function SignupForm() {
             </button>
           </div>
           {errors.password && (
-            <p className="mt-2 text-xs text-red-600">
+            <p className="mt-2 text-xs text-red-500">
               {errors.password.message}
             </p>
           )}
@@ -340,13 +338,13 @@ export function SignupForm() {
           {password && (
             <div className="mt-3">
               <div className="flex items-center gap-3">
-                <div className="h-0.5 flex-1 bg-editorial-dark/10">
+                <div className="h-1 flex-1 overflow-hidden rounded-full bg-gray-200">
                   <div
                     className={`h-full transition-all ${passwordStrength.color}`}
                     style={{ width: `${(passwordStrength.score / 6) * 100}%` }}
                   />
                 </div>
-                <span className="text-xs tracking-wide text-editorial-ink/50">
+                <span className="text-xs text-gray-600">
                   {passwordStrength.label}
                 </span>
               </div>
@@ -358,9 +356,9 @@ export function SignupForm() {
         <div>
           <label
             htmlFor="passwordConfirm"
-            className="mb-2 block text-xs uppercase tracking-widest text-editorial-ink/60"
+            className="mb-2 block text-sm font-medium text-gray-700"
           >
-            Confirm Password
+            비밀번호 확인
           </label>
           <div className="relative">
             <input
@@ -368,12 +366,12 @@ export function SignupForm() {
               type={showPasswordConfirm ? 'text' : 'password'}
               id="passwordConfirm"
               placeholder="비밀번호 다시 입력"
-              className="block w-full border border-editorial-dark/10 bg-white px-4 py-3.5 pr-12 text-sm text-editorial-dark placeholder-editorial-ink/30 transition-colors focus:border-editorial-gold focus:outline-none"
+              className="block w-full rounded-lg border border-gray-200 bg-white px-4 py-3.5 pr-12 text-sm text-gray-900 placeholder-gray-400 transition-colors focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
             <button
               type="button"
               onClick={() => setShowPasswordConfirm(!showPasswordConfirm)}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-editorial-ink/40 transition-colors hover:text-editorial-dark"
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-gray-600"
             >
               {showPasswordConfirm ? (
                 <EyeOff className="h-4 w-4" />
@@ -383,48 +381,48 @@ export function SignupForm() {
             </button>
           </div>
           {errors.passwordConfirm && (
-            <p className="mt-2 text-xs text-red-600">
+            <p className="mt-2 text-xs text-red-500">
               {errors.passwordConfirm.message}
             </p>
           )}
         </div>
 
         {/* 약관 동의 */}
-        <div className="space-y-4 border border-editorial-dark/10 bg-editorial-sand/20 p-5">
+        <div className="space-y-4 rounded-lg border border-gray-200 bg-gray-50 p-5">
           <label className="flex cursor-pointer items-center gap-3">
             <input
               type="checkbox"
               checked={allAgreed}
               onChange={(e) => handleAgreeAll(e.target.checked)}
-              className="h-4 w-4 border-editorial-dark/20 text-editorial-gold accent-editorial-gold focus:ring-editorial-gold"
+              className="h-4 w-4 rounded border-gray-300 text-blue-500 accent-blue-500 focus:ring-2 focus:ring-blue-500"
             />
-            <span className="text-sm font-medium text-editorial-dark">
+            <span className="text-sm font-semibold text-gray-900">
               전체 동의
             </span>
           </label>
 
-          <div className="space-y-3 border-t border-editorial-dark/10 pt-4">
+          <div className="space-y-3 border-t border-gray-200 pt-4">
             <label className="flex cursor-pointer items-center justify-between">
               <div className="flex items-center gap-3">
                 <input
                   type="checkbox"
                   {...register('agreeService')}
-                  className="h-3.5 w-3.5 border-editorial-dark/20 text-editorial-gold accent-editorial-gold focus:ring-editorial-gold"
+                  className="h-3.5 w-3.5 rounded border-gray-300 text-blue-500 accent-blue-500 focus:ring-2 focus:ring-blue-500"
                 />
-                <span className="text-sm text-editorial-ink/70">
+                <span className="text-sm text-gray-700">
                   (필수) 서비스 이용약관
                 </span>
               </div>
               <a
                 href="/terms/service"
                 target="_blank"
-                className="text-editorial-ink/40 transition-colors hover:text-editorial-gold"
+                className="text-gray-400 transition-colors hover:text-blue-500"
               >
                 <ExternalLink className="h-3.5 w-3.5" />
               </a>
             </label>
             {errors.agreeService && (
-              <p className="pl-6 text-xs text-red-600">
+              <p className="pl-6 text-xs text-red-500">
                 {errors.agreeService.message}
               </p>
             )}
@@ -434,22 +432,22 @@ export function SignupForm() {
                 <input
                   type="checkbox"
                   {...register('agreePrivacy')}
-                  className="h-3.5 w-3.5 border-editorial-dark/20 text-editorial-gold accent-editorial-gold focus:ring-editorial-gold"
+                  className="h-3.5 w-3.5 rounded border-gray-300 text-blue-500 accent-blue-500 focus:ring-2 focus:ring-blue-500"
                 />
-                <span className="text-sm text-editorial-ink/70">
+                <span className="text-sm text-gray-700">
                   (필수) 개인정보 처리방침
                 </span>
               </div>
               <a
                 href="/terms/privacy"
                 target="_blank"
-                className="text-editorial-ink/40 transition-colors hover:text-editorial-gold"
+                className="text-gray-400 transition-colors hover:text-blue-500"
               >
                 <ExternalLink className="h-3.5 w-3.5" />
               </a>
             </label>
             {errors.agreePrivacy && (
-              <p className="pl-6 text-xs text-red-600">
+              <p className="pl-6 text-xs text-red-500">
                 {errors.agreePrivacy.message}
               </p>
             )}
@@ -458,9 +456,9 @@ export function SignupForm() {
               <input
                 type="checkbox"
                 {...register('agreeMarketing')}
-                className="h-3.5 w-3.5 border-editorial-dark/20 text-editorial-gold accent-editorial-gold focus:ring-editorial-gold"
+                className="h-3.5 w-3.5 rounded border-gray-300 text-blue-500 accent-blue-500 focus:ring-2 focus:ring-blue-500"
               />
-              <span className="text-sm text-editorial-ink/70">
+              <span className="text-sm text-gray-700">
                 (선택) 마케팅 정보 수신
               </span>
             </label>
@@ -469,7 +467,7 @@ export function SignupForm() {
 
         {/* 에러 메시지 */}
         {error && (
-          <div className="border-l-2 border-red-500 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
             {error}
           </div>
         )}
@@ -478,15 +476,15 @@ export function SignupForm() {
         <button
           type="submit"
           disabled={isLoading || emailAvailable === false}
-          className="flex w-full items-center justify-center bg-editorial-dark px-4 py-3.5 text-sm uppercase tracking-widest text-white transition-colors hover:bg-editorial-gold disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex w-full items-center justify-center rounded-lg bg-blue-500 px-4 py-3.5 text-sm font-semibold text-white transition-colors hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isLoading ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Processing...
+              가입 중...
             </>
           ) : (
-            'Create Account'
+            '가입하기'
           )}
         </button>
       </form>

@@ -1,4 +1,4 @@
-// @TASK P1-S0-T1 - 공통 헤더 컴포넌트 (Editorial Luxury 스타일)
+// @TASK P1-S0-T1 - 공통 헤더 컴포넌트 (Toss Clean Minimal Style)
 // @SPEC specs/shared/components.yaml#header
 
 'use client'
@@ -88,10 +88,8 @@ function NavDropdown({
     >
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center gap-1.5 text-sm tracking-wide transition-colors ${
-          isActive
-            ? 'font-medium text-editorial-dark'
-            : 'text-editorial-ink/60 hover:text-editorial-dark'
+        className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium transition-colors ${
+          isActive ? 'text-[#191F28]' : 'text-[#4E5968] hover:text-[#191F28]'
         }`}
       >
         {category.label}
@@ -107,7 +105,7 @@ function NavDropdown({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 4 }}
             transition={{ duration: 0.15 }}
-            className="absolute left-0 top-full mt-2 w-44 border border-editorial-dark/10 bg-white/95 shadow-sm backdrop-blur-sm"
+            className="absolute left-0 top-full mt-2 w-44 overflow-hidden rounded-lg border border-[#E5E8EB] bg-white shadow-md"
           >
             {category.links.map((link) => {
               if (link.requiresAuth && !isAuthenticated) return null
@@ -115,7 +113,7 @@ function NavDropdown({
                 <Link
                   key={link.href}
                   href={link.href as never}
-                  className="block px-4 py-2.5 text-sm text-editorial-ink/70 transition-colors hover:bg-editorial-sand/50 hover:text-editorial-dark"
+                  className="block px-4 py-2.5 text-sm text-[#4E5968] transition-colors hover:bg-[#F9FAFB] hover:text-[#191F28]"
                   onClick={() => setIsOpen(false)}
                 >
                   {link.label}
@@ -143,23 +141,21 @@ export function Header() {
   const isBusinessActive = pathname.startsWith('/business-analysis')
 
   return (
-    <header className="sticky top-0 z-50 border-b border-editorial-dark/5 bg-editorial-bg/95 backdrop-blur-sm">
+    <header className="sticky top-0 z-50 border-b border-[#E5E8EB] bg-white">
       <div className="mx-auto max-w-7xl px-6 lg:px-8">
-        <div className="flex h-16 items-center justify-between md:h-20">
+        {/* Clean flat header */}
+        <div className="flex h-16 items-center justify-between">
           {/* 모바일 메뉴 버튼 */}
           <div className="flex flex-1 items-center md:flex-none">
             <button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="-ml-2 p-2 transition-colors hover:bg-editorial-dark/5 md:hidden"
+              className="-ml-2 rounded-lg p-2 transition-colors hover:bg-[#F2F4F6] md:hidden"
               aria-label="메뉴 열기"
             >
               {isMobileMenuOpen ? (
-                <X className="h-5 w-5 text-editorial-dark" aria-hidden="true" />
+                <X className="h-5 w-5 text-[#191F28]" aria-hidden="true" />
               ) : (
-                <Menu
-                  className="h-5 w-5 text-editorial-dark"
-                  aria-hidden="true"
-                />
+                <Menu className="h-5 w-5 text-[#191F28]" aria-hidden="true" />
               )}
             </button>
           </div>
@@ -169,13 +165,13 @@ export function Header() {
             href={'/' as never}
             className="absolute left-1/2 -translate-x-1/2 md:static md:flex-none md:translate-x-0"
           >
-            <span className="font-display text-2xl italic text-editorial-dark">
-              참값
+            <span className="text-lg font-bold text-[#191F28]">
+              참<span className="text-[#3182F6]">값</span>
             </span>
           </Link>
 
           {/* 데스크톱 네비게이션 - 2분류 드롭다운 */}
-          <nav className="hidden flex-1 items-center justify-center gap-8 md:flex">
+          <nav className="hidden flex-1 items-center justify-center gap-2 md:flex">
             <NavDropdown
               category={navCategories[0]}
               isActive={isApartmentActive}
@@ -187,30 +183,24 @@ export function Header() {
           </nav>
 
           {/* 우측 메뉴 */}
-          <div className="flex flex-1 items-center justify-end gap-1 md:gap-3">
+          <div className="flex flex-1 items-center justify-end gap-1 md:gap-2">
             {/* 모바일 검색 아이콘 */}
             <button
               onClick={() => setIsSearchExpanded(!isSearchExpanded)}
-              className="p-2 transition-colors hover:bg-editorial-dark/5 md:hidden"
+              className="rounded-lg p-2 transition-colors hover:bg-[#F2F4F6] md:hidden"
               aria-label="검색"
             >
-              <Search
-                className="h-5 w-5 text-editorial-dark"
-                aria-hidden="true"
-              />
+              <Search className="h-5 w-5 text-[#191F28]" aria-hidden="true" />
             </button>
 
             {/* 데스크톱 검색 */}
             <div className="hidden items-center md:flex">
               <button
                 onClick={() => setIsSearchExpanded(!isSearchExpanded)}
-                className="p-2 transition-colors hover:bg-editorial-dark/5"
+                className="rounded-lg p-2 transition-colors hover:bg-[#F2F4F6]"
                 aria-label="검색"
               >
-                <Search
-                  className="h-5 w-5 text-editorial-dark"
-                  aria-hidden="true"
-                />
+                <Search className="h-5 w-5 text-[#191F28]" aria-hidden="true" />
               </button>
             </div>
 
@@ -222,15 +212,12 @@ export function Header() {
                 {/* 알림 */}
                 <Link
                   href={'/notifications' as never}
-                  className="relative p-2 transition-colors hover:bg-editorial-dark/5"
+                  className="relative rounded-lg p-2 transition-colors hover:bg-[#F2F4F6]"
                   aria-label="알림"
                 >
-                  <Bell
-                    className="h-5 w-5 text-editorial-dark"
-                    aria-hidden="true"
-                  />
+                  <Bell className="h-5 w-5 text-[#191F28]" aria-hidden="true" />
                   <span
-                    className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-editorial-gold"
+                    className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-[#3182F6]"
                     aria-hidden="true"
                   />
                 </Link>
@@ -238,19 +225,16 @@ export function Header() {
                 {/* 마이페이지 */}
                 <Link
                   href={'/mypage' as never}
-                  className="p-2 transition-colors hover:bg-editorial-dark/5"
+                  className="rounded-lg p-2 transition-colors hover:bg-[#F2F4F6]"
                   aria-label="마이페이지"
                 >
-                  <User
-                    className="h-5 w-5 text-editorial-dark"
-                    aria-hidden="true"
-                  />
+                  <User className="h-5 w-5 text-[#191F28]" aria-hidden="true" />
                 </Link>
               </>
             ) : (
               <Link
                 href={'/auth/login' as never}
-                className="hidden bg-editorial-dark px-5 py-2 text-sm tracking-wide text-white transition-colors hover:bg-editorial-gold md:inline-flex"
+                className="hidden rounded-lg bg-[#3182F6] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1B64DA] md:inline-flex"
               >
                 로그인
               </Link>
@@ -272,12 +256,12 @@ export function Header() {
                 <input
                   type="search"
                   placeholder="아파트명, 지역으로 검색"
-                  className="w-full border border-editorial-dark/10 bg-white px-4 py-3 pl-11 text-editorial-dark placeholder-editorial-ink/40 transition-colors focus:border-editorial-gold focus:outline-none"
+                  className="w-full rounded-lg border border-[#E5E8EB] bg-white px-4 py-3 pl-11 text-[#191F28] placeholder-[#8B95A1] transition-colors focus:border-[#3182F6] focus:outline-none focus:ring-1 focus:ring-[#3182F6]"
                   autoFocus
                   aria-label="부동산 검색"
                 />
                 <Search
-                  className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-editorial-ink/40"
+                  className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8B95A1]"
                   aria-hidden="true"
                 />
               </div>
@@ -294,23 +278,23 @@ export function Header() {
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="overflow-hidden border-t border-editorial-dark/5 bg-editorial-bg md:hidden"
+            className="overflow-hidden border-t border-[#E5E8EB] bg-white md:hidden"
           >
-            <div className="space-y-6 px-6 py-6">
+            <div className="space-y-1 px-6 py-6">
               {/* 홈 */}
               <Link
                 href="/"
-                className="block px-4 py-2 text-editorial-dark transition-colors hover:bg-editorial-dark/5"
+                className="block px-4 py-2 font-medium text-[#191F28] transition-colors hover:bg-[#F9FAFB]"
                 onClick={() => setIsMobileMenuOpen(false)}
               >
                 홈
               </Link>
 
               {/* 아파트 적정가 섹션 */}
-              <div>
+              <div className="border-t border-[#E5E8EB] pt-4">
                 <div className="mb-2 flex items-center gap-2 px-4">
-                  <Building2 className="h-4 w-4 text-editorial-gold" />
-                  <span className="text-xs font-medium uppercase tracking-[0.15em] text-editorial-ink/40">
+                  <Building2 className="h-4 w-4 text-[#8B95A1]" />
+                  <span className="text-xs font-semibold uppercase tracking-wider text-[#8B95A1]">
                     아파트 적정가
                   </span>
                 </div>
@@ -321,7 +305,7 @@ export function Header() {
                       <Link
                         key={link.href}
                         href={link.href as never}
-                        className="block px-4 py-3 pl-10 text-editorial-dark transition-colors hover:bg-editorial-dark/5"
+                        className="block px-4 py-2 text-[#4E5968] transition-colors hover:bg-[#F9FAFB] hover:text-[#191F28]"
                         onClick={() => setIsMobileMenuOpen(false)}
                       >
                         {link.label}
@@ -332,10 +316,10 @@ export function Header() {
               </div>
 
               {/* 상권분석 섹션 */}
-              <div>
+              <div className="border-t border-[#E5E8EB] pt-4">
                 <div className="mb-2 flex items-center gap-2 px-4">
-                  <Store className="h-4 w-4 text-editorial-sage" />
-                  <span className="text-xs font-medium uppercase tracking-[0.15em] text-editorial-ink/40">
+                  <Store className="h-4 w-4 text-[#8B95A1]" />
+                  <span className="text-xs font-semibold uppercase tracking-wider text-[#8B95A1]">
                     상권분석
                   </span>
                 </div>
@@ -344,7 +328,7 @@ export function Header() {
                     <Link
                       key={link.href}
                       href={link.href as never}
-                      className="block px-4 py-3 pl-10 text-editorial-dark transition-colors hover:bg-editorial-dark/5"
+                      className="block px-4 py-2 text-[#4E5968] transition-colors hover:bg-[#F9FAFB] hover:text-[#191F28]"
                       onClick={() => setIsMobileMenuOpen(false)}
                     >
                       {link.label}
@@ -355,20 +339,20 @@ export function Header() {
 
               {/* 사용자 메뉴 */}
               {isAuthenticated ? (
-                <div className="space-y-1 border-t border-editorial-dark/5 pt-4">
+                <div className="border-t border-[#E5E8EB] pt-4">
                   <Link
                     href={'/mypage' as never}
-                    className="block px-4 py-3 text-editorial-dark transition-colors hover:bg-editorial-dark/5"
+                    className="block px-4 py-2 font-medium text-[#191F28] transition-colors hover:bg-[#F9FAFB]"
                     onClick={() => setIsMobileMenuOpen(false)}
                   >
                     마이페이지
                   </Link>
                 </div>
               ) : (
-                <div className="border-t border-editorial-dark/5 pt-4">
+                <div className="border-t border-[#E5E8EB] pt-4">
                   <Link
                     href={'/auth/login' as never}
-                    className="block bg-editorial-dark px-4 py-3 text-center text-white transition-colors hover:bg-editorial-gold"
+                    className="block rounded-lg bg-[#3182F6] px-4 py-2.5 text-center font-medium text-white transition-colors hover:bg-[#1B64DA]"
                     onClick={() => setIsMobileMenuOpen(false)}
                   >
                     로그인

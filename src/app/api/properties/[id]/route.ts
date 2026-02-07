@@ -15,6 +15,22 @@ function getSupabase() {
   )
 }
 
+function parseWKBPoint(wkb: string): { lat: number; lng: number } | null {
+  if (!wkb || typeof wkb !== 'string' || wkb.length < 50) return null
+  try {
+    const xHex = wkb.substring(wkb.length - 32, wkb.length - 16)
+    const yHex = wkb.substring(wkb.length - 16)
+    const lng = Buffer.from(xHex, 'hex').readDoubleLE(0)
+    const lat = Buffer.from(yHex, 'hex').readDoubleLE(0)
+    if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+      return { lat, lng }
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
 /**
  * GET /api/properties/:id
  *
@@ -70,9 +86,11 @@ export async function GET(
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
 
-    // 응답 형식 변환 (complexes -> complex)
+    // 응답 형식 변환 (complexes -> complex, location WKB → lat/lng)
+    const parsed = parseWKBPoint(data.location)
     const property = {
       ...data,
+      location: parsed || data.location,
       complex: data.complexes || undefined,
     }
     delete property.complexes

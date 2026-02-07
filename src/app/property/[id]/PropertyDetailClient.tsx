@@ -68,6 +68,7 @@ interface Transaction {
 
 export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
   const [isFavorite, setIsFavorite] = useState(false)
+  const [favoriteId, setFavoriteId] = useState<string | null>(null)
   const [analysis, setAnalysis] = useState<Analysis | null>(null)
   const [factors, setFactors] = useState<Factor[]>([])
   const [similarTransactions, setSimilarTransactions] = useState<Transaction[]>(
@@ -104,6 +105,25 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
           const similarData = await similarRes.json()
           setSimilarTransactions(similarData.transactions || [])
         }
+
+        // 관심 매물 여부 확인 (비로그인 시 건너뜀)
+        try {
+          const favRes = await fetch('/api/favorites')
+          if (favRes.ok) {
+            const favData = await favRes.json()
+            const found = (favData.items || []).find(
+              (f: { property_id: string; id: string }) =>
+                f.property_id === property.id
+            )
+            if (found) {
+              setIsFavorite(true)
+              setFavoriteId(found.id)
+            }
+          }
+          // 401은 비로그인 상태 - 정상
+        } catch {
+          // 네트워크 에러 무시
+        }
       } catch (error) {
         console.error('Failed to load data:', error)
       } finally {
@@ -116,8 +136,26 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
 
   // 관심 매물 토글
   const toggleFavorite = async () => {
-    setIsFavorite(!isFavorite)
-    // TODO: API 연동
+    try {
+      if (isFavorite && favoriteId) {
+        setIsFavorite(false)
+        await fetch(`/api/favorites/${favoriteId}`, { method: 'DELETE' })
+        setFavoriteId(null)
+      } else {
+        setIsFavorite(true)
+        const res = await fetch('/api/favorites', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ property_id: property.id }),
+        })
+        if (res.ok) {
+          const data = await res.json()
+          setFavoriteId(data.favorite?.id || null)
+        }
+      }
+    } catch {
+      setIsFavorite(!isFavorite)
+    }
   }
 
   // 매물 유형 한글 변환
@@ -131,87 +169,81 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
   }
 
   return (
-    <div className="min-h-screen bg-editorial-bg pb-24">
-      {/* 헤더 섹션 - No Image, Editorial Style */}
-      <div className="border-b border-editorial-dark/5 bg-white">
+    <div className="min-h-screen bg-white pb-24">
+      {/* 헤더 섹션 */}
+      <div className="border-b border-gray-200 bg-white">
         <div className="px-6 py-8">
           {/* 섹션 레이블 */}
           <div className="mb-6 flex items-center gap-3">
-            <span className="h-px w-8 bg-editorial-gold" />
-            <span className="text-xs uppercase tracking-[0.2em] text-editorial-ink/50">
-              Property Detail
+            <span className="h-px w-8 bg-blue-500" />
+            <span className="text-xs font-medium tracking-wide text-gray-500">
+              매물 상세정보
             </span>
           </div>
 
           {/* 타입 배지 */}
           <div className="mb-4 flex items-center gap-3">
-            <span className="border border-editorial-gold/30 bg-editorial-gold/5 px-3 py-1.5 text-xs uppercase tracking-wider text-editorial-gold">
+            <span className="rounded-lg border border-blue-500/20 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-600">
               {propertyTypeKo[property.property_type] || property.property_type}
             </span>
             {property.complexes?.brand && (
-              <span className="border border-editorial-dark/10 px-3 py-1.5 text-xs tracking-wide text-editorial-ink/60">
+              <span className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-600">
                 {property.complexes.brand}
               </span>
             )}
           </div>
 
           {/* 매물명 */}
-          <h1 className="mb-3 font-serif text-2xl text-editorial-dark md:text-3xl">
+          <h1 className="mb-3 text-2xl font-bold text-[#191F28] md:text-3xl">
             {property.name}
           </h1>
 
           {/* 주소 */}
-          <div className="flex items-center gap-2 text-editorial-ink/60">
+          <div className="flex items-center gap-2 text-[#4E5968]">
             <MapPin className="h-4 w-4" />
-            <span className="text-sm tracking-wide">{property.address}</span>
+            <span className="text-sm">{property.address}</span>
           </div>
         </div>
 
         {/* 상세 정보 그리드 */}
-        <div className="grid grid-cols-3 divide-x divide-editorial-dark/5 border-t border-editorial-dark/5">
+        <div className="grid grid-cols-3 divide-x divide-gray-200 border-t border-gray-200">
           {property.area_exclusive && (
             <div className="px-4 py-5 text-center">
-              <Ruler className="mx-auto mb-2 h-4 w-4 text-editorial-gold" />
-              <p className="font-serif text-lg text-editorial-dark">
+              <Ruler className="mx-auto mb-2 h-4 w-4 text-blue-500" />
+              <p className="text-lg font-bold text-[#191F28]">
                 {property.area_exclusive}㎡
               </p>
-              <p className="mt-1 text-xs uppercase tracking-wide text-editorial-ink/50">
-                전용면적
-              </p>
+              <p className="mt-1 text-xs font-medium text-gray-500">전용면적</p>
             </div>
           )}
           {property.built_year && (
             <div className="px-4 py-5 text-center">
-              <Calendar className="mx-auto mb-2 h-4 w-4 text-editorial-gold" />
-              <p className="font-serif text-lg text-editorial-dark">
+              <Calendar className="mx-auto mb-2 h-4 w-4 text-blue-500" />
+              <p className="text-lg font-bold text-[#191F28]">
                 {property.built_year}
               </p>
-              <p className="mt-1 text-xs uppercase tracking-wide text-editorial-ink/50">
-                준공년도
-              </p>
+              <p className="mt-1 text-xs font-medium text-gray-500">준공년도</p>
             </div>
           )}
           {property.floors && (
             <div className="px-4 py-5 text-center">
-              <Building className="mx-auto mb-2 h-4 w-4 text-editorial-gold" />
-              <p className="font-serif text-lg text-editorial-dark">
+              <Building className="mx-auto mb-2 h-4 w-4 text-blue-500" />
+              <p className="text-lg font-bold text-[#191F28]">
                 {property.floors}F
               </p>
-              <p className="mt-1 text-xs uppercase tracking-wide text-editorial-ink/50">
-                층수
-              </p>
+              <p className="mt-1 text-xs font-medium text-gray-500">층수</p>
             </div>
           )}
         </div>
       </div>
 
       {/* 참값 분석 카드 */}
-      <div className="mt-px border-b border-editorial-dark/5 bg-white">
+      <div className="mt-2 border-b border-gray-200 bg-white">
         <div className="px-6 py-8">
           <div className="mb-6 flex items-center gap-3">
-            <span className="h-px w-8 bg-editorial-gold" />
-            <span className="text-xs uppercase tracking-[0.2em] text-editorial-ink/50">
-              AI Analysis
+            <span className="h-px w-8 bg-blue-500" />
+            <span className="text-xs font-medium tracking-wide text-gray-500">
+              AI 분석
             </span>
           </div>
           <ChamgabCard
@@ -226,12 +258,12 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
 
       {/* 가격 요인 */}
       {factors.length > 0 && (
-        <div className="mt-px border-b border-editorial-dark/5 bg-white">
+        <div className="mt-2 border-b border-gray-200 bg-white">
           <div className="px-6 py-8">
             <div className="mb-6 flex items-center gap-3">
-              <span className="h-px w-8 bg-editorial-gold" />
-              <span className="text-xs uppercase tracking-[0.2em] text-editorial-ink/50">
-                Price Factors
+              <span className="h-px w-8 bg-blue-500" />
+              <span className="text-xs font-medium tracking-wide text-gray-500">
+                가격 영향 요인
               </span>
             </div>
             <PriceFactors
@@ -248,12 +280,12 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
       )}
 
       {/* 투자 점수 */}
-      <div className="mt-px border-b border-editorial-dark/5 bg-white">
+      <div className="mt-2 border-b border-gray-200 bg-white">
         <div className="px-6 py-8">
           <div className="mb-6 flex items-center gap-3">
-            <span className="h-px w-8 bg-editorial-gold" />
-            <span className="text-xs uppercase tracking-[0.2em] text-editorial-ink/50">
-              Investment Analysis
+            <span className="h-px w-8 bg-blue-500" />
+            <span className="text-xs font-medium tracking-wide text-gray-500">
+              투자 분석
             </span>
           </div>
           <InvestmentScore propertyId={property.id} />
@@ -262,12 +294,12 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
 
       {/* 유사 거래 */}
       {similarTransactions.length > 0 && (
-        <div className="mt-px border-b border-editorial-dark/5 bg-white">
+        <div className="mt-2 border-b border-gray-200 bg-white">
           <div className="px-6 py-8">
             <div className="mb-6 flex items-center gap-3">
-              <span className="h-px w-8 bg-editorial-gold" />
-              <span className="text-xs uppercase tracking-[0.2em] text-editorial-ink/50">
-                Similar Transactions
+              <span className="h-px w-8 bg-blue-500" />
+              <span className="text-xs font-medium tracking-wide text-gray-500">
+                유사 거래 내역
               </span>
             </div>
             <SimilarTransactions
@@ -279,23 +311,23 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
       )}
 
       {/* 하단 CTA 버튼 */}
-      <div className="fixed bottom-0 left-0 right-0 border-t border-editorial-dark/10 bg-white px-6 py-4">
+      <div className="fixed bottom-0 left-0 right-0 border-t border-gray-200 bg-white px-6 py-4 shadow-lg">
         <div className="mx-auto flex max-w-2xl gap-3">
           <button
             onClick={toggleFavorite}
-            className={`flex h-12 w-12 items-center justify-center border transition-colors ${
+            className={`flex h-12 w-12 items-center justify-center rounded-lg border transition-colors ${
               isFavorite
-                ? 'border-editorial-gold bg-editorial-gold/10 text-editorial-gold'
-                : 'border-editorial-dark/10 bg-white text-editorial-ink/40 hover:border-editorial-gold hover:text-editorial-gold'
+                ? 'border-blue-500 bg-blue-50 text-blue-600'
+                : 'border-gray-200 bg-white text-gray-400 hover:border-blue-500 hover:text-blue-600'
             }`}
           >
             <Heart className={`h-5 w-5 ${isFavorite ? 'fill-current' : ''}`} />
           </button>
-          <button className="flex h-12 w-12 items-center justify-center border border-editorial-dark/10 bg-white text-editorial-ink/40 transition-colors hover:border-editorial-gold hover:text-editorial-gold">
+          <button className="flex h-12 w-12 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-400 transition-colors hover:border-blue-500 hover:text-blue-600">
             <GitCompare className="h-5 w-5" />
           </button>
-          <button className="flex-1 bg-editorial-dark py-3 text-sm uppercase tracking-widest text-white transition-colors hover:bg-editorial-gold">
-            Contact
+          <button className="flex-1 rounded-lg bg-blue-500 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#1B64DA]">
+            문의하기
           </button>
         </div>
       </div>

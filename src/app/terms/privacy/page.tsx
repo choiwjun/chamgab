@@ -8,23 +8,23 @@ export const metadata = {
 
 export default function PrivacyPolicyPage() {
   return (
-    <div className="min-h-screen bg-editorial-bg">
+    <div className="min-h-screen bg-white">
       <div className="mx-auto max-w-3xl px-6 py-12">
         <Link
           href={'/auth/signup' as never}
-          className="mb-8 inline-flex items-center gap-2 text-sm text-editorial-ink/60 hover:text-editorial-dark"
+          className="mb-8 inline-flex items-center gap-2 text-sm text-[#4E5968] hover:text-[#191F28]"
         >
           <ArrowLeft className="h-4 w-4" />
           돌아가기
         </Link>
 
-        <h1 className="mb-8 text-3xl font-bold text-editorial-dark">
+        <h1 className="mb-8 text-3xl font-bold text-[#191F28]">
           개인정보처리방침
         </h1>
 
-        <div className="space-y-8 leading-relaxed text-editorial-ink/80">
+        <div className="space-y-8 leading-relaxed text-[#4E5968]">
           <section>
-            <h2 className="mb-3 text-xl font-semibold text-editorial-dark">
+            <h2 className="mb-3 text-xl font-semibold text-[#191F28]">
               1. 수집하는 개인정보 항목
             </h2>
             <ul className="list-disc space-y-1 pl-6">
@@ -35,7 +35,7 @@ export default function PrivacyPolicyPage() {
           </section>
 
           <section>
-            <h2 className="mb-3 text-xl font-semibold text-editorial-dark">
+            <h2 className="mb-3 text-xl font-semibold text-[#191F28]">
               2. 개인정보의 수집 및 이용 목적
             </h2>
             <ul className="list-disc space-y-1 pl-6">
@@ -47,7 +47,7 @@ export default function PrivacyPolicyPage() {
           </section>
 
           <section>
-            <h2 className="mb-3 text-xl font-semibold text-editorial-dark">
+            <h2 className="mb-3 text-xl font-semibold text-[#191F28]">
               3. 개인정보의 보유 및 이용 기간
             </h2>
             <p>
@@ -61,7 +61,7 @@ export default function PrivacyPolicyPage() {
           </section>
 
           <section>
-            <h2 className="mb-3 text-xl font-semibold text-editorial-dark">
+            <h2 className="mb-3 text-xl font-semibold text-[#191F28]">
               4. 개인정보의 제3자 제공
             </h2>
             <p>
@@ -71,7 +71,7 @@ export default function PrivacyPolicyPage() {
           </section>
 
           <section>
-            <h2 className="mb-3 text-xl font-semibold text-editorial-dark">
+            <h2 className="mb-3 text-xl font-semibold text-[#191F28]">
               5. 개인정보의 안전성 확보 조치
             </h2>
             <ul className="list-disc space-y-1 pl-6">
@@ -83,7 +83,7 @@ export default function PrivacyPolicyPage() {
           </section>
 
           <section>
-            <h2 className="mb-3 text-xl font-semibold text-editorial-dark">
+            <h2 className="mb-3 text-xl font-semibold text-[#191F28]">
               6. 이용자의 권리
             </h2>
             <p>
@@ -93,17 +93,16 @@ export default function PrivacyPolicyPage() {
           </section>
 
           <section>
-            <h2 className="mb-3 text-xl font-semibold text-editorial-dark">
+            <h2 className="mb-3 text-xl font-semibold text-[#191F28]">
               7. 연락처
             </h2>
             <p>
-              개인정보 관련 문의: <strong>support@chamgab.com</strong>
+              개인정보 관련 문의:{' '}
+              <strong className="text-[#191F28]">support@chamgab.com</strong>
             </p>
           </section>
 
-          <p className="pt-4 text-sm text-editorial-ink/40">
-            시행일: 2026년 2월 6일
-          </p>
+          <p className="pt-4 text-sm text-[#8B95A1]">시행일: 2026년 2월 6일</p>
         </div>
       </div>
     </div>

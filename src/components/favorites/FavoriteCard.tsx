@@ -4,7 +4,15 @@
 'use client'
 
 import Link from 'next/link'
-import { MapPin, Trash2, Bell, BellOff, ArrowUpRight, Maximize2, Calendar } from 'lucide-react'
+import {
+  MapPin,
+  Trash2,
+  Bell,
+  BellOff,
+  ArrowUpRight,
+  Maximize2,
+  Calendar,
+} from 'lucide-react'
 import { motion } from 'framer-motion'
 import type { Favorite } from '@/types/favorite'
 import { formatArea } from '@/lib/format'
@@ -73,55 +81,56 @@ export function FavoriteCard({
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true }}
       exit={{ opacity: 0, x: -100 }}
-      transition={{ delay: index * 0.08, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+      transition={{
+        delay: index * 0.08,
+        duration: 0.5,
+        ease: [0.22, 1, 0.36, 1],
+      }}
       className={cn('group relative', className)}
     >
       <Link
         href={`/property/${property.id}`}
-        className="block h-full bg-white border border-editorial-dark/5 hover:border-editorial-gold/50 transition-all duration-300 relative"
+        className="relative block h-full rounded-xl border border-[#E5E8EB] bg-white transition-all duration-300 hover:border-[#3182F6]/30"
       >
-        {/* 상단 골드 라인 - 호버 시 */}
-        <div className="absolute top-0 left-0 w-0 h-0.5 bg-editorial-gold group-hover:w-full transition-all duration-500" />
-
         <div className="p-6">
           {/* 지역 태그 + 액션 버튼 */}
-          <div className="flex items-center justify-between mb-4">
-            <span className="text-xs tracking-[0.15em] uppercase text-editorial-gold">
+          <div className="mb-4 flex items-center justify-between">
+            <span className="text-xs font-medium text-[#8B95A1]">
               {region} {subRegion}
             </span>
-            <ArrowUpRight className="w-4 h-4 text-editorial-ink/20 group-hover:text-editorial-gold transition-colors" />
+            <ArrowUpRight className="h-4 w-4 text-[#8B95A1] transition-colors group-hover:text-[#3182F6]" />
           </div>
 
           {/* 아파트명 */}
-          <h3 className="font-serif text-xl text-editorial-dark leading-tight mb-2 group-hover:text-editorial-gold transition-colors line-clamp-2">
+          <h3 className="mb-2 line-clamp-2 text-xl font-semibold leading-tight text-[#191F28] transition-colors group-hover:text-[#3182F6]">
             {property.name}
           </h3>
 
           {/* 주소 */}
-          <div className="flex items-start gap-1.5 mb-6">
-            <MapPin className="w-3.5 h-3.5 text-editorial-ink/30 mt-0.5 flex-shrink-0" />
-            <p className="text-sm text-editorial-ink/50 line-clamp-1">
+          <div className="mb-6 flex items-start gap-1.5">
+            <MapPin className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-[#8B95A1]" />
+            <p className="line-clamp-1 text-sm text-[#4E5968]">
               {property.address}
             </p>
           </div>
 
           {/* 구분선 */}
-          <div className="h-px bg-editorial-dark/5 mb-4" />
+          <div className="mb-4 h-px bg-[#E5E8EB]" />
 
           {/* 상세 정보 */}
-          <div className="flex items-center gap-6 mb-4">
+          <div className="mb-4 flex items-center gap-6">
             {property.area_exclusive && (
               <div className="flex items-center gap-2">
-                <Maximize2 className="w-4 h-4 text-editorial-ink/30" />
-                <span className="text-sm text-editorial-ink/70">
+                <Maximize2 className="h-4 w-4 text-[#8B95A1]" />
+                <span className="text-sm text-[#4E5968]">
                   {formatArea(property.area_exclusive)}
                 </span>
               </div>
             )}
             {property.built_year && (
               <div className="flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-editorial-ink/30" />
-                <span className="text-sm text-editorial-ink/70">
+                <Calendar className="h-4 w-4 text-[#8B95A1]" />
+                <span className="text-sm text-[#4E5968]">
                   {property.built_year}년
                 </span>
               </div>
@@ -129,7 +138,7 @@ export function FavoriteCard({
           </div>
 
           {/* 저장 날짜 */}
-          <div className="text-xs text-editorial-ink/40">
+          <div className="text-xs text-[#8B95A1]">
             저장일: {new Date(favorite.created_at).toLocaleDateString('ko-KR')}
           </div>
         </div>
@@ -143,10 +152,10 @@ export function FavoriteCard({
           onClick={handleToggleNotify}
           disabled={isTogglingNotify}
           className={cn(
-            'flex h-8 w-8 items-center justify-center border transition-colors',
+            'flex h-8 w-8 items-center justify-center rounded-lg border transition-colors',
             favorite.notify_enabled
-              ? 'bg-editorial-gold border-editorial-gold text-white'
-              : 'bg-white border-editorial-dark/10 text-editorial-ink/50 hover:border-editorial-gold hover:text-editorial-gold'
+              ? 'border-[#3182F6] bg-[#3182F6] text-white'
+              : 'border-[#E5E8EB] bg-white text-[#8B95A1] hover:border-[#3182F6] hover:text-[#3182F6]'
           )}
           title={favorite.notify_enabled ? '알림 끄기' : '알림 켜기'}
         >
@@ -162,7 +171,7 @@ export function FavoriteCard({
           whileTap={{ scale: 0.95 }}
           onClick={handleDelete}
           disabled={isDeleting}
-          className="flex h-8 w-8 items-center justify-center bg-white border border-editorial-dark/10 text-editorial-ink/40 hover:border-red-300 hover:text-red-500 transition-colors"
+          className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E5E8EB] bg-white text-[#8B95A1] transition-colors hover:border-[#F04452] hover:text-[#F04452]"
           title="삭제"
         >
           <Trash2 className="h-3.5 w-3.5" />

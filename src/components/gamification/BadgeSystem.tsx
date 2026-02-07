@@ -125,7 +125,7 @@ export default function BadgeSystem({ userId }: BadgeSystemProps) {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 p-6 text-white shadow-lg">
+      <div className="rounded-xl border border-gray-100 bg-gradient-to-r from-amber-500 to-yellow-500 p-6 text-white">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Trophy className="h-8 w-8" />
@@ -187,7 +187,7 @@ export default function BadgeSystem({ userId }: BadgeSystemProps) {
           return (
             <div
               key={badge.id}
-              className={`relative rounded-lg border-2 p-4 transition-all duration-300 hover:scale-105 hover:shadow-lg ${
+              className={`relative rounded-lg border-2 border-gray-100 p-4 transition-all duration-300 hover:scale-105 hover:border ${
                 isEarned
                   ? 'border-amber-300 bg-gradient-to-br from-amber-50 to-yellow-50 shadow-md'
                   : 'border-gray-200 bg-gray-50 opacity-75'

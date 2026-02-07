@@ -62,27 +62,27 @@ export default function ProfileAnalysis({
         {/* 상권 특성 */}
         <div className="space-y-4">
           {/* 상권 유형 */}
-          <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-4">
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
             <div className="mb-2 flex items-center gap-2">
-              <Store className="h-5 w-5 text-indigo-600" />
-              <h4 className="font-bold text-indigo-900">상권 유형</h4>
+              <Store className="h-5 w-5 text-blue-600" />
+              <h4 className="font-bold text-blue-900">상권 유형</h4>
             </div>
-            <p className="text-2xl font-bold text-indigo-900">
+            <p className="text-2xl font-bold text-blue-900">
               {data.district_type}
             </p>
-            <p className="mt-2 text-sm text-indigo-700">{data.description}</p>
+            <p className="mt-2 text-sm text-blue-700">{data.description}</p>
           </div>
 
           {/* 주 고객 */}
-          <div className="rounded-lg border border-purple-200 bg-purple-50 p-4">
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
             <div className="mb-2 flex items-center gap-2">
-              <Users className="h-5 w-5 text-purple-600" />
-              <h4 className="font-bold text-purple-900">주 고객층</h4>
+              <Users className="h-5 w-5 text-blue-600" />
+              <h4 className="font-bold text-blue-900">주 고객층</h4>
             </div>
-            <p className="text-lg font-semibold text-purple-900">
+            <p className="text-lg font-semibold text-blue-900">
               {data.primary_customer}
             </p>
-            <p className="mt-2 text-sm text-purple-700">{data.lifestyle}</p>
+            <p className="mt-2 text-sm text-blue-700">{data.lifestyle}</p>
           </div>
         </div>
 
@@ -125,9 +125,9 @@ export default function ProfileAnalysis({
       </div>
 
       {/* 종합 인사이트 */}
-      <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
-        <h4 className="mb-2 font-bold text-amber-900">💡 종합 인사이트</h4>
-        <p className="text-sm text-amber-800">
+      <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
+        <h4 className="mb-2 font-bold text-gray-900">💡 종합 인사이트</h4>
+        <p className="text-sm text-gray-700">
           <span className="font-semibold">{data.district_type}</span>은(는){' '}
           {data.description}. 주요 고객층은{' '}
           <span className="font-semibold">{data.primary_customer}</span>

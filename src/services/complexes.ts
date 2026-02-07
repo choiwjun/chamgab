@@ -32,7 +32,8 @@ export async function getComplexes(
     query = query.eq('sido', sido)
   }
   if (sigungu) {
-    query = query.eq('sigungu', sigungu)
+    // sigungu 정확 매칭 또는 address에 지역명 포함 검색
+    query = query.or(`sigungu.eq.${sigungu},address.ilike.%${sigungu}%`)
   }
   if (keyword) {
     // 키워드가 지역명일 수 있으므로 이름, 시군구, 주소에서 모두 검색

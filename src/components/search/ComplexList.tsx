@@ -88,7 +88,7 @@ export function ComplexList({ sigungu, keyword }: ComplexListProps) {
         {Array.from({ length: 6 }).map((_, i) => (
           <div
             key={i}
-            className="h-48 animate-pulse border border-editorial-dark/5 bg-editorial-sand/30"
+            className="h-48 animate-pulse rounded-xl border border-gray-200 bg-gray-50"
           />
         ))}
       </div>
@@ -98,8 +98,8 @@ export function ComplexList({ sigungu, keyword }: ComplexListProps) {
   // 에러 상태
   if (isError) {
     return (
-      <div className="border border-editorial-dark/10 bg-white p-12 text-center">
-        <p className="text-editorial-ink/70">
+      <div className="rounded-xl border border-gray-200 bg-white p-12 text-center">
+        <p className="text-gray-600">
           단지 목록을 불러오는 중 오류가 발생했습니다.
         </p>
       </div>
@@ -112,12 +112,12 @@ export function ComplexList({ sigungu, keyword }: ComplexListProps) {
   // 결과 없음
   if (allComplexes.length === 0) {
     return (
-      <div className="border border-editorial-dark/10 bg-white p-16 text-center">
-        <Building2 className="mx-auto h-12 w-12 text-editorial-ink/20 mb-6" />
-        <h3 className="font-serif text-xl text-editorial-dark mb-2">
+      <div className="rounded-xl border border-gray-200 bg-white p-16 text-center">
+        <Building2 className="mx-auto mb-6 h-12 w-12 text-gray-300" />
+        <h3 className="mb-2 text-xl font-bold text-gray-900">
           검색 결과가 없습니다
         </h3>
-        <p className="text-sm text-editorial-ink/50">다른 지역을 검색해보세요</p>
+        <p className="text-sm text-gray-500">다른 지역을 검색해보세요</p>
       </div>
     )
   }
@@ -125,16 +125,12 @@ export function ComplexList({ sigungu, keyword }: ComplexListProps) {
   return (
     <div>
       {/* 검색 결과 개수 */}
-      <div className="mb-8 flex items-center gap-3">
-        <span className="text-sm tracking-wide text-editorial-ink/50">
-          총
-        </span>
-        <span className="font-serif text-2xl text-editorial-gold">
+      <div className="mb-8 flex items-center gap-2">
+        <span className="text-sm text-gray-600">총</span>
+        <span className="text-2xl font-bold text-blue-500">
           {totalCount.toLocaleString()}
         </span>
-        <span className="text-sm tracking-wide text-editorial-ink/50">
-          개 단지
-        </span>
+        <span className="text-sm text-gray-600">개 단지</span>
       </div>
 
       {/* 단지 그리드 */}
@@ -148,17 +144,17 @@ export function ComplexList({ sigungu, keyword }: ComplexListProps) {
       <div ref={observerTarget} className="py-12 text-center">
         {isFetchingNextPage && (
           <div className="flex flex-col items-center gap-3">
-            <div className="h-px w-8 bg-editorial-gold animate-pulse" />
-            <span className="text-xs tracking-widest uppercase text-editorial-ink/40">
-              Loading more
+            <div className="h-1 w-8 animate-pulse rounded-full bg-blue-500" />
+            <span className="text-xs font-medium text-gray-500">
+              더 불러오는 중
             </span>
           </div>
         )}
         {!hasNextPage && allComplexes.length > 0 && (
           <div className="flex flex-col items-center gap-2">
-            <div className="h-px w-16 bg-editorial-dark/10" />
-            <p className="text-xs tracking-widest uppercase text-editorial-ink/30">
-              End of Results
+            <div className="h-px w-16 bg-gray-200" />
+            <p className="text-xs font-medium text-gray-400">
+              모든 결과를 불러왔습니다
             </p>
           </div>
         )}

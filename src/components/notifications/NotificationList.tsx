@@ -46,27 +46,51 @@ export function NotificationList() {
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    // 알림 데이터 로드 (API 연동 시 구현)
     const fetchNotifications = async () => {
       setIsLoading(true)
-      // TODO: Replace with real API call
-      // const response = await fetch('/api/notifications')
-      // const data = await response.json()
-      // setNotifications(data.notifications || [])
-      setNotifications([])
-      setIsLoading(false)
+      try {
+        const res = await fetch('/api/notifications?limit=50')
+        if (res.ok) {
+          const data = await res.json()
+          setNotifications(data.notifications || [])
+        } else {
+          setNotifications([])
+        }
+      } catch {
+        setNotifications([])
+      } finally {
+        setIsLoading(false)
+      }
     }
     fetchNotifications()
   }, [])
 
-  const markAsRead = (id: string) => {
+  const markAsRead = async (id: string) => {
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, is_read: true } : n))
     )
+    try {
+      await fetch('/api/notifications', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [id] }),
+      })
+    } catch {
+      // 낙관적 UI - 실패해도 UI는 유지
+    }
   }
 
-  const markAllAsRead = () => {
+  const markAllAsRead = async () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })))
+    try {
+      await fetch('/api/notifications', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ all: true }),
+      })
+    } catch {
+      // 낙관적 UI - 실패해도 UI는 유지
+    }
   }
 
   const unreadCount = notifications.filter((n) => !n.is_read).length

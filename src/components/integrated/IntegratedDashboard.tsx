@@ -303,7 +303,7 @@ export default function IntegratedDashboard({
       {/* 근처 상권 섹션 */}
       <div className="rounded-lg border border-gray-200 bg-white p-6 shadow">
         <div className="mb-4 flex items-center gap-2">
-          <Store className="h-5 w-5 text-indigo-600" />
+          <Store className="h-5 w-5 text-blue-600" />
           <h3 className="text-lg font-bold">근처 상권 정보</h3>
         </div>
 
@@ -314,7 +314,7 @@ export default function IntegratedDashboard({
               className="flex items-center justify-between rounded-lg border border-gray-100 bg-gray-50 p-4"
             >
               <div className="flex items-center gap-3">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 text-sm font-bold text-indigo-600">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-sm font-bold text-blue-600">
                   {i + 1}
                 </div>
                 <div>

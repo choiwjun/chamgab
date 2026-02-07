@@ -17,7 +17,7 @@ const getBaseUrl = () => {
 export async function getRegionTrends(limit = 6): Promise<RegionTrend[]> {
   try {
     const res = await fetch(
-      `${getBaseUrl()}/api/regions/trends?level=2&limit=${limit}`,
+      `${getBaseUrl()}/api/regions/trends?level=2&limit=${limit}&sort=avg_price`,
       {
         next: { revalidate: 3600 }, // 1시간 캐시
       }

@@ -16,6 +16,32 @@ function getSupabase() {
 }
 
 /**
+ * PostGIS WKB hex를 lat/lng 객체로 파싱
+ * WKB Point with SRID 4326: 0101000020E6100000 + X(8bytes LE) + Y(8bytes LE)
+ */
+function parseWKBPoint(wkb: string): { lat: number; lng: number } | null {
+  if (!wkb || typeof wkb !== 'string' || wkb.length < 50) return null
+
+  try {
+    const xHex = wkb.substring(wkb.length - 32, wkb.length - 16)
+    const yHex = wkb.substring(wkb.length - 16)
+
+    const xBuf = Buffer.from(xHex, 'hex')
+    const yBuf = Buffer.from(yHex, 'hex')
+
+    const lng = xBuf.readDoubleLE(0)
+    const lat = yBuf.readDoubleLE(0)
+
+    if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+      return { lat, lng }
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+/**
  * GET /api/properties
  *
  * 매물 목록 조회 (필터, 페이지네이션)
@@ -72,7 +98,6 @@ export async function GET(request: NextRequest) {
         if (region.level === 2) {
           sigungu = region.name
         } else if (region.level === 3) {
-          // 읍면동인 경우 eupmyeondong 검색은 별도 처리 필요
           sigungu = region.name
         }
       }
@@ -88,7 +113,10 @@ export async function GET(request: NextRequest) {
 
     // 필터 적용
     if (sido) query = query.eq('sido', sido)
-    if (sigungu) query = query.eq('sigungu', sigungu)
+    if (sigungu) {
+      // sigungu 정확 매칭 또는 address에 지역명 포함 검색
+      query = query.or(`sigungu.eq.${sigungu},address.ilike.%${sigungu}%`)
+    }
     if (property_type) query = query.eq('property_type', property_type)
     if (min_area !== undefined) query = query.gte('area_exclusive', min_area)
     if (max_area !== undefined) query = query.lte('area_exclusive', max_area)
@@ -118,8 +146,17 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    // location WKB hex → { lat, lng } 변환
+    const items = (data || []).map((item) => {
+      const parsed = parseWKBPoint(item.location)
+      return {
+        ...item,
+        location: parsed || item.location,
+      }
+    })
+
     return NextResponse.json({
-      items: data || [],
+      items,
       total: count || 0,
       page,
       limit,
