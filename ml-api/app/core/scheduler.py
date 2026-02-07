@@ -329,27 +329,16 @@ class DataScheduler:
         self.last_training_job = job_id
         print(f"[스케줄러] 월간 전체 모델 학습 시작: {job_id}")
 
-        # Step 1: 아파트 학습 데이터 준비 (Supabase에서 직접 읽기)
-        ok = self._run_script(
-            "scripts.prepare_training_data",
-            args=["--full", "--output", "data/training_data.csv"],
-            timeout=180
+        # Step 1: 아파트 모델 학습 (v2 - Supabase에서 직접 읽기, CSV 불필요)
+        ok_apt = self._run_script(
+            "scripts.train_model",
+            args=[],
+            timeout=900
         )
-
-        # Step 2: 아파트 모델 학습 (데이터 준비 성공 시)
-        if ok:
-            csv_path = str(PROJECT_ROOT / "data" / "training_data.csv")
-            ok_apt = self._run_script(
-                "scripts.train_model",
-                args=["--csv", csv_path],
-                timeout=600
-            )
-            if ok_apt:
-                print("[스케줄러] 아파트 모델 학습 완료")
-            else:
-                print("[스케줄러] 아파트 모델 학습 실패")
+        if ok_apt:
+            print("[스케줄러] 아파트 모델 학습 완료")
         else:
-            print("[스케줄러] 아파트 학습 데이터 준비 실패, 아파트 모델 건너뜀")
+            print("[스케줄러] 아파트 모델 학습 실패")
 
         # Step 3: 상권 학습 데이터 준비
         ok = self._run_script(
