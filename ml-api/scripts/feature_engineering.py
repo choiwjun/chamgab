@@ -11,6 +11,7 @@ XGBoost 모델 학습을 위한 Feature Engineering (v2 - 고도화)
 - 시장 지표: base_rate, jeonse_ratio, buying_power_index 등
 - 재건축/학군: is_reconstruction_target, school_district_grade 등
 - 매물 특성: direction_premium, view_premium, is_remodeled 등
+- 건축물대장: floor_area_ratio, building_coverage_ratio, total_parking 등 (12개)
 """
 import os
 import json
@@ -71,6 +72,22 @@ class FeatureEngineer:
         "대림": 2,
         "현대": 2,
         "한양": 2,
+    }
+
+    # 건축물대장 피처 결측치 기본값 (도메인 지식 기반)
+    _BUILDING_REGISTRY_FILL_VALUES = {
+        "floor_area_ratio": 250.0,          # 용적률: 서울 일반 아파트 평균 약 250%
+        "building_coverage_ratio": 18.0,    # 건폐율: 서울 일반 아파트 평균 약 18%
+        "total_parking": 500,               # 총주차대수: 중형 단지 기준
+        "indoor_parking_ratio": 0.7,        # 옥내주차비율: 일반적 70%
+        "ground_floors": 15,                # 지상층수: 일반 아파트 15층
+        "underground_floors": 2,            # 지하층수: 일반 아파트 2층
+        "dong_count": 10,                   # 총동수: 중형 단지 기준
+        "plat_area": 20000.0,              # 대지면적: 중형 단지 약 2만㎡
+        "total_area": 80000.0,             # 연면적: 중형 단지 약 8만㎡
+        "area_per_unit": 120.0,            # 세대당면적: 약 120㎡ (전용 84㎡ 기준)
+        "parking_per_unit": 1.2,           # 세대당주차: 1.2대
+        "building_structure_encoded": 0,    # 구조코드: unknown(0)
     }
 
     def __init__(self):
@@ -168,6 +185,7 @@ class FeatureEngineer:
             record["prop_type"] = prop.get("property_type")
 
             comp = row.get("complexes") or {}
+            record["complex_id"] = comp.get("id")  # building_info 조인용
             record["complex_name"] = comp.get("name")
             record["complex_total_units"] = comp.get("total_units")
             record["complex_total_buildings"] = comp.get("total_buildings")
@@ -269,6 +287,9 @@ class FeatureEngineer:
 
         # 11. 유동인구/상권 피처
         df = self._add_footfall_features(df)
+
+        # 12. 건축물대장 피처 (building_info 테이블)
+        df = self._add_building_registry_features(df)
 
         return df
 
@@ -581,6 +602,248 @@ class FeatureEngineer:
         return df
 
     # ─────────────────────────────────────────────
+    # 건축물대장(Building Registry) 피처 (Phase 6)
+    # ─────────────────────────────────────────────
+
+    def _load_building_info(self) -> pd.DataFrame:
+        """
+        Supabase building_info 테이블에서 건축물대장 데이터 로드.
+
+        complex_id 기준으로 그룹화하여 단지별 대표 건물 정보를 반환한다.
+        동일 complex_id에 여러 건물(동)이 있을 수 있으므로
+        수치 컬럼은 합계/최대값, 비율 컬럼은 평균으로 집계한다.
+        """
+        try:
+            client = get_supabase_client()
+            all_data = []
+            page_size = 1000
+            offset = 0
+
+            while True:
+                result = client.table("building_info").select(
+                    "complex_id, vl_rat, bc_rat, tot_pkng_cnt, "
+                    "indoor_mech_pkng_cnt, indoor_self_pkng_cnt, "
+                    "grnd_flr_cnt, ugrnd_flr_cnt, tot_dong_cnt, "
+                    "plat_area, tot_area, hhld_cnt, strct_cd_nm"
+                ).not_.is_("complex_id", "null").range(
+                    offset, offset + page_size - 1
+                ).execute()
+
+                if not result.data:
+                    break
+
+                all_data.extend(result.data)
+
+                if len(result.data) < page_size:
+                    break
+                offset += page_size
+
+            if not all_data:
+                print("[building_info] 데이터 없음 - 기본값 사용")
+                return pd.DataFrame()
+
+            bi_df = pd.DataFrame(all_data)
+            print(f"[building_info] {len(bi_df)}건 로드 완료")
+
+            # complex_id별 집계 (동일 단지에 여러 동이 있을 수 있음)
+            # 수치형 안전 변환
+            numeric_cols = [
+                "vl_rat", "bc_rat", "tot_pkng_cnt",
+                "indoor_mech_pkng_cnt", "indoor_self_pkng_cnt",
+                "grnd_flr_cnt", "ugrnd_flr_cnt", "tot_dong_cnt",
+                "plat_area", "tot_area", "hhld_cnt",
+            ]
+            for col in numeric_cols:
+                if col in bi_df.columns:
+                    bi_df[col] = pd.to_numeric(bi_df[col], errors="coerce")
+
+            # strct_cd_nm: 최빈값 (대표 구조)
+            strct_mode = (
+                bi_df.groupby("complex_id")["strct_cd_nm"]
+                .agg(lambda x: x.mode().iloc[0] if len(x.mode()) > 0 else None)
+                .reset_index()
+            )
+
+            # 수치 집계: complex_id별
+            agg_dict = {
+                "vl_rat": "mean",           # 용적률 - 평균
+                "bc_rat": "mean",           # 건폐율 - 평균
+                "tot_pkng_cnt": "sum",      # 총주차대수 - 합계
+                "indoor_mech_pkng_cnt": "sum",
+                "indoor_self_pkng_cnt": "sum",
+                "grnd_flr_cnt": "max",      # 지상층수 - 최대값
+                "ugrnd_flr_cnt": "max",     # 지하층수 - 최대값
+                "tot_dong_cnt": "first",    # 총동수 - 첫번째 값 (전체 단지 기준)
+                "plat_area": "sum",         # 대지면적 - 합계
+                "tot_area": "sum",          # 연면적 - 합계
+                "hhld_cnt": "sum",          # 세대수 - 합계
+            }
+            # 존재하는 컬럼만 집계
+            valid_agg = {k: v for k, v in agg_dict.items() if k in bi_df.columns}
+
+            agg_df = bi_df.groupby("complex_id").agg(valid_agg).reset_index()
+
+            # strct_cd_nm 병합
+            agg_df = agg_df.merge(strct_mode, on="complex_id", how="left")
+
+            return agg_df
+
+        except Exception as e:
+            print(f"[building_info] 로드 실패: {e}")
+            return pd.DataFrame()
+
+    def _add_building_registry_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        건축물대장(building_info) 기반 피처 추가 (12개)
+
+        피처 목록:
+          1. floor_area_ratio (용적률) - building_info.vl_rat
+          2. building_coverage_ratio (건폐율) - building_info.bc_rat
+          3. total_parking (총주차대수) - building_info.tot_pkng_cnt
+          4. indoor_parking_ratio (옥내주차비율) - (indoor_mech + indoor_self) / tot_pkng_cnt
+          5. ground_floors (지상층수) - building_info.grnd_flr_cnt
+          6. underground_floors (지하층수) - building_info.ugrnd_flr_cnt
+          7. dong_count (총동수) - building_info.tot_dong_cnt
+          8. plat_area (대지면적) - building_info.plat_area
+          9. total_area (연면적) - building_info.tot_area
+         10. area_per_unit (세대당면적) - tot_area / hhld_cnt
+         11. parking_per_unit (세대당주차) - tot_pkng_cnt / hhld_cnt
+         12. building_structure_encoded (구조코드) - LabelEncoded strct_cd_nm
+        """
+        building_columns = [
+            "floor_area_ratio", "building_coverage_ratio", "total_parking",
+            "indoor_parking_ratio", "ground_floors", "underground_floors",
+            "dong_count", "plat_area", "total_area", "area_per_unit",
+            "parking_per_unit", "building_structure_encoded",
+        ]
+
+        if all(col in df.columns for col in building_columns[:3]):
+            print("건축물대장 피처가 이미 존재합니다.")
+            return df
+
+        print("건축물대장 피처 생성 중...")
+
+        # building_info 로드
+        bi_df = self._load_building_info()
+
+        if bi_df.empty or "complex_id" not in df.columns:
+            # 데이터 없으면 전부 NaN으로 채움 (나중에 _smart_fill_missing에서 처리)
+            print("  건축물대장 데이터 없음 - 기본값으로 채웁니다.")
+            for col in building_columns:
+                df[col] = np.nan
+            return df
+
+        # complex_id 기준 병합 (left join - 기존 df 보존)
+        # 기존 df에서 complex_id를 가져오기 위해 원본 데이터의 complex_id 활용
+        # _load_from_database에서 complex_id는 complexes join에서 가져옴
+        # 여기서는 df에 _complex_id 컬럼이 있어야 함
+        # _load_from_database 결과에는 복합 join이므로 complex_id가 없을 수 있음
+        # -> transactions 테이블의 complex_id를 활용
+
+        # 병합 키 준비
+        merge_key = None
+        if "complex_id" in df.columns:
+            merge_key = "complex_id"
+        elif "_complex_id" in df.columns:
+            merge_key = "_complex_id"
+
+        if merge_key is None:
+            print("  complex_id 컬럼 없음 - 기본값으로 채웁니다.")
+            for col in building_columns:
+                df[col] = np.nan
+            return df
+
+        # 병합
+        bi_df = bi_df.rename(columns={
+            "vl_rat": "floor_area_ratio",
+            "bc_rat": "building_coverage_ratio",
+            "tot_pkng_cnt": "total_parking",
+            "grnd_flr_cnt": "ground_floors",
+            "ugrnd_flr_cnt": "underground_floors",
+            "tot_dong_cnt": "dong_count",
+            # plat_area, tot_area는 이름 유지 후 별도 매핑
+        })
+
+        # tot_area -> total_area (피처명)
+        if "tot_area" in bi_df.columns:
+            bi_df = bi_df.rename(columns={"tot_area": "total_area"})
+        # plat_area는 이미 동일명
+
+        # 파생 피처 계산 (병합 전 bi_df에서 계산)
+        # indoor_parking_ratio
+        indoor_mech = bi_df.get("indoor_mech_pkng_cnt", pd.Series(0, index=bi_df.index)).fillna(0)
+        indoor_self = bi_df.get("indoor_self_pkng_cnt", pd.Series(0, index=bi_df.index)).fillna(0)
+        total_pkg = bi_df.get("total_parking", pd.Series(0, index=bi_df.index)).fillna(0)
+        bi_df["indoor_parking_ratio"] = np.where(
+            total_pkg > 0,
+            (indoor_mech + indoor_self) / total_pkg,
+            np.nan,
+        )
+
+        # area_per_unit: tot_area / hhld_cnt
+        hhld = bi_df.get("hhld_cnt", pd.Series(0, index=bi_df.index)).fillna(0)
+        tot_area_vals = bi_df.get("total_area", pd.Series(0, index=bi_df.index)).fillna(0)
+        bi_df["area_per_unit"] = np.where(
+            hhld > 0,
+            tot_area_vals / hhld,
+            np.nan,
+        )
+
+        # parking_per_unit: tot_pkng_cnt / hhld_cnt
+        bi_df["parking_per_unit"] = np.where(
+            hhld > 0,
+            total_pkg / hhld,
+            np.nan,
+        )
+
+        # building_structure_encoded: strct_cd_nm -> LabelEncoder
+        if "strct_cd_nm" in bi_df.columns:
+            bi_df["strct_cd_nm"] = bi_df["strct_cd_nm"].fillna("unknown")
+            if "building_structure" not in self.label_encoders:
+                self.label_encoders["building_structure"] = LabelEncoder()
+                bi_df["building_structure_encoded"] = (
+                    self.label_encoders["building_structure"].fit_transform(bi_df["strct_cd_nm"])
+                )
+            else:
+                le = self.label_encoders["building_structure"]
+                bi_df["building_structure_encoded"] = bi_df["strct_cd_nm"].apply(
+                    lambda x: le.transform([x])[0] if x in le.classes_ else 0
+                )
+        else:
+            bi_df["building_structure_encoded"] = 0
+
+        # 병합에 필요한 컬럼만 선택
+        merge_cols = ["complex_id"] + [
+            c for c in building_columns if c in bi_df.columns
+        ]
+        bi_merge = bi_df[merge_cols].copy()
+
+        # 기존 df에 left join
+        orig_index = df.index
+        df = df.merge(bi_merge, left_on=merge_key, right_on="complex_id", how="left", suffixes=("", "_bi"))
+
+        # 병합으로 인덱스가 바뀔 수 있으므로 복원
+        df.index = orig_index
+
+        # 중복된 complex_id_bi 컬럼 제거 (merge_key != "complex_id"인 경우 생성됨)
+        drop_cols = [c for c in df.columns if c.endswith("_bi")]
+        if drop_cols:
+            df.drop(columns=drop_cols, inplace=True, errors="ignore")
+
+        # 누락된 피처 컬럼 기본값
+        for col in building_columns:
+            if col not in df.columns:
+                df[col] = np.nan
+
+        # 결측치 통계
+        for col in building_columns:
+            nan_pct = df[col].isna().mean() * 100
+            print(f"  {col}: NaN {nan_pct:.1f}%")
+
+        print(f"건축물대장 피처 {len(building_columns)}개 추가 완료")
+        return df
+
+    # ─────────────────────────────────────────────
     # Encoding (LabelEncoder 유지 + Target Encoding 추가)
     # ─────────────────────────────────────────────
 
@@ -708,6 +971,19 @@ class FeatureEngineer:
             "footfall_score",
             "commercial_density",
             "store_diversity_index",
+            # 건축물대장 피처 (building_info)
+            "floor_area_ratio",
+            "building_coverage_ratio",
+            "total_parking",
+            "indoor_parking_ratio",
+            "ground_floors",
+            "underground_floors",
+            "dong_count",
+            "plat_area",
+            "total_area",
+            "area_per_unit",
+            "parking_per_unit",
+            "building_structure_encoded",
         ]
 
     # ─────────────────────────────────────────────
@@ -743,6 +1019,18 @@ class FeatureEngineer:
                 if fit:
                     self.fill_values[col] = X[col].median() if X[col].notna().any() else 0
                 X[col] = X[col].fillna(self.fill_values.get(col, 0))
+
+            elif col in self._BUILDING_REGISTRY_FILL_VALUES:
+                # 건축물대장 피처: 카테고리별 기본값 (median 또는 도메인 기본값)
+                if fit:
+                    median_val = X[col].median() if X[col].notna().any() else None
+                    self.fill_values[col] = (
+                        median_val if median_val is not None
+                        else self._BUILDING_REGISTRY_FILL_VALUES[col]
+                    )
+                X[col] = X[col].fillna(
+                    self.fill_values.get(col, self._BUILDING_REGISTRY_FILL_VALUES[col])
+                )
 
             else:
                 # 기타: -1 sentinel (XGBoost가 학습 가능)

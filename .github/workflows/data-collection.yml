@@ -99,6 +99,36 @@ jobs:
           asyncio.run(main())
           "
 
+  collect-building-info:
+    name: 건축물대장 수집
+    runs-on: ubuntu-latest
+    # 화요일에만 실행 (주간) - 건물 정보는 자주 변하지 않음
+    if: github.event.schedule == '0 21 * * 2' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: ml-api/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          cd ml-api
+          pip install -r requirements.txt
+
+      - name: Collect building registry data
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          DATA_GO_KR_API_KEY: ${{ secrets.DATA_GO_KR_API_KEY }}
+        run: |
+          cd ml-api
+          python scripts/collect_building_info.py
+
   collect-footfall:
     name: 유동인구 데이터 수집
     runs-on: ubuntu-latest
