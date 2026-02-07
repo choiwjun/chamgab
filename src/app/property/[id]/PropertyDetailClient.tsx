@@ -75,6 +75,45 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
     []
   )
   const [isLoading, setIsLoading] = useState(true)
+  const [isRequesting, setIsRequesting] = useState(false)
+
+  // 분석 요청
+  const handleRequestAnalysis = async () => {
+    setIsRequesting(true)
+    try {
+      const res = await fetch('/api/chamgab', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ property_id: property.id }),
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || 'Analysis request failed')
+      }
+
+      const result = await res.json()
+      if (result.analysis) {
+        setAnalysis(result.analysis)
+
+        // 분석 결과에 ID가 있으면 가격 요인도 조회
+        if (result.analysis.id) {
+          const factorsRes = await fetch(
+            `/api/chamgab/${result.analysis.id}/factors?limit=10`
+          )
+          if (factorsRes.ok) {
+            const factorsData = await factorsRes.json()
+            setFactors(factorsData.factors || [])
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Analysis request failed:', error)
+      alert('분석 요청 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.')
+    } finally {
+      setIsRequesting(false)
+    }
+  }
 
   // 데이터 로드
   useEffect(() => {
@@ -248,10 +287,8 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
           </div>
           <ChamgabCard
             analysis={analysis || undefined}
-            isLoading={isLoading}
-            onRequestAnalysis={() => {
-              // 분석 요청 로직
-            }}
+            isLoading={isLoading || isRequesting}
+            onRequestAnalysis={handleRequestAnalysis}
           />
         </div>
       </div>

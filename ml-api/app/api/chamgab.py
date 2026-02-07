@@ -347,12 +347,15 @@ async def get_investment_score(property_id: str):
         # 최근 거래 가격 조회 (properties 테이블에 price 없으므로 transactions에서 가져옴)
         complex_id = property_data.get("complex_id")
         sigungu = property_data.get("sigungu")
+        apt_name = property_data.get("name", "")
 
         # 거래 내역 조회 (transactions 테이블)
         # 최근 3년간 거래 내역
         three_years_ago = (datetime.now() - timedelta(days=365*3)).strftime("%Y-%m-%d")
 
         transactions_result = None
+
+        # 1차: complex_id로 조회
         if complex_id:
             transactions_result = client.table("transactions").select("*").eq(
                 "complex_id", complex_id
@@ -360,15 +363,31 @@ async def get_investment_score(property_id: str):
                 "transaction_date", desc=True
             ).execute()
 
-        # complex_id로 못 찾으면 sigungu + 유사면적으로 조회
+        # 2차: apt_name + sigungu로 조회
+        if (not transactions_result or not transactions_result.data) and apt_name and sigungu:
+            transactions_result = client.table("transactions").select("*").eq(
+                "apt_name", apt_name
+            ).eq("sigungu", sigungu).gte(
+                "transaction_date", three_years_ago
+            ).order("transaction_date", desc=True).limit(50).execute()
+
+        # 3차: sigungu + 유사면적으로 조회
         if (not transactions_result or not transactions_result.data) and sigungu:
             area = property_data.get("area_exclusive", 84)
-            area_min = area * 0.8
-            area_max = area * 1.2
+            area_min = area * 0.7
+            area_max = area * 1.3
             transactions_result = client.table("transactions").select("*").eq(
                 "sigungu", sigungu
             ).gte("area_exclusive", area_min).lte(
                 "area_exclusive", area_max
+            ).gte("transaction_date", three_years_ago).order(
+                "transaction_date", desc=True
+            ).limit(50).execute()
+
+        # 4차: sigungu 전체 (면적 제한 없이)
+        if (not transactions_result or not transactions_result.data) and sigungu:
+            transactions_result = client.table("transactions").select("*").eq(
+                "sigungu", sigungu
             ).gte("transaction_date", three_years_ago).order(
                 "transaction_date", desc=True
             ).limit(50).execute()
@@ -380,8 +399,15 @@ async def get_investment_score(property_id: str):
         if transactions:
             current_price = transactions[0].get("price", 0)
         if not current_price:
-            # 거래 내역 없으면 기본값
-            current_price = 500000000  # 5억 기본값
+            # 거래 내역 없으면 해당 지역 평균가 조회
+            if sigungu:
+                region_result = client.table("regions").select("avg_price").eq(
+                    "name", sigungu
+                ).limit(1).execute()
+                if region_result.data and region_result.data[0].get("avg_price"):
+                    current_price = int(region_result.data[0]["avg_price"])
+            if not current_price:
+                current_price = 500000000  # 최종 기본값 5억
 
         # ROI 계산을 위한 과거 가격 추정
         # 1년 전 가격
@@ -432,8 +458,17 @@ async def get_investment_score(property_id: str):
             except (ValueError, TypeError):
                 pass
 
-        # 평균 매물 체류 일수 (임의 값, 실제로는 listing_date 등을 활용)
+        # 평균 매물 체류 일수 추정 (거래 간격 기반)
         days_on_market_avg = 60
+        if len(transactions) >= 2:
+            try:
+                first_date = datetime.strptime(str(transactions[0].get("transaction_date", ""))[:10], "%Y-%m-%d")
+                last_date = datetime.strptime(str(transactions[-1].get("transaction_date", ""))[:10], "%Y-%m-%d")
+                total_days = (first_date - last_date).days
+                if total_days > 0 and len(transactions) > 1:
+                    days_on_market_avg = max(7, total_days // len(transactions))
+            except (ValueError, TypeError):
+                pass
 
         liquidity = calculate_liquidity_score(
             transaction_count_3months=transaction_count_3months,
@@ -457,7 +492,7 @@ async def get_investment_score(property_id: str):
         investment_score += roi_score
 
         # 전세가율 기여 (30%)
-        if jeonse_ratio.current_ratio < 60:
+        if jeonse_ratio.current_ratio <= 60:
             jeonse_score = 30
         elif jeonse_ratio.current_ratio < 70:
             jeonse_score = 20
