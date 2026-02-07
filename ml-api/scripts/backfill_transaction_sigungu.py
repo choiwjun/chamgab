@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 """
-기존 transactions의 sigungu 컬럼 백필
-region_code가 없는 거래에 대해 dong(읍면동)으로 properties 테이블과 매칭하여 sigungu 설정
+기존 transactions의 sigungu 컬럼 백필 (개선 버전)
+
+전략:
+1. region_code가 있는 거래 → REGION_CODE_MAP으로 직접 매핑
+2. 이미 sigungu가 있는 거래의 (apt_name, dong) → sigungu 매핑 학습 후 적용
+3. 유니크한 dong → sigungu 매핑 적용 (동명 충돌 없는 경우)
 """
 
 import os
 import logging
+import time
+from collections import Counter
 from supabase import create_client
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -16,7 +22,7 @@ SUPABASE_KEY = os.environ['SUPABASE_SERVICE_KEY']
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# region_code → sigungu name mapping (from ALL_REGIONS in collect_all_transactions.py)
+# region_code → sigungu name mapping
 REGION_CODE_MAP = {
     '11110': '종로구', '11140': '중구', '11170': '용산구', '11200': '성동구',
     '11215': '광진구', '11230': '동대문구', '11260': '중랑구', '11290': '성북구',
@@ -56,72 +62,220 @@ REGION_CODE_MAP = {
 }
 
 
-def backfill_from_properties():
-    """properties 테이블의 dong→sigungu 매핑을 이용한 백필"""
-    logger.info("=== Properties 기반 dong→sigungu 매핑 ===")
+def get_counts():
+    """현재 상태 조회"""
+    total = supabase.table('transactions').select(
+        'id', count='exact', head=True
+    ).execute()
 
-    # Build dong → sigungu mapping from properties
-    props = supabase.table('properties').select('eupmyeondong, sigungu').limit(2000).execute()
-    dong_to_sigungu = {}
-    for p in (props.data or []):
-        if p.get('eupmyeondong') and p.get('sigungu'):
-            dong_to_sigungu[p['eupmyeondong']] = p['sigungu']
+    with_sigungu = supabase.table('transactions').select(
+        'id', count='exact', head=True
+    ).not_.is_('sigungu', 'null').neq('sigungu', '').execute()
 
-    logger.info(f"  dong→sigungu 매핑: {len(dong_to_sigungu)}건")
+    return with_sigungu.count or 0, total.count or 0
 
-    # Get transactions without sigungu in batches
+
+def step1_backfill_from_region_code():
+    """Step 1: region_code가 있는 거래 → sigungu 직접 매핑"""
+    logger.info("=== Step 1: region_code 기반 백필 ===")
+
     updated = 0
+    for code, sigungu in REGION_CODE_MAP.items():
+        try:
+            # region_code가 설정된 거래 중 sigungu가 없는 것 업데이트
+            result = supabase.table('transactions').update({
+                'sigungu': sigungu
+            }).eq('region_code', code).is_('sigungu', 'null').execute()
+            count = len(result.data) if result.data else 0
+            if count > 0:
+                updated += count
+                logger.info(f"  {code} → {sigungu}: {count}건")
+        except Exception as e:
+            logger.debug(f"  {code} 오류: {e}")
+
+        # sigungu가 빈 문자열인 경우도 처리
+        try:
+            result = supabase.table('transactions').update({
+                'sigungu': sigungu
+            }).eq('region_code', code).eq('sigungu', '').execute()
+            count = len(result.data) if result.data else 0
+            if count > 0:
+                updated += count
+        except Exception:
+            pass
+
+    logger.info(f"  Step 1 완료: {updated}건 업데이트")
+    return updated
+
+
+def step2_backfill_from_apt_dong_mapping():
+    """Step 2: (apt_name, dong) → sigungu 매핑 학습 및 적용"""
+    logger.info("=== Step 2: (apt_name, dong) 매핑 기반 백필 ===")
+
+    # 2-1. 이미 sigungu가 있는 거래에서 매핑 학습
+    mapping = {}  # (apt_name, dong) → sigungu
     offset = 0
-    batch_size = 1000
+    batch = 1000
 
     while True:
         result = supabase.table('transactions').select(
-            'id, dong'
-        ).is_(
-            'sigungu', 'null'
-        ).range(offset, offset + batch_size - 1).execute()
+            'apt_name, dong, sigungu'
+        ).not_.is_('sigungu', 'null').neq('sigungu', '').range(
+            offset, offset + batch - 1
+        ).execute()
 
         rows = result.data or []
         if not rows:
             break
 
-        for row in rows:
-            dong = row.get('dong')
-            if dong and dong in dong_to_sigungu:
-                sigungu = dong_to_sigungu[dong]
-                try:
-                    supabase.table('transactions').update({
-                        'sigungu': sigungu
-                    }).eq('id', row['id']).execute()
-                    updated += 1
-                except Exception:
-                    pass
+        for r in rows:
+            apt = r.get('apt_name')
+            dong = r.get('dong')
+            sgg = r.get('sigungu')
+            if apt and dong and sgg:
+                mapping[(apt, dong)] = sgg
 
-        logger.info(f"  처리: {offset + len(rows)}건, 업데이트: {updated}건")
-        offset += batch_size
-
-        if len(rows) < batch_size:
+        offset += batch
+        if len(rows) < batch:
             break
 
-    logger.info(f"  총 {updated}건 sigungu 백필 완료")
+    logger.info(f"  거래 기반 (apt_name, dong) 매핑: {len(mapping)}개")
+
+    # 2-2. properties 테이블에서 추가 매핑
+    props = supabase.table('properties').select(
+        'name, eupmyeondong, sigungu'
+    ).limit(2000).execute()
+
+    added = 0
+    for p in (props.data or []):
+        key = (p.get('name'), p.get('eupmyeondong'))
+        if key[0] and key[1] and p.get('sigungu') and key not in mapping:
+            mapping[key] = p['sigungu']
+            added += 1
+
+    logger.info(f"  properties 추가 매핑: +{added}개 (총 {len(mapping)}개)")
+
+    # 2-3. 매핑 적용
+    updated = 0
+    total_mappings = len(mapping)
+    processed = 0
+
+    for (apt_name, dong), sigungu in mapping.items():
+        processed += 1
+        try:
+            result = supabase.table('transactions').update({
+                'sigungu': sigungu
+            }).eq('apt_name', apt_name).eq('dong', dong).is_(
+                'sigungu', 'null'
+            ).execute()
+            count = len(result.data) if result.data else 0
+            updated += count
+        except Exception:
+            pass
+
+        if processed % 500 == 0:
+            logger.info(f"  진행: {processed}/{total_mappings} 매핑 처리, {updated}건 업데이트")
+            time.sleep(0.5)  # API 부하 방지
+
+    logger.info(f"  Step 2 완료: {updated}건 업데이트")
+    return updated
+
+
+def step3_backfill_from_unique_dong():
+    """Step 3: 유니크한 dong → sigungu 매핑 적용"""
+    logger.info("=== Step 3: dong 유니크 매핑 기반 백필 ===")
+
+    # 이미 sigungu가 있는 거래에서 dong → sigungu 빈도 조사
+    dong_counter = {}  # dong → Counter({sigungu: count})
+
+    offset = 0
+    batch = 1000
+    while True:
+        result = supabase.table('transactions').select(
+            'dong, sigungu'
+        ).not_.is_('sigungu', 'null').neq('sigungu', '').range(
+            offset, offset + batch - 1
+        ).execute()
+
+        rows = result.data or []
+        if not rows:
+            break
+
+        for r in rows:
+            dong = r.get('dong')
+            sgg = r.get('sigungu')
+            if dong and sgg:
+                if dong not in dong_counter:
+                    dong_counter[dong] = Counter()
+                dong_counter[dong][sgg] += 1
+
+        offset += batch
+        if len(rows) < batch:
+            break
+
+    # 유니크 매핑 추출 (1개 sigungu에만 매핑되거나 90% 이상 지배적)
+    unique_mapping = {}
+    ambiguous = []
+    for dong, counter in dong_counter.items():
+        if len(counter) == 1:
+            unique_mapping[dong] = list(counter.keys())[0]
+        else:
+            total = sum(counter.values())
+            most_common_sgg, most_common_cnt = counter.most_common(1)[0]
+            if most_common_cnt / total >= 0.9:
+                unique_mapping[dong] = most_common_sgg
+            else:
+                ambiguous.append((dong, dict(counter)))
+
+    logger.info(f"  유니크 dong→sigungu: {len(unique_mapping)}개")
+    if ambiguous:
+        logger.info(f"  모호한 dong (건너뜀): {len(ambiguous)}개")
+        for dong, counts in ambiguous[:5]:
+            logger.info(f"    '{dong}': {counts}")
+
+    # 적용
+    updated = 0
+    for dong, sigungu in unique_mapping.items():
+        try:
+            result = supabase.table('transactions').update({
+                'sigungu': sigungu
+            }).eq('dong', dong).is_('sigungu', 'null').execute()
+            count = len(result.data) if result.data else 0
+            updated += count
+        except Exception:
+            pass
+
+    logger.info(f"  Step 3 완료: {updated}건 업데이트")
+    return updated
 
 
 def main():
     logger.info("=" * 60)
-    logger.info("Transaction sigungu 백필 시작")
+    logger.info("Transaction sigungu 백필 시작 (개선 버전)")
     logger.info("=" * 60)
 
-    backfill_from_properties()
+    before_with, before_total = get_counts()
+    logger.info(f"시작 상태: {before_with:,}/{before_total:,} 거래에 sigungu 설정됨 ({before_with/before_total*100:.1f}%)")
 
-    # Count result
-    with_sigungu = supabase.table('transactions').select(
-        'id', count='exact', head=True
-    ).neq('sigungu', '').execute()
-    total = supabase.table('transactions').select(
-        'id', count='exact', head=True
-    ).execute()
+    # Step 1: region_code 기반
+    s1 = step1_backfill_from_region_code()
 
-    logger.info(f"\n결과: {with_sigungu.count}/{total.count} 거래에 sigungu 설정됨")
+    # Step 2: (apt_name, dong) 매핑 기반
+    s2 = step2_backfill_from_apt_dong_mapping()
+
+    # Step 3: 유니크 dong 매핑 기반
+    s3 = step3_backfill_from_unique_dong()
+
+    # 결과
+    after_with, after_total = get_counts()
+    logger.info("\n" + "=" * 60)
+    logger.info("백필 완료!")
+    logger.info(f"  Step 1 (region_code): +{s1:,}건")
+    logger.info(f"  Step 2 (apt+dong):    +{s2:,}건")
+    logger.info(f"  Step 3 (dong):        +{s3:,}건")
+    logger.info(f"  합계:                 +{s1+s2+s3:,}건")
+    logger.info(f"  결과: {after_with:,}/{after_total:,} ({after_with/after_total*100:.1f}%)")
+    logger.info("=" * 60)
 
 
 if __name__ == '__main__':

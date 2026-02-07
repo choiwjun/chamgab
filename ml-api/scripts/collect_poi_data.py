@@ -50,17 +50,25 @@ class POIDataCollector:
     """POI 데이터 수집기"""
 
     # 카카오 로컬 API
-    KAKAO_API_BASE = "https://dapi.kakao.com/v2/local/search/category.json"
+    KAKAO_CATEGORY_API = "https://dapi.kakao.com/v2/local/search/category.json"
+    KAKAO_KEYWORD_API = "https://dapi.kakao.com/v2/local/search/keyword.json"
 
-    # 카테고리 코드
+    # 카테고리 코드 → DB 컬럼명 매핑
     CATEGORIES = {
-        "SC4": "학교",      # 학교
-        "HP8": "병원",      # 병원
-        "SW8": "지하철역",  # 지하철역
-        "AT4": "관광명소",  # 관광명소
-        "MT1": "대형마트",  # 대형마트
-        "CS2": "편의점",    # 편의점
-        "BK9": "은행",      # 은행
+        "SW8": "subway_count",   # 지하철역
+        "MT1": "mart_count",     # 대형마트
+        "SC4": "school_count",   # 학교
+        "HP8": "hospital_count", # 병원
+        "BK9": "bank_count",     # 은행
+        "FD6": "restaurant_count", # 음식점
+        "CE7": "cafe_count",     # 카페
+    }
+
+    # 키워드 검색 → DB 컬럼명 매핑
+    KEYWORD_SEARCHES = {
+        "버스정류장": "bus_count",
+        "공원": "park_count",
+        "헬스장 체육관": "gym_count",
     }
 
     def __init__(self, api_key: Optional[str] = None):
@@ -81,58 +89,71 @@ class POIDataCollector:
         x: float,  # 경도
         y: float,  # 위도
         radius: int = 2000  # 반경 (미터)
-    ) -> List[Dict]:
-        """
-        카테고리별 장소 검색
-        """
+    ) -> int:
+        """카테고리별 장소 검색 - 총 건수 반환"""
         if not self.api_key:
-            return []
+            return 0
 
         headers = {"Authorization": f"KakaoAK {self.api_key}"}
+        params = {
+            "category_group_code": category_code,
+            "x": x,
+            "y": y,
+            "radius": radius,
+            "page": 1,
+            "size": 1,
+        }
 
-        all_places = []
-        page = 1
+        try:
+            response = requests.get(
+                self.KAKAO_CATEGORY_API,
+                headers=headers,
+                params=params,
+                timeout=10
+            )
+            if response.status_code != 200:
+                return 0
+            data = response.json()
+            return data.get("meta", {}).get("total_count", 0)
+        except Exception as e:
+            print(f"    카테고리 API 오류: {e}")
+            return 0
 
-        while page <= 3:  # 최대 3페이지 (45개)
-            params = {
-                "category_group_code": category_code,
-                "x": x,
-                "y": y,
-                "radius": radius,
-                "page": page,
-                "size": 15,
-            }
+    def search_keyword(
+        self,
+        keyword: str,
+        x: float,
+        y: float,
+        radius: int = 2000
+    ) -> int:
+        """키워드 검색 - 총 건수 반환"""
+        if not self.api_key:
+            return 0
 
-            try:
-                response = requests.get(
-                    self.KAKAO_API_BASE,
-                    headers=headers,
-                    params=params,
-                    timeout=10
-                )
+        headers = {"Authorization": f"KakaoAK {self.api_key}"}
+        params = {
+            "query": keyword,
+            "x": x,
+            "y": y,
+            "radius": radius,
+            "page": 1,
+            "size": 1,
+        }
 
-                if response.status_code != 200:
-                    break
-
-                data = response.json()
-                documents = data.get("documents", [])
-
-                if not documents:
-                    break
-
-                all_places.extend(documents)
-
-                if data.get("meta", {}).get("is_end", True):
-                    break
-
-                page += 1
-                time.sleep(0.1)
-
-            except Exception as e:
-                print(f"    API 오류: {e}")
-                break
-
-        return all_places
+        try:
+            response = requests.get(
+                self.KAKAO_KEYWORD_API,
+                headers=headers,
+                params=params,
+                timeout=10
+            )
+            if response.status_code != 200:
+                return 0
+            data = response.json()
+            return data.get("meta", {}).get("total_count", 0)
+        except Exception as e:
+            print(f"    키워드 API 오류: {e}")
+            return 0
 
     def collect_region_poi(
         self,
@@ -140,20 +161,24 @@ class POIDataCollector:
         lat: float,
         lon: float
     ) -> Dict:
-        """
-        지역별 POI 수집
-        """
+        """지역별 POI 수집"""
         result = {
             "region": region_name,
             "latitude": lat,
             "longitude": lon,
-            "collected_at": datetime.now().isoformat(),
         }
 
-        for cat_code, cat_name in self.CATEGORIES.items():
-            places = self.search_category(cat_code, lon, lat)
-            result[f"{cat_name}_count"] = len(places)
-            time.sleep(0.2)  # API 제한 고려
+        # 카테고리 검색
+        for cat_code, col_name in self.CATEGORIES.items():
+            count = self.search_category(cat_code, lon, lat)
+            result[col_name] = count
+            time.sleep(0.15)
+
+        # 키워드 검색
+        for keyword, col_name in self.KEYWORD_SEARCHES.items():
+            count = self.search_keyword(keyword, lon, lat)
+            result[col_name] = count
+            time.sleep(0.15)
 
         # POI 점수 계산
         result["poi_score"] = self._calculate_poi_score(result)
@@ -161,33 +186,39 @@ class POIDataCollector:
         return result
 
     def _calculate_poi_score(self, poi_data: Dict) -> float:
-        """POI 종합 점수 계산"""
+        """POI 종합 점수 계산 (100점 만점)"""
         score = 0.0
 
-        # 교통 (지하철역)
-        subway = poi_data.get("지하철역_count", 0)
-        score += min(25, subway * 5)
+        # 교통 (지하철 + 버스)
+        subway = poi_data.get("subway_count", 0)
+        bus = poi_data.get("bus_count", 0)
+        score += min(20, subway * 3 + bus * 0.3)
 
         # 교육 (학교)
-        schools = poi_data.get("학교_count", 0)
-        score += min(20, schools * 2)
+        schools = poi_data.get("school_count", 0)
+        score += min(15, schools * 1.5)
 
         # 의료 (병원)
-        hospitals = poi_data.get("병원_count", 0)
-        score += min(15, hospitals * 1.5)
+        hospitals = poi_data.get("hospital_count", 0)
+        score += min(15, hospitals * 0.5)
 
-        # 편의 (마트, 편의점)
-        marts = poi_data.get("대형마트_count", 0)
-        convs = poi_data.get("편의점_count", 0)
-        score += min(20, marts * 4 + convs * 0.5)
+        # 편의 (마트)
+        marts = poi_data.get("mart_count", 0)
+        score += min(10, marts * 2)
 
         # 금융 (은행)
-        banks = poi_data.get("은행_count", 0)
-        score += min(10, banks * 2)
+        banks = poi_data.get("bank_count", 0)
+        score += min(10, banks * 1)
 
-        # 문화 (관광명소)
-        attractions = poi_data.get("관광명소_count", 0)
-        score += min(10, attractions * 2)
+        # 생활 (음식점 + 카페)
+        restaurants = poi_data.get("restaurant_count", 0)
+        cafes = poi_data.get("cafe_count", 0)
+        score += min(15, restaurants * 0.1 + cafes * 0.2)
+
+        # 여가 (공원 + 체육시설)
+        parks = poi_data.get("park_count", 0)
+        gyms = poi_data.get("gym_count", 0)
+        score += min(15, parks * 1 + gyms * 0.5)
 
         return round(min(100, score), 2)
 
@@ -233,14 +264,16 @@ class POIDataCollector:
                 "region": region,
                 "latitude": lat,
                 "longitude": lon,
-                "학교_count": random.randint(5, 20),
-                "병원_count": random.randint(10, 50),
-                "지하철역_count": random.randint(2, 10),
-                "관광명소_count": random.randint(1, 15),
-                "대형마트_count": random.randint(1, 5),
-                "편의점_count": random.randint(20, 100),
-                "은행_count": random.randint(5, 20),
-                "collected_at": datetime.now().isoformat(),
+                "subway_count": random.randint(2, 10),
+                "bus_count": random.randint(10, 50),
+                "mart_count": random.randint(1, 5),
+                "park_count": random.randint(3, 15),
+                "school_count": random.randint(5, 20),
+                "hospital_count": random.randint(10, 50),
+                "bank_count": random.randint(5, 20),
+                "restaurant_count": random.randint(50, 300),
+                "cafe_count": random.randint(30, 200),
+                "gym_count": random.randint(5, 30),
             }
             row["poi_score"] = self._calculate_poi_score(row)
             data.append(row)
