@@ -33,6 +33,8 @@ MODEL_PATH = MODELS_DIR / "xgboost_model.pkl"
 SHAP_PATH = MODELS_DIR / "shap_explainer.pkl"
 ARTIFACTS_PATH = MODELS_DIR / "feature_artifacts.pkl"
 BUSINESS_MODEL_PATH = MODELS_DIR / "business_model.pkl"
+RESIDUAL_PATH = MODELS_DIR / "residual_info.pkl"
+LGBM_PATH = MODELS_DIR / "lgbm_model.pkl"
 
 
 @asynccontextmanager
@@ -46,6 +48,8 @@ async def lifespan(app: FastAPI):
     app.state.model = None
     app.state.shap_explainer = None
     app.state.feature_artifacts = None
+    app.state.residual_info = None
+    app.state.lgbm_model = None
 
     try:
         if MODEL_PATH.exists():
@@ -62,6 +66,16 @@ async def lifespan(app: FastAPI):
             with open(ARTIFACTS_PATH, "rb") as f:
                 app.state.feature_artifacts = pickle.load(f)
             print(f"Feature artifacts loaded: {ARTIFACTS_PATH}")
+
+        if RESIDUAL_PATH.exists():
+            with open(RESIDUAL_PATH, "rb") as f:
+                app.state.residual_info = pickle.load(f)
+            print(f"Residual info loaded: {RESIDUAL_PATH}")
+
+        if LGBM_PATH.exists():
+            with open(LGBM_PATH, "rb") as f:
+                app.state.lgbm_model = pickle.load(f)
+            print(f"LightGBM model loaded: {LGBM_PATH}")
 
         # 상권 성공 예측 모델 로드
         if BUSINESS_MODEL_PATH.exists():

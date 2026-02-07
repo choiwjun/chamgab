@@ -269,6 +269,19 @@ class DataScheduler:
                         self._app.state.feature_artifacts = pickle.load(f)
                     print("[스케줄러] Feature Artifacts 리로드 완료")
 
+                # v2: 잔차 정보 + LightGBM 리로드
+                residual_path = MODELS_DIR / "residual_info.pkl"
+                if residual_path.exists():
+                    with open(residual_path, "rb") as f:
+                        self._app.state.residual_info = pickle.load(f)
+                    print("[스케줄러] Residual Info 리로드 완료")
+
+                lgbm_path = MODELS_DIR / "lgbm_model.pkl"
+                if lgbm_path.exists():
+                    with open(lgbm_path, "rb") as f:
+                        self._app.state.lgbm_model = pickle.load(f)
+                    print("[스케줄러] LightGBM 모델 리로드 완료")
+
             print("[스케줄러] 모델 핫리로드 완료")
 
         except Exception as e:
