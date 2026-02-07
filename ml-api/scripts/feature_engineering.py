@@ -107,29 +107,46 @@ class FeatureEngineer:
         return df
 
     def _load_from_database(self) -> pd.DataFrame:
-        """Supabase에서 학습 데이터 로드"""
+        """Supabase에서 학습 데이터 로드 (페이지네이션)"""
         client = get_supabase_client()
 
-        result = client.table("transactions").select(
-            """
-            *,
-            properties:property_id (
-                id, name, address, sido, sigungu, eupmyeondong,
-                area_exclusive, built_year, floors, property_type
-            ),
-            complexes:complex_id (
-                id, name, total_units, total_buildings,
-                built_year, parking_ratio, brand
-            )
-            """
-        ).execute()
+        all_data = []
+        page_size = 1000
+        offset = 0
 
-        if not result.data:
+        while True:
+            result = client.table("transactions").select(
+                """
+                *,
+                properties:property_id (
+                    id, name, address, sido, sigungu, eupmyeondong,
+                    area_exclusive, built_year, floors, property_type
+                ),
+                complexes:complex_id (
+                    id, name, total_units, total_buildings,
+                    built_year, parking_ratio, brand
+                )
+                """
+            ).range(offset, offset + page_size - 1).execute()
+
+            if not result.data:
+                break
+
+            all_data.extend(result.data)
+            print(f"  페이지 로드: {len(all_data)}건...")
+
+            if len(result.data) < page_size:
+                break
+            offset += page_size
+
+        if not all_data:
             print("데이터가 없습니다. 먼저 collect_transactions.py를 실행하세요.")
             return pd.DataFrame()
 
+        print(f"총 {len(all_data)}건 로드 완료 (Supabase)")
+
         records = []
-        for row in result.data:
+        for row in all_data:
             record = {
                 "id": row["id"],
                 "transaction_date": row["transaction_date"],

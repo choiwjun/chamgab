@@ -48,6 +48,7 @@ class XGBoostTrainer:
         "reg_alpha": 0.5,
         "reg_lambda": 2.0,
         "gamma": 0.1,
+        "early_stopping_rounds": 50,  # ★ early stopping
         "random_state": 42,
         "n_jobs": -1,
     }
@@ -275,7 +276,7 @@ class XGBoostTrainer:
 
         print("\n=== Feature Importance (Top 15) ===")
         for _, row in importance.head(15).iterrows():
-            bar = "█" * int(row["importance"] * 100)
+            bar = "#" * int(row["importance"] * 100)
             print(f"  {row['feature']:30s}: {row['importance']:.4f} {bar}")
 
         return importance
