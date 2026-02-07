@@ -479,7 +479,8 @@ function generateSHAPCategories(
     },
   ]
 
-  if (complex.total_units) {
+  if (complex.total_units && complex.total_units >= 10) {
+    // total_units < 10은 DB 내 매물 수일 뿐 실제 세대수가 아닐 수 있으므로 제외
     const units = complex.total_units
     const unitsImpact =
       units >= 3000
@@ -848,7 +849,7 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
             </span>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            {complex.total_units && (
+            {complex.total_units && complex.total_units >= 10 && (
               <div className="flex items-center gap-4 rounded-xl border border-gray-200 bg-[#F9FAFB] p-4">
                 <Building className="h-5 w-5 text-blue-500" />
                 <div>

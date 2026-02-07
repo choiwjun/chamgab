@@ -87,7 +87,8 @@ def create_complexes(client, groups):
             "sigungu": sigungu if sigungu else (first.get("sigungu") or ""),
             "eupmyeondong": first.get("eupmyeondong") or "",
             "built_year": first.get("built_year"),
-            "total_units": len(props),
+            # total_units는 실제 세대수를 모르므로 설정하지 않음
+            # len(props)는 DB 내 매물 수일 뿐 실제 세대수가 아님
         }
         # NOT NULL 필드 보장
         if not record["sido"]:
