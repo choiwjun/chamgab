@@ -171,9 +171,12 @@ jobs:
           python scripts/prepare_training_data.py --full --output data/training_data.csv
 
       - name: Train XGBoost model
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
           cd ml-api
-          python scripts/train_model.py --csv data/training_data.csv
+          python -m scripts.train_model --csv data/training_data.csv
 
       - name: Generate SHAP analysis
         run: |
@@ -194,8 +197,7 @@ jobs:
         with:
           name: ml-models-full
           path: |
-            ml-api/models/*.joblib
-            ml-api/models/*.json
+            ml-api/app/models/*.pkl
             ml-api/reports/
           retention-days: 30
 

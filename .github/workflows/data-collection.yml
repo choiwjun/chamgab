@@ -95,15 +95,18 @@ jobs:
           cd ml-api
           python -c "
           from app.services.market_service import MarketService
-          import asyncio
+          from datetime import datetime
 
-          async def main():
-              service = MarketService()
-              # 시장 지표 수집 (캐시 갱신)
-              result = await service.get_market_indicators()
-              print(f'Market indicators: {result}')
+          service = MarketService()
+          now = datetime.now()
 
-          asyncio.run(main())
+          # 주요 지역 시장 피처 수집
+          key_regions = ['강남구', '서초구', '송파구', '분당구', '영통구']
+          for sigungu in key_regions:
+              result = service.get_market_features(now.year, now.month, sigungu)
+              print(f'{sigungu}: {result}')
+
+          print('REB price index collection done')
           "
 
   collect-building-info:
@@ -167,21 +170,19 @@ jobs:
           cd ml-api
           python -c "
           from app.services.footfall_service import FootfallService
-          import asyncio
 
-          async def main():
-              service = FootfallService()
-              # 주요 지역 유동인구 피처 확인
-              test_locations = [
-                  (37.5172, 127.0473, '강남역'),
-                  (37.4979, 127.0276, '서초역'),
-                  (37.5138, 127.1004, '잠실역'),
-              ]
-              for lat, lng, name in test_locations:
-                  features = service.get_footfall_features(lat, lng, radius=500)
-                  print(f'{name}: footfall_score={features.footfall_score}')
+          service = FootfallService()
+          # 주요 지역 유동인구 피처 확인
+          test_locations = [
+              (37.5172, 127.0473, '강남역'),
+              (37.4979, 127.0276, '서초역'),
+              (37.5138, 127.1004, '잠실역'),
+          ]
+          for lat, lng, name in test_locations:
+              features = service.get_footfall_features(lat=lat, lng=lng, radius=500)
+              print(f'{name}: footfall_score={features[\"footfall_score\"]}')
 
-          asyncio.run(main())
+          print('Footfall data collection done')
           "
 
   notify-completion:
