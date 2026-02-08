@@ -71,17 +71,35 @@ export async function GET(
       '60s': { name: '60대 이상', age: '60세+', lifestyle: '여유, 건강' },
     }
 
-    // 업종 추천 - 해당 지역 업종별 생존율 (업종별 최신 월 데이터만)
+    // 업종 추천 - 생존율 + 연령 매칭도 기반 점수
+    const ageIndustryMatch: Record<string, string[]> = {
+      '10s': ['Q06', 'Q08', 'Q07', 'Q14', 'S03'],
+      '20s': ['Q12', 'Q13', 'Q06', 'R01', 'R03', 'I02'],
+      '30s': ['Q01', 'Q12', 'Q04', 'S02', 'I01'],
+      '40s': ['Q01', 'Q04', 'D01', 'N01', 'S01'],
+      '50s': ['Q01', 'D01', 'N01', 'N03', 'L01'],
+      '60s': ['Q01', 'D01', 'N01', 'N03', 'L03'],
+    }
+    const matchedCodes = ageIndustryMatch[primaryTarget] || []
+
     const bizAll = await fetchBusinessStats(supabase, code)
     let suggested = latestByIndustry(bizAll)
       .filter((b) => b.industry_small_code && b.industry_name)
-      .sort((a, b) => num(b.survival_rate) - num(a.survival_rate))
+      .map((b) => {
+        const ic = b.industry_small_code as string
+        const survival = num(b.survival_rate)
+        // 점수: 생존율(60%) + 연령 매칭(40%)
+        let score = Math.round(survival * 0.6)
+        if (matchedCodes.includes(ic)) score += 40
+        else score += 10
+        return {
+          code: ic,
+          name: b.industry_name as string,
+          match_score: Math.min(score, 100),
+        }
+      })
+      .sort((a, b) => b.match_score - a.match_score)
       .slice(0, 3)
-      .map((b) => ({
-        code: b.industry_small_code as string,
-        name: b.industry_name as string,
-        match_score: Math.min(Math.round(num(b.survival_rate)), 100),
-      }))
 
     if (!suggested.length) {
       suggested = [{ code: 'Q01', name: '한식음식점', match_score: 80 }]

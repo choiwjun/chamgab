@@ -51,10 +51,20 @@ export async function GET(
         type: 'positive',
         message: `매출 지속 증가 중 (+${salesGrowthRate.toFixed(1)}%)`,
       })
+    } else if (salesGrowthRate > 3) {
+      signals.push({
+        type: 'positive',
+        message: `매출 소폭 증가세 (+${salesGrowthRate.toFixed(1)}%)`,
+      })
     } else if (salesGrowthRate < -5) {
       signals.push({
         type: 'negative',
         message: `매출 감소 추세 (${salesGrowthRate.toFixed(1)}%)`,
+      })
+    } else if (salesGrowthRate < -3) {
+      signals.push({
+        type: 'negative',
+        message: `매출 소폭 감소세 (${salesGrowthRate.toFixed(1)}%)`,
       })
     } else {
       signals.push({ type: 'neutral', message: '매출 안정세 유지' })

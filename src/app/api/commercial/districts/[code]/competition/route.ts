@@ -13,6 +13,7 @@ import {
   fullName,
   fetchStoreStats,
   fetchBusinessStats,
+  latestByIndustry,
   num,
   avg,
 } from '../../../_helpers'
@@ -45,17 +46,18 @@ export async function GET(
         ? Math.round((totalFranchise / totalStores) * 1000) / 10
         : 0
 
+    // 밀집도 (시군구 전체 업종 합산 기준 - 수백~수만 범위)
     let densityScore: number
     let competitionLevel: string
-    if (totalStores < 50) {
-      densityScore = Math.round((totalStores / 50) * 3)
+    if (totalStores < 2000) {
+      densityScore = Math.round((totalStores / 2000) * 3)
       competitionLevel = '낮음'
-    } else if (totalStores < 300) {
-      densityScore = 3 + Math.round(((totalStores - 50) / 250) * 4)
+    } else if (totalStores < 10000) {
+      densityScore = 3 + Math.round(((totalStores - 2000) / 8000) * 4)
       competitionLevel = '중간'
     } else {
       densityScore =
-        7 + Math.min(Math.round(((totalStores - 300) / 200) * 3), 3)
+        7 + Math.min(Math.round(((totalStores - 10000) / 30000) * 3), 3)
       competitionLevel = '높음'
     }
 
@@ -92,7 +94,7 @@ export async function GET(
 
       for (const [sgc, sc] of sortedAlts) {
         const { name, sido } = await getDistrictName(supabase, sgc)
-        const biz = await fetchBusinessStats(supabase, sgc)
+        const biz = latestByIndustry(await fetchBusinessStats(supabase, sgc))
         const avgSurv = biz.length ? avg(biz, 'survival_rate', 70) : 70
         alternatives.push({
           code: sgc,

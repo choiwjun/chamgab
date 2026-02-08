@@ -1,13 +1,6 @@
 'use client'
 
-import {
-  TrendingUp,
-  Users,
-  MapPin,
-  Home,
-  AlertTriangle,
-  DollarSign,
-} from 'lucide-react'
+import { TrendingUp, Users, AlertTriangle, DollarSign } from 'lucide-react'
 import type {
   DistrictStatistics,
   DistrictCharacteristics,
@@ -35,12 +28,12 @@ export function MetricsCard({ statistics, characteristics }: MetricsCardProps) {
   // 리스크 점수 계산 (100점 만점에서 역산)
   const calculateRisk = () => {
     let risk = 0
-    // 생존율이 낮을수록 리스크 증가
+    // 생존율이 낮을수록 리스크 증가 (max ~30)
     risk += (100 - survival_rate) * 0.3
-    // 경쟁도가 높을수록 리스크 증가
-    risk += competition_ratio * 10
-    // 점포수가 많을수록 리스크 증가 (시장 포화)
-    risk += Math.min(total_stores / 10, 20)
+    // 경쟁도가 높을수록 리스크 증가 (competition_ratio: 0~5 범위, max ~25)
+    risk += Math.min(competition_ratio * 5, 25)
+    // 점포수가 많을수록 리스크 증가 (max ~20)
+    risk += Math.min(total_stores / 2000, 20)
     return Math.min(risk, 100).toFixed(1)
   }
 
@@ -52,10 +45,6 @@ export function MetricsCard({ statistics, characteristics }: MetricsCardProps) {
 
   const competitionLevel = getCompetitionLevel(competition_ratio)
   const riskScore = calculateRisk()
-
-  // 접근성과 임대료는 별도 데이터 소스 필요
-  const accessibility = '데이터 수집 예정'
-  const monthlyRent = '데이터 수집 예정'
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-8">
@@ -121,20 +110,6 @@ export function MetricsCard({ statistics, characteristics }: MetricsCardProps) {
           </p>
         </div>
 
-        {/* 접근성 */}
-        <div className="rounded-xl border border-gray-200 p-6 transition-colors hover:border-blue-300">
-          <div className="mb-3 flex items-center gap-3">
-            <div className="rounded-lg bg-green-100 p-2">
-              <MapPin className="h-5 w-5 text-green-600" />
-            </div>
-            <div>
-              <h3 className="text-sm font-medium text-gray-600">접근성</h3>
-              <p className="text-xl font-bold text-gray-900">{accessibility}</p>
-            </div>
-          </div>
-          <p className="text-xs text-gray-500">대중교통 우수</p>
-        </div>
-
         {/* 매출 예측 */}
         <div className="rounded-xl border border-gray-200 p-6 transition-colors hover:border-blue-300">
           <div className="mb-3 flex items-center gap-3">
@@ -149,20 +124,6 @@ export function MetricsCard({ statistics, characteristics }: MetricsCardProps) {
             </div>
           </div>
           <p className="text-xs text-gray-500">상권 평균 기준</p>
-        </div>
-
-        {/* 임대료 */}
-        <div className="rounded-xl border border-gray-200 p-6 transition-colors hover:border-blue-300">
-          <div className="mb-3 flex items-center gap-3">
-            <div className="rounded-lg bg-yellow-100 p-2">
-              <Home className="h-5 w-5 text-yellow-600" />
-            </div>
-            <div>
-              <h3 className="text-sm font-medium text-gray-600">임대료</h3>
-              <p className="text-xl font-bold text-gray-900">{monthlyRent}</p>
-            </div>
-          </div>
-          <p className="text-xs text-gray-500">보증금 별도</p>
         </div>
       </div>
 

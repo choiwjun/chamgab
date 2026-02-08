@@ -66,8 +66,9 @@ export async function GET(
     const avgGrowth = avg(latestSalesStats, 'sales_growth_rate')
     const totalStores = sum(latestStoreStats, 'store_count')
     const numIndustries = Math.max(latestStoreStats.length, 1)
+    const avgStoresPerIndustry = totalStores / numIndustries
     const competitionRatio = latestStoreStats.length
-      ? Math.round((totalStores / numIndustries / 30) * 10) / 10
+      ? Math.round(Math.min(avgStoresPerIndustry / 300, 5.0) * 10) / 10
       : 0
 
     const statistics = {
@@ -79,7 +80,7 @@ export async function GET(
     }
 
     const desc = hasData
-      ? `${dname} 상권 분석 (${bizStats.length}개 업종 데이터)`
+      ? `${dname} 상권 분석 (${latestBizStats.length}개 업종 데이터)`
       : `${dname} (상세 데이터 수집 예정)`
 
     return NextResponse.json({

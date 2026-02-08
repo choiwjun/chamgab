@@ -74,8 +74,8 @@ export async function GET(
       const r20 = ageGroups['20대'] / totalAge
       const r30 = ageGroups['30대'] / totalAge
       const r40 = ageGroups['40대'] / totalAge
-      if (r20 > 0.3) districtType = '대학상권'
-      else if (r30 > 0.3) districtType = '오피스상권'
+      if (r20 > 0.25) districtType = '대학상권'
+      else if (r30 > 0.28) districtType = '오피스상권'
       else if (r40 > 0.25) districtType = '주거상권'
       else districtType = '복합상권'
     }
