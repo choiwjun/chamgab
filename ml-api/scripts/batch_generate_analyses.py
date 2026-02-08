@@ -30,6 +30,8 @@ if os.path.exists(env_path):
 # ml-api를 sys.path에 추가
 sys.path.insert(0, ml_api_dir)
 
+from collections import defaultdict
+
 import numpy as np
 import pandas as pd
 
@@ -49,6 +51,173 @@ RESIDUAL_INFO_PATH = os.path.join(MODELS_DIR, "residual_info.pkl")
 def load_pkl(path):
     with open(path, "rb") as f:
         return pickle.load(f)
+
+
+# ─────────────────────────────────────────────
+# Fix #1: 시군구 target encoding 키 매핑
+# ─────────────────────────────────────────────
+
+# 광역시 약칭 매핑 (서울은 plain name 사용)
+_SIDO_SHORT = {
+    "부산광역시": "부산", "대구광역시": "대구",
+    "인천광역시": "인천", "광주광역시": "광주",
+    "대전광역시": "대전", "울산광역시": "울산",
+    "세종특별자치시": "세종",
+}
+
+# 경기도 등 compound city 매핑 (구 → 시)
+_COMPOUND_CITIES = {
+    "수지구": "용인시", "기흥구": "용인시", "처인구": "용인시",
+    "영통구": "수원시", "장안구": "수원시", "권선구": "수원시", "팔달구": "수원시",
+    "단원구": "안산시", "상록구": "안산시",
+    "일산서구": "고양시", "일산동구": "고양시", "덕양구": "고양시",
+    "분당구": "성남시", "수정구": "성남시", "중원구": "성남시",
+    "만안구": "안양시", "동안구": "안양시",
+    "원미구": "부천시", "소사구": "부천시", "오정구": "부천시",
+    "상당구": "청주시", "서원구": "청주시", "청원구": "청주시", "흥덕구": "청주시",
+    "동남구": "천안시", "서북구": "천안시",
+}
+
+
+def get_sigungu_key(sido, sigungu, target_mapping):
+    """(sido, sigungu) → target encoder 키 변환
+
+    학습 데이터의 target encoder는 중복 시군구명을 구분하기 위해
+    서울: plain name (강남구), 광역시: 접두어 (부산해운대구),
+    경기 compound: 시+구 (안산시단원구) 형식을 사용.
+
+    중요: 비서울 지역의 '중구', '서구' 등이 서울 것과 충돌하지 않도록
+    서울 이외는 반드시 접두어 버전을 먼저 시도.
+    """
+    # 서울은 plain name 직접 사용
+    if sido in ("서울특별시", "서울시"):
+        return sigungu  # 매핑에 없으면 자동으로 global_mean
+
+    # 비서울: 접두어 버전 우선
+    # 2. 광역시 접두어 (부산해운대구, 인천연수구)
+    sido_short = _SIDO_SHORT.get(sido, "")
+    if sido_short:
+        key = sido_short + sigungu
+        if key in target_mapping:
+            return key
+
+    # 3. Compound city (안산시단원구, 용인시수지구)
+    if sigungu in _COMPOUND_CITIES:
+        key = _COMPOUND_CITIES[sigungu] + sigungu
+        if key in target_mapping:
+            return key
+
+    # 4. Suffix match (단일 매칭만)
+    matches = [k for k in target_mapping if k.endswith(sigungu)]
+    if len(matches) == 1:
+        return matches[0]
+
+    # 5. 비서울인데 plain name이 서울 것과 충돌할 수 있으므로
+    #    의도적으로 매핑에 없는 키 반환 → global_mean fallback
+    return sido_short + sigungu if sido_short else sigungu
+
+
+# ─────────────────────────────────────────────
+# Fix #2: 실제 거래 데이터 기반 시세 lag 피처
+# ─────────────────────────────────────────────
+
+def fetch_price_history(sb):
+    """complex_id별 + sigungu별 최근 거래 가격 통계 pre-fetch.
+
+    Returns:
+        complex_stats: { complex_id: { price_lag_1m, price_lag_3m, ... } }
+        sigungu_stats: { sigungu_text: { price_lag_1m, price_lag_3m, ... } }
+    """
+    cutoff = (datetime.now() - timedelta(days=540)).strftime('%Y-%m-%d')
+
+    all_txns = []
+    offset = 0
+    print("  최근 18개월 거래 데이터 조회 중...")
+    while True:
+        result = sb.table("transactions").select(
+            "complex_id, sigungu, transaction_date, price"
+        ).not_.is_(
+            "complex_id", "null"
+        ).gte(
+            "transaction_date", cutoff
+        ).gt(
+            "price", 0
+        ).range(offset, offset + 999).execute()
+
+        if not result.data:
+            break
+        all_txns.extend(result.data)
+        if len(result.data) < 1000:
+            break
+        offset += 1000
+
+    print(f"  최근 18개월 거래: {len(all_txns)}건")
+
+    if not all_txns:
+        return {}, {}
+
+    # complex_id별 월별 가격 집계
+    complex_monthly = defaultdict(lambda: defaultdict(list))
+    sigungu_monthly = defaultdict(lambda: defaultdict(list))
+
+    for tx in all_txns:
+        cid = tx.get("complex_id")
+        sgg = tx.get("sigungu") or ""
+        date_str = tx.get("transaction_date", "")
+        price = tx.get("price", 0)
+        if not date_str or not price:
+            continue
+        ym = date_str[:7]  # "2025-01"
+        if cid:
+            complex_monthly[cid][ym].append(price)
+        if sgg:
+            sigungu_monthly[sgg][ym].append(price)
+
+    def compute_lag_stats(monthly_dict):
+        monthly_avg = {ym: np.mean(prices) for ym, prices in monthly_dict.items()}
+        sorted_months = sorted(monthly_avg.keys(), reverse=True)
+        if not sorted_months:
+            return None
+
+        lag_1m = monthly_avg[sorted_months[0]]
+        lag_3m = monthly_avg[sorted_months[2]] if len(sorted_months) >= 3 else lag_1m
+
+        recent_6 = [monthly_avg[m] for m in sorted_months[:6]]
+        rolling_mean = float(np.mean(recent_6))
+        rolling_std = float(np.std(recent_6)) if len(recent_6) >= 2 else 0.0
+
+        # YoY change
+        if len(sorted_months) >= 12:
+            old = monthly_avg[sorted_months[11]]
+            yoy = (lag_1m - old) / max(old, 1)
+        elif len(sorted_months) >= 2:
+            old = monthly_avg[sorted_months[-1]]
+            yoy = (lag_1m - old) / max(old, 1)
+        else:
+            yoy = 0.0
+
+        return {
+            "price_lag_1m": float(lag_1m),
+            "price_lag_3m": float(lag_3m),
+            "price_rolling_6m_mean": rolling_mean,
+            "price_rolling_6m_std": rolling_std,
+            "price_yoy_change": float(yoy),
+        }
+
+    complex_stats = {}
+    for cid, monthly in complex_monthly.items():
+        stats = compute_lag_stats(monthly)
+        if stats:
+            complex_stats[cid] = stats
+
+    sigungu_stats = {}
+    for sgg, monthly in sigungu_monthly.items():
+        stats = compute_lag_stats(monthly)
+        if stats:
+            sigungu_stats[sgg] = stats
+
+    print(f"  price history: {len(complex_stats)}개 단지, {len(sigungu_stats)}개 시군구")
+    return complex_stats, sigungu_stats
 
 
 # ─────────────────────────────────────────────
@@ -148,9 +317,12 @@ def sync_complexes_to_properties(sb):
 # Step 2 + 3: chamgab_analyses + price_factors 생성
 # ─────────────────────────────────────────────
 
-def generate_analyses(sb, model, artifacts, shap_explainer, residual_info, skip_existing=True, limit=0):
+def generate_analyses(sb, model, artifacts, shap_explainer, residual_info, skip_existing=True, limit=0,
+                       complex_price_stats=None, sigungu_price_stats=None):
     """모든 properties에 대해 chamgab_analyses + price_factors 생성"""
     print("\n[Step 2+3] Chamgab Analyses + Price Factors 생성")
+    complex_price_stats = complex_price_stats or {}
+    sigungu_price_stats = sigungu_price_stats or {}
 
     label_encoders = artifacts.get("label_encoders", {})
     target_encoders = artifacts.get("target_encoders", {})
@@ -288,6 +460,9 @@ def generate_analyses(sb, model, artifacts, shap_explainer, residual_info, skip_
             "view_premium": 1.0, "is_remodeled": 0, "remodel_premium": 0.0,
         }
 
+    # target encoder에서 sigungu 매핑 키 목록 추출 (get_sigungu_key용)
+    sigungu_target_mapping = (target_encoders.get("sigungu") or {}).get("mapping", {})
+
     def prepare_features(prop):
         complex_data = prop.get("complexes") or {}
         current_year = datetime.now().year
@@ -306,14 +481,39 @@ def generate_analyses(sb, model, artifacts, shap_explainer, residual_info, skip_
         dong = prop.get("eupmyeondong") or "unknown"
         area = prop.get("area_exclusive") or 84
 
+        # Fix #1: sido-prefixed 시군구 키로 인코딩 (중구/서구 등 충돌 방지)
+        sigungu_key = get_sigungu_key(sido, sigungu, sigungu_target_mapping)
         sido_enc = encode_label("sido", sido)
-        sigungu_enc = encode_label("sigungu", sigungu)
-        sigungu_target = target_encode("sigungu", sigungu)
+        sigungu_enc = encode_label("sigungu", sigungu_key)
+        sigungu_target = target_encode("sigungu", sigungu_key)
         dong_target = target_encode("dong", dong)
 
         poi = get_poi_features(sigungu)
         market = get_market_features(sigungu)
         extra = get_property_extra(built_year, sigungu)
+
+        # Fix #2: 실제 거래 데이터 기반 lag 피처
+        complex_id = prop.get("complex_id") or (complex_data.get("id") if complex_data else None)
+        lag = None
+        if complex_id and complex_id in complex_price_stats:
+            lag = complex_price_stats[complex_id]
+        elif sigungu and sigungu in sigungu_price_stats:
+            lag = sigungu_price_stats[sigungu]
+
+        if lag:
+            price_lag_1m = lag["price_lag_1m"]
+            price_lag_3m = lag["price_lag_3m"]
+            price_rolling_6m_mean = lag["price_rolling_6m_mean"]
+            price_rolling_6m_std = lag["price_rolling_6m_std"]
+            price_yoy_change = lag["price_yoy_change"]
+        else:
+            # 글로벌 중앙값 fallback (0 대신)
+            global_mean = fill_values.get("sigungu_target_enc", 500000000)
+            price_lag_1m = global_mean
+            price_lag_3m = global_mean
+            price_rolling_6m_mean = global_mean
+            price_rolling_6m_std = 0
+            price_yoy_change = 0
 
         features = {
             "area_exclusive": area,
@@ -331,12 +531,11 @@ def generate_analyses(sb, model, artifacts, shap_explainer, residual_info, skip_
             "sigungu_encoded": sigungu_enc,
             "sigungu_target_enc": sigungu_target,
             "dong_target_enc": dong_target,
-            # temporal (defaults - skip DB query for batch speed)
-            "price_lag_1m": fill_values.get("price_lag_1m", 0),
-            "price_lag_3m": fill_values.get("price_lag_3m", 0),
-            "price_rolling_6m_mean": fill_values.get("price_rolling_6m_mean", 0),
-            "price_rolling_6m_std": fill_values.get("price_rolling_6m_std", 0),
-            "price_yoy_change": fill_values.get("price_yoy_change", 0),
+            "price_lag_1m": price_lag_1m,
+            "price_lag_3m": price_lag_3m,
+            "price_rolling_6m_mean": price_rolling_6m_mean,
+            "price_rolling_6m_std": price_rolling_6m_std,
+            "price_yoy_change": price_yoy_change,
             "volume_lag_1m": fill_values.get("volume_lag_1m", 0),
             **poi, **market, **extra,
             "footfall_score": 60.0,
@@ -486,6 +685,43 @@ def generate_analyses(sb, model, artifacts, shap_explainer, residual_info, skip_
     return total_analyses, total_factors
 
 
+def delete_existing_analyses(sb):
+    """기존 chamgab_analyses + price_factors 전체 삭제 (배치)"""
+    print("\n[삭제] 기존 chamgab_analyses + price_factors 삭제")
+
+    # 1. price_factors 먼저 삭제 (FK 참조)
+    deleted_factors = 0
+    while True:
+        result = sb.table("price_factors").select("id").limit(500).execute()
+        if not result.data:
+            break
+        ids = [r["id"] for r in result.data]
+        for i in range(0, len(ids), 100):
+            batch_ids = ids[i:i + 100]
+            sb.table("price_factors").delete().in_("id", batch_ids).execute()
+            deleted_factors += len(batch_ids)
+        print(f"  price_factors 삭제: {deleted_factors}건")
+        time.sleep(0.3)
+    print(f"  → price_factors 삭제 완료: {deleted_factors}건")
+
+    # 2. chamgab_analyses 삭제
+    deleted_analyses = 0
+    while True:
+        result = sb.table("chamgab_analyses").select("id").limit(500).execute()
+        if not result.data:
+            break
+        ids = [r["id"] for r in result.data]
+        for i in range(0, len(ids), 100):
+            batch_ids = ids[i:i + 100]
+            sb.table("chamgab_analyses").delete().in_("id", batch_ids).execute()
+            deleted_analyses += len(batch_ids)
+        print(f"  chamgab_analyses 삭제: {deleted_analyses}건")
+        time.sleep(0.3)
+    print(f"  → chamgab_analyses 삭제 완료: {deleted_analyses}건")
+
+    return deleted_analyses, deleted_factors
+
+
 def main():
     parser = argparse.ArgumentParser(description="배치 분석 생성기")
     parser.add_argument("--skip-sync", action="store_true", help="properties 동기화 스킵")
@@ -493,11 +729,13 @@ def main():
                         help="이미 분석된 properties 스킵 (기본: True)")
     parser.add_argument("--no-skip-existing", action="store_true",
                         help="기존 분석 무시하고 전체 재생성")
+    parser.add_argument("--regenerate", action="store_true",
+                        help="기존 분석 전체 삭제 후 재생성 (Fix #1/#2 적용)")
     parser.add_argument("--limit", type=int, default=0, help="분석할 최대 properties 수 (0=무제한)")
     parser.add_argument("--no-shap", action="store_true", help="SHAP 분석 스킵")
     args = parser.parse_args()
 
-    if args.no_skip_existing:
+    if args.no_skip_existing or args.regenerate:
         args.skip_existing = False
 
     print("=" * 60)
@@ -510,6 +748,10 @@ def main():
         sys.exit(1)
 
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+    # Step 0: 기존 분석 삭제 (--regenerate)
+    if args.regenerate:
+        delete_existing_analyses(sb)
 
     # Step 1: Properties 동기화
     if not args.skip_sync:
@@ -538,11 +780,17 @@ def main():
         shap_explainer = load_pkl(SHAP_EXPLAINER_PATH)
         print(f"  SHAP explainer 로드 완료")
 
+    # Step 1.5: 시세 lag 피처용 거래 히스토리 pre-fetch
+    print("\n[Step 1.5] 거래 가격 히스토리 조회")
+    complex_price_stats, sigungu_price_stats = fetch_price_history(sb)
+
     # Step 2+3: 분석 생성
     total_a, total_f = generate_analyses(
         sb, model, artifacts, shap_explainer, residual_info,
         skip_existing=args.skip_existing,
         limit=args.limit,
+        complex_price_stats=complex_price_stats,
+        sigungu_price_stats=sigungu_price_stats,
     )
 
     print("\n" + "=" * 60)
