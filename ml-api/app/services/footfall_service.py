@@ -39,17 +39,6 @@ class FootfallService:
     # 소상공인 상가정보 API
     API_BASE_URL = "https://api.odcloud.kr/api/15083033/v1/uddi:b9b02b52-0879-402d-ae80-b71d89e16bbf"
 
-    # 지역별 기본 상권 점수 (프리미엄 지역은 더 높은 점수)
-    BASE_FOOTFALL_BY_REGION = {
-        "강남구": 95, "서초구": 90, "송파구": 85, "용산구": 80,
-        "마포구": 85, "성동구": 78, "영등포구": 82, "강동구": 72,
-        "광진구": 75, "동작구": 70, "양천구": 68, "노원구": 65,
-        "강서구": 70, "은평구": 62, "default": 60,
-        # 경기도
-        "단원구": 55, "상록구": 50, "수원시": 70, "성남시": 75,
-        "용인시": 60, "고양시": 65,
-    }
-
     # 캐시
     _cache: Dict[str, Dict] = {}
     _cache_timestamp: Optional[datetime] = None
@@ -138,13 +127,13 @@ class FootfallService:
             except RuntimeError:
                 pass
 
-        # 시뮬레이션 데이터 반환
-        return self._simulate_footfall_features(sigungu or "default")
+        # API 데이터 없을 때 기본값 반환
+        return self._get_default_features()
 
     def _calculate_features_from_stores(self, stores: List[Dict]) -> Dict[str, float]:
         """상가 데이터에서 피처 계산"""
         if not stores:
-            return self._simulate_footfall_features("default")
+            return self._get_default_features()
 
         total_stores = len(stores)
         total_area = sum(float(s.get("store_area", 50)) for s in stores)
@@ -172,31 +161,15 @@ class FootfallService:
             "franchise_ratio": round(franchise_ratio, 2),
         }
 
-    def _simulate_footfall_features(self, sigungu: str) -> Dict[str, float]:
-        """시뮬레이션 피처 생성"""
-        import random
-
-        base_score = self.BASE_FOOTFALL_BY_REGION.get(
-            sigungu,
-            self.BASE_FOOTFALL_BY_REGION["default"]
-        )
-
-        # 프리미엄 지역일수록 상권 밀집도 높음
-        density_factor = base_score / 60
-
+    def _get_default_features(self) -> Dict[str, float]:
+        """API 데이터 없을 때 기본값 반환"""
         return {
-            "footfall_score": round(base_score + random.uniform(-5, 5), 1),
-            "commercial_density": round(100 * density_factor + random.uniform(-20, 20), 1),
-            "store_diversity_index": round(0.5 + (base_score / 200) + random.uniform(-0.1, 0.1), 2),
-            "avg_store_size": round(50 + random.uniform(-10, 20), 1),
-            "franchise_ratio": round(0.2 + (base_score / 500) + random.uniform(-0.05, 0.05), 2),
+            "footfall_score": 0.0,
+            "commercial_density": 0.0,
+            "store_diversity_index": 0.0,
+            "avg_store_size": 0.0,
+            "franchise_ratio": 0.0,
         }
-
-
-def generate_simulated_footfall_features(sigungu: str = "강남구") -> Dict[str, float]:
-    """시뮬레이션 유동인구 피처 생성 (간편 함수)"""
-    service = FootfallService(use_api=False)
-    return service.get_footfall_features(sigungu=sigungu)
 
 
 if __name__ == "__main__":

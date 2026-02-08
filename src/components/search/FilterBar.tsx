@@ -21,7 +21,10 @@ export function FilterBar({ initialFilters }: FilterBarProps) {
   const [isFilterOpen, setIsFilterOpen] = useState(false)
 
   // 필터 변경 핸들러
-  const handleFilterChange = (key: string, value: string | number | undefined) => {
+  const handleFilterChange = (
+    key: string,
+    value: string | number | undefined
+  ) => {
     const params = new URLSearchParams(searchParams.toString())
 
     if (value === undefined || value === '') {
@@ -44,17 +47,17 @@ export function FilterBar({ initialFilters }: FilterBarProps) {
   ).length
 
   return (
-    <div className="border-t border-editorial-dark/5 pt-6">
+    <div className="border-t border-gray-200 pt-6">
       {/* 필터 토글 버튼 (모바일) */}
       <div className="mb-4 flex items-center gap-3 md:hidden">
         <button
           onClick={() => setIsFilterOpen(!isFilterOpen)}
-          className="flex items-center gap-2 border border-editorial-dark/10 bg-white px-4 py-2.5 text-sm tracking-wide text-editorial-dark hover:bg-editorial-sand/30 transition-colors"
+          className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-900 transition-colors hover:border-gray-300"
         >
           <SlidersHorizontal className="h-4 w-4" />
           <span>필터</span>
           {activeFilterCount > 0 && (
-            <span className="ml-1 min-w-[20px] h-5 bg-editorial-gold text-white text-xs flex items-center justify-center px-1.5">
+            <span className="ml-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-blue-500 px-1.5 text-xs font-semibold text-white">
               {activeFilterCount}
             </span>
           )}
@@ -63,7 +66,7 @@ export function FilterBar({ initialFilters }: FilterBarProps) {
         {activeFilterCount > 0 && (
           <button
             onClick={handleReset}
-            className="flex items-center gap-1 text-sm text-editorial-ink/50 hover:text-editorial-dark transition-colors"
+            className="flex items-center gap-1 text-sm text-gray-500 transition-colors hover:text-gray-900"
           >
             <X className="h-3.5 w-3.5" />
             초기화
@@ -88,13 +91,15 @@ export function FilterBar({ initialFilters }: FilterBarProps) {
 
         {/* 매물 타입 */}
         <div>
-          <label className="mb-2 block text-xs tracking-widest uppercase text-editorial-ink/50">
+          <label className="mb-2 block text-xs font-semibold text-gray-700">
             매물 종류
           </label>
           <select
             value={initialFilters.property_type || ''}
-            onChange={(e) => handleFilterChange('property_type', e.target.value || undefined)}
-            className="w-full border border-editorial-dark/10 bg-white px-4 py-2.5 text-sm text-editorial-dark focus:border-editorial-gold focus:outline-none transition-colors"
+            onChange={(e) =>
+              handleFilterChange('property_type', e.target.value || undefined)
+            }
+            className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-900 transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
           >
             <option value="">전체</option>
             <option value="apt">아파트</option>
@@ -108,13 +113,13 @@ export function FilterBar({ initialFilters }: FilterBarProps) {
 
         {/* 정렬 */}
         <div>
-          <label className="mb-2 block text-xs tracking-widest uppercase text-editorial-ink/50">
+          <label className="mb-2 block text-xs font-semibold text-gray-700">
             정렬
           </label>
           <select
             value={initialFilters.sort || 'created_at'}
             onChange={(e) => handleFilterChange('sort', e.target.value)}
-            className="w-full border border-editorial-dark/10 bg-white px-4 py-2.5 text-sm text-editorial-dark focus:border-editorial-gold focus:outline-none transition-colors"
+            className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-900 transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
           >
             <option value="created_at">최신순</option>
             <option value="area_exclusive">면적순</option>

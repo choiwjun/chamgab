@@ -7,12 +7,14 @@ export const dynamic = 'force-dynamic'
 
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
-import type { RegionWithChildren, RegionQueryParams } from '@/types/region'
+import type { RegionWithChildren } from '@/types/region'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-)
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+  )
+}
 
 /**
  * GET /api/regions
@@ -32,10 +34,13 @@ const supabase = createClient(
  */
 export async function GET(request: NextRequest) {
   try {
+    const supabase = getSupabase()
     const searchParams = request.nextUrl.searchParams
 
     // Query parameters 파싱
-    const level = searchParams.get('level') ? parseInt(searchParams.get('level')!) : undefined
+    const level = searchParams.get('level')
+      ? parseInt(searchParams.get('level')!)
+      : undefined
     const parent_code = searchParams.get('parent_code') || undefined
     const keyword = searchParams.get('keyword') || undefined
     const page = parseInt(searchParams.get('page') || '1')
@@ -60,17 +65,22 @@ export async function GET(request: NextRequest) {
     }
 
     // 정렬 및 페이지네이션
-    query = query.order('code', { ascending: true }).range(offset, offset + limit - 1)
+    query = query
+      .order('code', { ascending: true })
+      .range(offset, offset + limit - 1)
 
     const { data: regions, count, error } = await query
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 })
+      return NextResponse.json(
+        { error: '지역 데이터 조회 중 오류가 발생했습니다.' },
+        { status: 400 }
+      )
     }
 
     // 최상위 레벨 조회 시 계층형 구조 반환
     if (!level && !parent_code) {
-      const regionsByLevel = await buildHierarchy(regions || [])
+      const regionsByLevel = await buildHierarchy(supabase, regions || [])
       return NextResponse.json({
         data: regionsByLevel,
         pagination: {
@@ -92,9 +102,9 @@ export async function GET(request: NextRequest) {
         pages: Math.ceil((count || 0) / limit),
       },
     })
-  } catch (err) {
+  } catch {
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: '지역 데이터 조회 중 오류가 발생했습니다.' },
       { status: 500 }
     )
   }
@@ -103,7 +113,11 @@ export async function GET(request: NextRequest) {
 /**
  * 계층형 지역 구조 구성
  */
-async function buildHierarchy(regions: any[]): Promise<RegionWithChildren[]> {
+async function buildHierarchy(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: ReturnType<typeof createClient<any>>,
+  _regions: Record<string, unknown>[]
+): Promise<RegionWithChildren[]> {
   // 레벨 1 (시도) 조회
   const { data: sidoList } = await supabase
     .from('regions')

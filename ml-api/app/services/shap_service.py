@@ -67,6 +67,19 @@ FEATURE_NAME_KO = {
     "view_premium": "뷰프리미엄",
     "is_remodeled": "리모델링여부",
     "remodel_premium": "리모델링프리미엄",
+    # 건축물대장 피처
+    "floor_area_ratio": "용적률",
+    "building_coverage_ratio": "건폐율",
+    "total_parking": "총주차대수",
+    "indoor_parking_ratio": "옥내주차비율",
+    "ground_floors": "지상층수",
+    "underground_floors": "지하층수",
+    "dong_count": "총동수",
+    "plat_area": "대지면적",
+    "total_area": "연면적",
+    "area_per_unit": "세대당면적",
+    "parking_per_unit": "세대당주차",
+    "building_structure_encoded": "건물구조",
 }
 
 # 피처 카테고리 매핑
@@ -127,6 +140,19 @@ FEATURE_CATEGORY = {
     "view_premium": "매물특성",
     "is_remodeled": "매물특성",
     "remodel_premium": "매물특성",
+    # 건축물대장 피처
+    "floor_area_ratio": "건물",
+    "building_coverage_ratio": "건물",
+    "total_parking": "단지",
+    "indoor_parking_ratio": "단지",
+    "ground_floors": "건물",
+    "underground_floors": "건물",
+    "dong_count": "단지",
+    "plat_area": "단지",
+    "total_area": "단지",
+    "area_per_unit": "단지",
+    "parking_per_unit": "단지",
+    "building_structure_encoded": "건물",
 }
 
 

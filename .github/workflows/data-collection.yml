@@ -2,8 +2,18 @@ name: Daily Data Collection
 
 on:
   schedule:
-    # 매일 한국시간 06:00 (UTC 21:00)
+    # 매일 한국시간 06:00 (UTC 21:00) - 실거래가 수집
     - cron: '0 21 * * *'
+    # 월요일 - REB 가격지수
+    - cron: '0 21 * * 1'
+    # 화요일 - 건축물대장
+    - cron: '0 21 * * 2'
+    # 수요일 - 유동인구
+    - cron: '0 21 * * 3'
+    # 목요일 - POI 데이터
+    - cron: '0 21 * * 4'
+    # 금요일 - 상권(점포) 데이터
+    - cron: '0 17 * * 5'
   workflow_dispatch: # 수동 실행 가능
 
 env:
@@ -13,6 +23,7 @@ jobs:
   collect-transactions:
     name: 실거래가 수집
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
@@ -88,16 +99,50 @@ jobs:
           cd ml-api
           python -c "
           from app.services.market_service import MarketService
-          import asyncio
+          from datetime import datetime
 
-          async def main():
-              service = MarketService()
-              # 시장 지표 수집 (캐시 갱신)
-              result = await service.get_market_indicators()
-              print(f'Market indicators: {result}')
+          service = MarketService()
+          now = datetime.now()
 
-          asyncio.run(main())
+          # 주요 지역 시장 피처 수집
+          key_regions = ['강남구', '서초구', '송파구', '분당구', '영통구']
+          for sigungu in key_regions:
+              result = service.get_market_features(now.year, now.month, sigungu)
+              print(f'{sigungu}: {result}')
+
+          print('REB price index collection done')
           "
+
+  collect-building-info:
+    name: 건축물대장 수집
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # 화요일에만 실행 (주간) - 건물 정보는 자주 변하지 않음
+    if: github.event.schedule == '0 21 * * 2' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: ml-api/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          cd ml-api
+          pip install -r requirements.txt
+
+      - name: Collect building registry data
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          DATA_GO_KR_API_KEY: ${{ secrets.DATA_GO_KR_API_KEY }}
+        run: |
+          cd ml-api
+          python scripts/collect_building_info.py
 
   collect-footfall:
     name: 유동인구 데이터 수집
@@ -129,26 +174,86 @@ jobs:
           cd ml-api
           python -c "
           from app.services.footfall_service import FootfallService
-          import asyncio
 
-          async def main():
-              service = FootfallService()
-              # 주요 지역 유동인구 피처 확인
-              test_locations = [
-                  (37.5172, 127.0473, '강남역'),
-                  (37.4979, 127.0276, '서초역'),
-                  (37.5138, 127.1004, '잠실역'),
-              ]
-              for lat, lng, name in test_locations:
-                  features = service.get_footfall_features(lat, lng, radius=500)
-                  print(f'{name}: footfall_score={features.footfall_score}')
+          service = FootfallService()
+          # 주요 지역 유동인구 피처 확인
+          test_locations = [
+              (37.5172, 127.0473, '강남역'),
+              (37.4979, 127.0276, '서초역'),
+              (37.5138, 127.1004, '잠실역'),
+          ]
+          for lat, lng, name in test_locations:
+              features = service.get_footfall_features(lat=lat, lng=lng, radius=500)
+              print(f'{name}: footfall_score={features[\"footfall_score\"]}')
 
-          asyncio.run(main())
+          print('Footfall data collection done')
           "
+
+  collect-poi:
+    name: POI 데이터 수집
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # 목요일에만 실행 (주간) - POI는 자주 변하지 않음
+    if: github.event.schedule == '0 21 * * 4' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: ml-api/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          cd ml-api
+          pip install -r requirements.txt
+
+      - name: Collect POI data
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          KAKAO_REST_API_KEY: ${{ secrets.KAKAO_REST_API_KEY }}
+        run: |
+          cd ml-api
+          python scripts/collect_poi_data.py --all-regions
+
+  collect-commercial:
+    name: 상권 점포 데이터 수집
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # 금요일에만 실행 (주간) - SBIZ API 실제 점포 수 수집
+    if: github.event.schedule == '0 17 * * 5' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: ml-api/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          cd ml-api
+          pip install -r requirements.txt
+
+      - name: Collect commercial store data from SBIZ API
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SBIZ_API_KEY: ${{ secrets.SBIZ_API_KEY }}
+        run: |
+          cd ml-api
+          python -m scripts.collect_business_statistics --months 24
 
   notify-completion:
     name: 완료 알림
-    needs: [collect-transactions]
+    needs: [collect-transactions, collect-reb-index, collect-building-info, collect-footfall, collect-poi, collect-commercial]
     runs-on: ubuntu-latest
     if: always()
 
@@ -157,3 +262,8 @@ jobs:
         run: |
           echo "Data collection completed at $(date)"
           echo "Transaction collection: ${{ needs.collect-transactions.result }}"
+          echo "REB index: ${{ needs.collect-reb-index.result }}"
+          echo "Building info: ${{ needs.collect-building-info.result }}"
+          echo "Footfall: ${{ needs.collect-footfall.result }}"
+          echo "POI: ${{ needs.collect-poi.result }}"
+          echo "Commercial: ${{ needs.collect-commercial.result }}"

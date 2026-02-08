@@ -11,17 +11,15 @@ export const metadata = {
 
 export default function SearchPage() {
   return (
-    <main className="min-h-screen bg-editorial-bg">
+    <main className="min-h-screen bg-gray-50">
       <Suspense
         fallback={
           <div className="flex min-h-screen items-center justify-center">
             <div className="text-center">
               <div className="mb-6 flex justify-center">
-                <div className="h-px w-12 bg-editorial-gold animate-pulse" />
+                <div className="h-1 w-12 animate-pulse rounded-full bg-blue-500" />
               </div>
-              <p className="text-sm tracking-widest uppercase text-editorial-ink/50">
-                Loading
-              </p>
+              <p className="text-sm font-medium text-gray-500">로딩 중</p>
             </div>
           </div>
         }

@@ -137,27 +137,26 @@ export function Modal({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 10 }}
             transition={{ duration: 0.2 }}
-            className={`
-              relative bg-white rounded-lg shadow-xl
-              ${maxWidthClasses[maxWidth]} w-full
-              max-h-[90vh] flex flex-col
-            `}
+            className={`relative rounded-xl bg-white shadow-sm ${maxWidthClasses[maxWidth]} flex max-h-[90vh] w-full flex-col`}
           >
             {/* 헤더 */}
             {(title || closable) && (
-              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+              <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
                 {title && (
-                  <h2 id="modal-title" className="text-lg font-semibold text-gray-900">
+                  <h2
+                    id="modal-title"
+                    className="text-lg font-semibold text-gray-900"
+                  >
                     {title}
                   </h2>
                 )}
                 {closable && (
                   <button
                     onClick={onClose}
-                    className="ml-auto p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                    className="ml-auto rounded-lg p-2 transition-colors hover:bg-gray-100"
                     aria-label="모달 닫기"
                   >
-                    <X className="w-5 h-5 text-gray-500" aria-hidden="true" />
+                    <X className="h-5 w-5 text-gray-500" aria-hidden="true" />
                   </button>
                 )}
               </div>
@@ -168,7 +167,7 @@ export function Modal({
 
             {/* 액션 버튼 */}
             {actions && (
-              <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200">
+              <div className="flex items-center justify-end gap-3 border-t border-gray-200 px-6 py-4">
                 {actions}
               </div>
             )}
@@ -208,8 +207,8 @@ export function ConfirmModal({
 
   const confirmButtonClass =
     variant === 'danger'
-      ? 'bg-red-600 hover:bg-red-700 text-white'
-      : 'bg-[#1E3A5F] hover:bg-[#2E5A8F] text-white'
+      ? 'bg-red-500 hover:bg-red-600 text-white'
+      : 'bg-blue-500 hover:bg-blue-600 text-white'
 
   return (
     <Modal
@@ -221,13 +220,13 @@ export function ConfirmModal({
         <>
           <button
             onClick={onClose}
-            className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium text-gray-700"
+            className="rounded-lg border border-gray-300 px-4 py-2 font-medium text-gray-700 transition-colors hover:bg-gray-50"
           >
             {cancelLabel}
           </button>
           <button
             onClick={handleConfirm}
-            className={`px-4 py-2 rounded-lg transition-colors font-medium ${confirmButtonClass}`}
+            className={`rounded-lg px-4 py-2 font-medium transition-colors ${confirmButtonClass}`}
           >
             {confirmLabel}
           </button>

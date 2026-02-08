@@ -61,8 +61,10 @@ jobs:
           # 1000건 이상 새 데이터가 있으면 재학습
           should_train = 'true' if count >= 1000 or '${{ inputs.force_retrain }}' == 'true' else 'false'
 
-          print(f'::set-output name=should_train::{should_train}')
-          print(f'::set-output name=data_count::{count}')
+          import subprocess
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f'should_train={should_train}\n')
+              f.write(f'data_count={count}\n')
           print(f'Data count: {count}, Should train: {should_train}')
           "
 
@@ -96,27 +98,19 @@ jobs:
           python scripts/prepare_training_data.py
 
       - name: Train XGBoost model
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
           cd ml-api
-          python scripts/train_model.py \
-            --data-path data/training_data.parquet \
-            --output-path models/ \
-            --model-name price_predictor
-
-      - name: Generate SHAP analysis
-        run: |
-          cd ml-api
-          python scripts/generate_shap.py \
-            --model-path models/price_predictor.joblib \
-            --output-path models/shap_values.joblib
+          python -m scripts.train_model
 
       - name: Upload model artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ml-models-${{ github.run_number }}
           path: |
-            ml-api/models/*.joblib
-            ml-api/models/*.json
+            ml-api/app/models/*.pkl
           retention-days: 30
 
       - name: Update model in Supabase Storage
@@ -135,12 +129,16 @@ jobs:
           )
 
           # 모델 파일 업로드
-          with open('models/price_predictor.joblib', 'rb') as f:
-              supabase.storage.from_('ml-models').upload(
-                  'price_predictor_latest.joblib',
-                  f,
-                  {'upsert': 'true'}
-              )
+          for name in ['xgboost_model.pkl', 'shap_explainer.pkl', 'feature_artifacts.pkl']:
+              path = f'app/models/{name}'
+              if os.path.exists(path):
+                  with open(path, 'rb') as f:
+                      supabase.storage.from_('ml-models').upload(
+                          name,
+                          f,
+                          {'upsert': 'true'}
+                      )
+                  print(f'Uploaded {name}')
 
           print('Model uploaded to Supabase Storage')
           "
@@ -157,7 +155,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: ml-models-${{ github.run_number }}
-          path: ml-api/models/
+          path: ml-api/app/models/
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -177,16 +175,33 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
           cd ml-api
-          python scripts/evaluate_model.py \
-            --model-path models/price_predictor.joblib \
-            --output-path reports/evaluation_${{ github.run_number }}.json
+          python -c "
+          import pickle
+          from pathlib import Path
 
-      - name: Upload evaluation report
-        uses: actions/upload-artifact@v4
-        with:
-          name: evaluation-report-${{ github.run_number }}
-          path: ml-api/reports/
-          retention-days: 90
+          model_path = Path('app/models/xgboost_model.pkl')
+          if not model_path.exists():
+              print('모델 파일이 없습니다')
+              exit(1)
+
+          with open(model_path, 'rb') as f:
+              model = pickle.load(f)
+
+          print(f'모델 로드 성공: {type(model).__name__}')
+          print(f'피처 수: {model.n_features_in_}')
+
+          # 잔차 정보 확인
+          residual_path = Path('app/models/residual_info.pkl')
+          if residual_path.exists():
+              with open(residual_path, 'rb') as f:
+                  info = pickle.load(f)
+              print(f'MAPE: {info.get(\"mape\", \"N/A\")}%')
+              print(f'Test count: {info.get(\"test_count\", \"N/A\")}')
+          else:
+              print('잔차 정보 없음')
+
+          print('모델 검증 완료')
+          "
 
   notify-completion:
     name: 완료 알림

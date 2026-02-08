@@ -63,28 +63,83 @@ class TrainingDataPreparer:
             print("경고: Supabase 설정이 없습니다.")
             self.supabase = None
 
-    def fetch_transactions(self, limit: int = 100000) -> pd.DataFrame:
-        """실거래가 데이터 조회"""
-        if not self.supabase:
-            return self._generate_mock_data()
+    def fetch_transactions(self, limit: int = 100000, csv_path: str = None) -> pd.DataFrame:
+        """
+        실거래가 데이터 조회
 
-        print("Supabase에서 실거래가 데이터 조회 중...")
+        우선순위: Supabase (전체 컬럼) → csv_path → data/latest_collected.csv
+        """
+        # 1. Supabase에서 읽기 (주 데이터소스 - 영구 저장소)
+        if self.supabase:
+            print("Supabase에서 실거래가 데이터 조회 중...")
+            try:
+                all_data = []
+                offset = 0
+                page_size = 1000
+                while True:
+                    response = (
+                        self.supabase.table("transactions")
+                        .select("*")
+                        .range(offset, offset + page_size - 1)
+                        .execute()
+                    )
+                    if not response.data:
+                        break
+                    all_data.extend(response.data)
+                    if len(response.data) < page_size:
+                        break
+                    offset += page_size
 
-        try:
-            response = self.supabase.table("transactions").select("*").limit(limit).execute()
-            data = response.data
+                if all_data:
+                    df = pd.DataFrame(all_data)
+                    # Supabase 컬럼명 → 학습용 컬럼명 매핑
+                    if "built_year" in df.columns and "year_built" not in df.columns:
+                        df = df.rename(columns={"built_year": "year_built"})
+                    print(f"  {len(df)}건 조회됨 (Supabase)")
+                    return df
+                else:
+                    print("  Supabase에 데이터 없음, CSV fallback 시도...")
+            except Exception as e:
+                print(f"  Supabase 조회 실패: {e}, CSV fallback 시도...")
 
-            if not data:
-                print("데이터 없음, Mock 데이터 사용")
-                return self._generate_mock_data()
-
-            df = pd.DataFrame(data)
-            print(f"  {len(df)}건 조회됨")
+        # 2. CSV 파일에서 읽기 (fallback - 인자로 지정)
+        if csv_path and Path(csv_path).exists():
+            print(f"CSV에서 데이터 로드: {csv_path}")
+            df = pd.read_csv(csv_path)
+            df = self._normalize_csv_columns(df)
+            print(f"  {len(df)}건 로드됨 (CSV)")
             return df
 
-        except Exception as e:
-            print(f"조회 오류: {e}")
-            return self._generate_mock_data()
+        # 3. 수집기 CSV 자동 탐색 (fallback)
+        auto_csv = Path(__file__).parent.parent / "data" / "latest_collected.csv"
+        if auto_csv.exists():
+            print(f"수집 CSV 자동 감지: {auto_csv}")
+            df = pd.read_csv(auto_csv)
+            df = self._normalize_csv_columns(df)
+            print(f"  {len(df)}건 로드됨 (자동 CSV)")
+            return df
+
+        raise ValueError(
+            "데이터가 없습니다. 스케줄러에서 수집을 먼저 실행하세요. "
+            "(POST /api/scheduler/run {job_type: daily})"
+        )
+
+    @staticmethod
+    def _normalize_csv_columns(df: pd.DataFrame) -> pd.DataFrame:
+        """수집 CSV 컬럼명을 학습용 컬럼명으로 매핑"""
+        rename_map = {}
+        if "area" in df.columns and "area_exclusive" not in df.columns:
+            rename_map["area"] = "area_exclusive"
+        if "deal_date" in df.columns and "transaction_date" not in df.columns:
+            rename_map["deal_date"] = "transaction_date"
+        if "built_year" in df.columns and "year_built" not in df.columns:
+            rename_map["built_year"] = "year_built"
+        if rename_map:
+            df = df.rename(columns=rename_map)
+        # price: 만원 → 원 변환 (수집 데이터는 만원 단위)
+        if "price" in df.columns and len(df) > 0 and df["price"].max() < 10_000_000:
+            df["price"] = df["price"] * 10000
+        return df
 
     def fetch_price_indices(self) -> pd.DataFrame:
         """가격지수 데이터 조회"""
@@ -147,56 +202,6 @@ class TrainingDataPreparer:
         """
         return self._fetch_table_data("store_statistics")
 
-    def _generate_mock_data(self) -> pd.DataFrame:
-        """Mock 학습 데이터 생성"""
-        import random
-
-        print("Mock 학습 데이터 생성 중...")
-
-        n_samples = 10000
-        data = []
-
-        regions = ["강남구", "서초구", "송파구", "마포구", "용산구", "성동구", "광진구", "영등포구"]
-
-        for _ in range(n_samples):
-            region = random.choice(regions)
-
-            # 지역별 기본 가격 설정
-            base_prices = {
-                "강남구": 150000, "서초구": 140000, "송파구": 120000,
-                "마포구": 100000, "용산구": 130000, "성동구": 95000,
-                "광진구": 90000, "영등포구": 85000,
-            }
-            base_price = base_prices.get(region, 80000)
-
-            # 피처 생성
-            area = random.uniform(50, 150)  # 전용면적
-            floor = random.randint(1, 30)
-            year_built = random.randint(1990, 2023)
-            building_age = 2024 - year_built
-
-            # 가격 계산 (피처 기반)
-            price_per_sqm = base_price
-            price_per_sqm += (area - 84) * 500  # 면적 프리미엄
-            price_per_sqm += floor * 200  # 층수 프리미엄
-            price_per_sqm -= building_age * 500  # 노후 할인
-            price_per_sqm += random.gauss(0, 5000)  # 노이즈
-
-            total_price = price_per_sqm * area / 10000  # 만원 -> 억원
-
-            data.append({
-                "sigungu": region,
-                "area_exclusive": round(area, 2),
-                "floor": floor,
-                "year_built": year_built,
-                "building_age": building_age,
-                "price_per_sqm": round(max(price_per_sqm, 30000), 0),
-                "price": round(max(total_price, 1), 2),
-                "transaction_date": f"2023{random.randint(1, 12):02d}",
-            })
-
-        return pd.DataFrame(data)
-
     def prepare_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """피처 엔지니어링"""
         print("피처 엔지니어링 중...")
@@ -239,7 +244,42 @@ class TrainingDataPreparer:
                 features, business_stats, sales_stats, store_stats
             )
 
+        # POI 피처 추가
+        poi_df = self.fetch_poi_data()
+        if not poi_df.empty and "sigungu" in features.columns:
+            features = self._merge_poi_features(features, poi_df)
+
         return features
+
+    def _merge_poi_features(
+        self,
+        df: pd.DataFrame,
+        poi_df: pd.DataFrame
+    ) -> pd.DataFrame:
+        """POI 데이터를 sigungu 기준으로 머지"""
+        poi_cols = [
+            "region", "subway_count", "bus_count", "mart_count",
+            "park_count", "school_count", "hospital_count",
+            "bank_count", "restaurant_count", "cafe_count",
+            "gym_count", "poi_score",
+        ]
+        available_cols = [c for c in poi_cols if c in poi_df.columns]
+        poi_subset = poi_df[available_cols].copy()
+
+        # sigungu → region key (대부분 동일, 광역시 동일이름 구만 접두어)
+        result = df.merge(
+            poi_subset,
+            left_on="sigungu",
+            right_on="region",
+            how="left",
+            suffixes=("", "_poi"),
+        )
+        result.drop(columns=["region"], errors="ignore", inplace=True)
+
+        matched = result["poi_score"].notna().sum()
+        print(f"  POI 데이터 매칭: {matched}/{len(result)}건")
+
+        return result
 
     def add_business_features(
         self,
@@ -488,14 +528,14 @@ class TrainingDataPreparer:
 
         return result
 
-    def prepare_full(self, output_path: str = "data/training_data.parquet") -> pd.DataFrame:
+    def prepare_full(self, output_path: str = "data/training_data.parquet", input_csv: str = None) -> pd.DataFrame:
         """전체 학습 데이터 준비"""
         print("=" * 60)
         print("학습 데이터 준비")
         print("=" * 60)
 
         # 데이터 조회
-        transactions = self.fetch_transactions()
+        transactions = self.fetch_transactions(csv_path=input_csv)
 
         # 피처 엔지니어링
         features = self.prepare_features(transactions)
@@ -522,12 +562,13 @@ def main():
     parser = argparse.ArgumentParser(description="학습 데이터 준비")
     parser.add_argument("--full", action="store_true", help="전체 데이터 준비")
     parser.add_argument("--output", type=str, default="data/training_data.parquet", help="출력 경로")
+    parser.add_argument("--input-csv", type=str, default=None, help="입력 CSV 경로 (수집 데이터)")
     args = parser.parse_args()
 
     preparer = TrainingDataPreparer()
 
     if args.full:
-        preparer.prepare_full(output_path=args.output)
+        preparer.prepare_full(output_path=args.output, input_csv=args.input_csv)
     else:
         print("옵션을 지정해주세요: --full")
 

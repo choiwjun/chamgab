@@ -1,11 +1,8 @@
 'use client'
 
-// @TASK P2-S1-T2 - 검색바 (Editorial Luxury 스타일)
-// @SPEC specs/screens/home.yaml#search_bar
-
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search, MapPin, Home } from 'lucide-react'
+import { Search, MapPin, Home, ArrowRight } from 'lucide-react'
 import { searchAutocomplete } from '@/lib/api/properties'
 import type { SearchSuggestion } from '@/types/property'
 
@@ -18,7 +15,6 @@ export function SearchBar() {
   const debounceTimer = useRef<NodeJS.Timeout>()
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // 자동완성 검색 (300ms 디바운스)
   useEffect(() => {
     if (query.length < 2) {
       setSuggestions([])
@@ -27,10 +23,7 @@ export function SearchBar() {
     }
 
     setIsLoading(true)
-
-    if (debounceTimer.current) {
-      clearTimeout(debounceTimer.current)
-    }
+    if (debounceTimer.current) clearTimeout(debounceTimer.current)
 
     debounceTimer.current = setTimeout(async () => {
       const results = await searchAutocomplete(query)
@@ -40,13 +33,10 @@ export function SearchBar() {
     }, 300)
 
     return () => {
-      if (debounceTimer.current) {
-        clearTimeout(debounceTimer.current)
-      }
+      if (debounceTimer.current) clearTimeout(debounceTimer.current)
     }
   }, [query])
 
-  // 외부 클릭 시 자동완성 닫기
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (
@@ -56,7 +46,6 @@ export function SearchBar() {
         setIsOpen(false)
       }
     }
-
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
@@ -73,9 +62,11 @@ export function SearchBar() {
     if (suggestion.type === 'property' && suggestion.id) {
       router.push(`/property/${suggestion.id}`)
     } else if (suggestion.type === 'complex' && suggestion.id) {
-      router.push(`/search?complex=${suggestion.id}`)
+      router.push(`/complex/${suggestion.id}`)
     } else if (suggestion.type === 'region' && suggestion.id) {
-      router.push(`/search?region=${suggestion.id}`)
+      router.push(
+        `/search?region=${suggestion.id}&sigungu=${encodeURIComponent(suggestion.name)}`
+      )
     } else {
       router.push(`/search?q=${encodeURIComponent(suggestion.name)}`)
     }
@@ -86,50 +77,56 @@ export function SearchBar() {
   const getIconByType = (type: string) => {
     switch (type) {
       case 'region':
-        return <MapPin className="h-4 w-4 text-editorial-ink/40" />
+        return <MapPin className="h-4 w-4 text-[#8B95A1]" />
       case 'complex':
       case 'property':
-        return <Home className="h-4 w-4 text-editorial-ink/40" />
+        return <Home className="h-4 w-4 text-[#8B95A1]" />
       default:
-        return <Search className="h-4 w-4 text-editorial-ink/40" />
+        return <Search className="h-4 w-4 text-[#8B95A1]" />
     }
   }
 
   return (
-    <div ref={containerRef} className="relative w-full max-w-2xl">
-      <form onSubmit={handleSubmit} className="relative">
-        <div className="relative flex items-center border-b-2 border-editorial-dark/20 focus-within:border-editorial-gold transition-colors duration-300">
-          <Search className="absolute left-0 h-5 w-5 text-editorial-ink/40" />
+    <div ref={containerRef} className="relative w-full">
+      <form onSubmit={handleSubmit}>
+        <div className="flex items-center gap-3 rounded-xl border border-[#E5E8EB] bg-white px-4 py-3 transition-all focus-within:border-[#3182F6] focus-within:ring-1 focus-within:ring-[#3182F6]">
+          {/* Left: Search icon */}
+          <Search className="h-5 w-5 flex-shrink-0 text-[#8B95A1]" />
+
+          {/* Center: Input */}
           <input
             type="text"
+            role="combobox"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="아파트명, 지역으로 검색"
-            className="w-full bg-transparent py-4 pl-8 pr-4 text-lg text-editorial-dark placeholder-editorial-ink/40 outline-none"
+            placeholder="어디에서 찾으시나요?"
+            className="flex-1 bg-transparent text-base text-[#191F28] outline-none placeholder:text-[#8B95A1]"
             aria-label="매물 검색"
             aria-autocomplete="list"
             aria-controls="search-suggestions"
             aria-expanded={isOpen}
           />
+
+          {/* Right: Submit button */}
           <button
             type="submit"
-            className="px-6 py-2 bg-editorial-dark text-white text-sm tracking-wide hover:bg-editorial-gold transition-colors duration-300"
+            className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#3182F6] text-white transition-colors hover:bg-[#1B64DA]"
+            aria-label="검색"
           >
-            검색
+            <ArrowRight className="h-4 w-4" />
           </button>
         </div>
 
-        {/* 자동완성 드롭다운 */}
+        {/* Autocomplete dropdown */}
         {isOpen && suggestions.length > 0 && (
           <div
             id="search-suggestions"
             role="listbox"
-            className="absolute z-50 mt-2 w-full border border-editorial-dark/10 bg-white shadow-lg"
+            className="absolute z-50 mt-2 w-full overflow-hidden rounded-lg border border-[#E5E8EB] bg-white shadow-lg"
           >
             {isLoading && (
-              <div className="px-4 py-3 text-sm text-editorial-ink/50">검색 중...</div>
+              <div className="px-4 py-3 text-sm text-[#8B95A1]">검색 중...</div>
             )}
-
             {!isLoading &&
               suggestions.map((suggestion, index) => (
                 <button
@@ -138,15 +135,15 @@ export function SearchBar() {
                   role="option"
                   aria-selected={false}
                   onClick={() => handleSuggestionClick(suggestion)}
-                  className="flex w-full items-center gap-3 border-b border-editorial-dark/5 px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-editorial-sand/50"
+                  className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-[#F9FAFB]"
                 >
                   {getIconByType(suggestion.type)}
                   <div className="flex-1">
-                    <p className="text-sm text-editorial-dark">
+                    <p className="text-sm font-medium text-[#191F28]">
                       {suggestion.name}
                     </p>
                     {suggestion.description && (
-                      <p className="text-xs text-editorial-ink/50">
+                      <p className="text-xs text-[#8B95A1]">
                         {suggestion.description}
                       </p>
                     )}

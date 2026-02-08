@@ -79,7 +79,9 @@ export function CompareTable() {
           // 3. 가격요인
           let priceFactors: PriceFactor[] = []
           if (analysis_id) {
-            const factorsRes = await fetch(`/api/chamgab/${analysis_id}/factors`)
+            const factorsRes = await fetch(
+              `/api/chamgab/${analysis_id}/factors`
+            )
             if (factorsRes.ok) {
               const factorsData = await factorsRes.json()
               priceFactors = factorsData.factors || []
@@ -87,7 +89,9 @@ export function CompareTable() {
           }
 
           // 4. 실거래가 (유사 거래)
-          const transactionsRes = await fetch(`/api/properties/${id}/similar?limit=1`)
+          const transactionsRes = await fetch(
+            `/api/properties/${id}/similar?limit=1`
+          )
           let latest_price = null
           if (transactionsRes.ok) {
             const transactionsData = await transactionsRes.json()
@@ -129,20 +133,17 @@ export function CompareTable() {
   }
 
   const handleAddProperty = () => {
-    // TODO: 검색 모달 열기
-    alert('검색 모달 구현 예정 (Phase 5)')
+    // Phase 5에서 검색 모달 구현 예정
   }
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
+      <div className="flex min-h-[400px] items-center justify-center">
         <div className="text-center">
           <div className="mb-6 flex justify-center">
-            <div className="h-px w-12 bg-editorial-gold animate-pulse" />
+            <div className="h-1 w-12 animate-pulse rounded-full bg-[#3182F6]" />
           </div>
-          <p className="text-sm tracking-widest uppercase text-editorial-ink/50">
-            Loading Properties
-          </p>
+          <p className="text-sm text-[#8B95A1]">매물 정보를 불러오는 중...</p>
         </div>
       </div>
     )
@@ -150,15 +151,18 @@ export function CompareTable() {
 
   if (propertyIds.length === 0) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
+      <div className="flex min-h-[400px] items-center justify-center">
         <div className="text-center">
-          <div className="w-16 h-px bg-editorial-gold mx-auto mb-8" />
-          <p className="font-serif text-xl text-editorial-dark mb-6">비교할 매물을 추가해주세요</p>
+          <p className="mb-6 text-xl font-semibold text-[#191F28]">
+            비교할 매물을 추가해주세요
+          </p>
           <button
             onClick={handleAddProperty}
-            className="bg-editorial-dark px-8 py-3 text-sm tracking-widest uppercase text-white hover:bg-editorial-gold transition-colors"
+            disabled
+            className="cursor-not-allowed rounded-xl bg-[#8B95A1] px-8 py-3 text-sm font-medium text-white"
+            title="검색 모달 구현 예정 (Phase 5)"
           >
-            매물 추가하기
+            매물 추가하기 (준비 중)
           </button>
         </div>
       </div>
@@ -167,7 +171,7 @@ export function CompareTable() {
 
   return (
     <div className="w-full overflow-x-auto pb-4">
-      <div className="flex gap-6 min-w-max">
+      <div className="flex min-w-max gap-6">
         <AnimatePresence mode="popLayout">
           {properties.map((property) => (
             <PropertyColumn
@@ -180,7 +184,12 @@ export function CompareTable() {
 
           {/* 매물 추가 버튼 (4개 미만일 때) */}
           {propertyIds.length < MAX_COMPARE && (
-            <AddPropertyButton onClick={handleAddProperty} />
+            <div className="relative">
+              <AddPropertyButton onClick={handleAddProperty} />
+              <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-lg bg-[#F2F4F6] px-3 py-1 text-xs text-[#8B95A1]">
+                준비 중
+              </div>
+            </div>
           )}
         </AnimatePresence>
       </div>

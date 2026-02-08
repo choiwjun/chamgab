@@ -1,8 +1,5 @@
 'use client'
 
-// @TASK P2-S1-T4 - 인기 매물 섹션 클라이언트 (Editorial Luxury 스타일)
-// @SPEC specs/screens/home.yaml#popular_properties
-
 import Link from 'next/link'
 import { motion, useInView } from 'framer-motion'
 import { useRef, useState } from 'react'
@@ -13,10 +10,12 @@ interface PopularPropertiesClientProps {
   properties: Property[]
 }
 
-export function PopularPropertiesClient({ properties }: PopularPropertiesClientProps) {
+export function PopularPropertiesClient({
+  properties,
+}: PopularPropertiesClientProps) {
   const sectionRef = useRef<HTMLElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
-  const isInView = useInView(sectionRef, { once: true, margin: "-100px" })
+  const isInView = useInView(sectionRef, { once: true, margin: '-100px' })
   const [canScrollLeft, setCanScrollLeft] = useState(false)
   const [canScrollRight, setCanScrollRight] = useState(true)
 
@@ -34,7 +33,7 @@ export function PopularPropertiesClient({ properties }: PopularPropertiesClientP
     const container = scrollContainerRef.current
     if (!container) return
 
-    const scrollAmount = 360
+    const scrollAmount = 340
     container.scrollBy({
       left: direction === 'left' ? -scrollAmount : scrollAmount,
       behavior: 'smooth',
@@ -43,13 +42,13 @@ export function PopularPropertiesClient({ properties }: PopularPropertiesClientP
 
   if (properties.length === 0) {
     return (
-      <section className="py-24 md:py-32 bg-editorial-sand/30">
+      <section className="bg-white py-20">
         <div className="mx-auto max-w-7xl px-6 md:px-8">
-          <h2 className="font-serif text-3xl text-editorial-dark mb-8">
-            인기 매물
-          </h2>
-          <div className="border border-editorial-dark/10 bg-white p-12 text-center">
-            <p className="text-editorial-ink/50">
+          <div className="mb-8 flex items-end justify-between">
+            <h2 className="text-2xl font-bold text-gray-900">주목받는 매물</h2>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-white p-12 text-center">
+            <p className="text-gray-500">
               인기 매물 데이터를 불러올 수 없습니다.
             </p>
           </div>
@@ -59,97 +58,85 @@ export function PopularPropertiesClient({ properties }: PopularPropertiesClientP
   }
 
   return (
-    <section ref={sectionRef} className="relative py-24 md:py-32 bg-editorial-sand/30 overflow-hidden">
+    <section
+      ref={sectionRef}
+      className="overflow-hidden bg-white py-20 md:py-24"
+    >
       <div className="mx-auto max-w-7xl px-6 md:px-8">
         {/* 섹션 헤더 */}
-        <div className="grid md:grid-cols-12 gap-8 md:gap-12 mb-12 md:mb-16">
-          {/* 좌측: 섹션 라벨 */}
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={isInView ? { opacity: 1, x: 0 } : {}}
-            transition={{ duration: 0.6 }}
-            className="md:col-span-3"
-          >
-            <span className="inline-flex items-center gap-3 text-xs tracking-[0.2em] uppercase text-editorial-ink/50">
-              <span className="w-8 h-px bg-editorial-gold" />
-              Featured
-            </span>
-          </motion.div>
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={isInView ? { opacity: 1 } : {}}
+          transition={{ duration: 0.3 }}
+          className="mb-8 flex items-end justify-between"
+        >
+          <h2 className="text-2xl font-bold text-gray-900">주목받는 매물</h2>
 
-          {/* 우측: 메인 타이틀 + 네비게이션 */}
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            animate={isInView ? { opacity: 1, y: 0 } : {}}
-            transition={{ duration: 0.7, delay: 0.1 }}
-            className="md:col-span-9 flex flex-col md:flex-row md:items-end md:justify-between"
-          >
-            <div>
-              <h2 className="font-serif text-4xl md:text-5xl text-editorial-dark leading-tight tracking-tight">
-                주목받는 매물
-              </h2>
-              <p className="mt-4 text-editorial-ink/60 max-w-xl">
-                가장 많은 관심을 받고 있는 프리미엄 매물을 소개합니다.
-              </p>
-            </div>
-
-            {/* 네비게이션 */}
-            <div className="mt-6 md:mt-0 flex items-center gap-4">
-              <div className="hidden md:flex items-center gap-2">
-                <button
-                  onClick={() => scroll('left')}
-                  disabled={!canScrollLeft}
-                  className={`
-                    w-10 h-10 border flex items-center justify-center transition-all
-                    ${canScrollLeft
-                      ? 'border-editorial-dark/20 text-editorial-dark hover:bg-editorial-dark hover:text-white'
-                      : 'border-editorial-dark/10 text-editorial-dark/20 cursor-not-allowed'
-                    }
-                  `}
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 19l-7-7 7-7" />
-                  </svg>
-                </button>
-                <button
-                  onClick={() => scroll('right')}
-                  disabled={!canScrollRight}
-                  className={`
-                    w-10 h-10 border flex items-center justify-center transition-all
-                    ${canScrollRight
-                      ? 'border-editorial-dark/20 text-editorial-dark hover:bg-editorial-dark hover:text-white'
-                      : 'border-editorial-dark/10 text-editorial-dark/20 cursor-not-allowed'
-                    }
-                  `}
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5l7 7-7 7" />
-                  </svg>
-                </button>
-              </div>
-
-              <Link
-                href="/search"
-                className="inline-flex items-center gap-2 text-sm text-editorial-gold hover:text-editorial-dark transition-colors group"
+          <div className="flex items-center gap-4">
+            {/* 스크롤 네비게이션 */}
+            <div className="hidden items-center gap-1.5 md:flex">
+              <button
+                onClick={() => scroll('left')}
+                disabled={!canScrollLeft}
+                className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-colors ${
+                  canScrollLeft
+                    ? 'border-gray-200 text-gray-900 hover:bg-gray-100'
+                    : 'cursor-not-allowed border-gray-200 text-gray-400'
+                } `}
               >
-                <span>전체 매물 보기</span>
                 <svg
-                  className="w-4 h-4 group-hover:translate-x-1 transition-transform"
+                  className="h-3.5 w-3.5"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
                 >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={1.5}
+                    d="M15 19l-7-7 7-7"
+                  />
                 </svg>
-              </Link>
+              </button>
+              <button
+                onClick={() => scroll('right')}
+                disabled={!canScrollRight}
+                className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-colors ${
+                  canScrollRight
+                    ? 'border-gray-200 text-gray-900 hover:bg-gray-100'
+                    : 'cursor-not-allowed border-gray-200 text-gray-400'
+                } `}
+              >
+                <svg
+                  className="h-3.5 w-3.5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={1.5}
+                    d="M9 5l7 7-7 7"
+                  />
+                </svg>
+              </button>
             </div>
-          </motion.div>
-        </div>
+
+            <Link
+              href="/search"
+              className="text-sm text-gray-500 transition-colors hover:text-gray-900"
+            >
+              전체 매물 →
+            </Link>
+          </div>
+        </motion.div>
 
         {/* 매물 카드 캐러셀 */}
         <div
           ref={scrollContainerRef}
           onScroll={checkScrollPosition}
-          className="scrollbar-hide -mx-6 md:-mx-8 flex gap-6 overflow-x-auto px-6 md:px-8 pb-4 snap-x"
+          className="scrollbar-hide -mx-6 flex snap-x gap-4 overflow-x-auto px-6 pb-4 md:-mx-8 md:px-8"
         >
           {properties.map((property, index) => (
             <div key={property.id} className="snap-start">
@@ -157,18 +144,6 @@ export function PopularPropertiesClient({ properties }: PopularPropertiesClientP
             </div>
           ))}
         </div>
-
-        {/* 모바일 스와이프 힌트 */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={isInView ? { opacity: 1 } : {}}
-          transition={{ delay: 0.5 }}
-          className="mt-6 flex justify-center md:hidden"
-        >
-          <span className="text-xs tracking-wide text-editorial-ink/40">
-            스와이프하여 더 보기
-          </span>
-        </motion.div>
       </div>
     </section>
   )

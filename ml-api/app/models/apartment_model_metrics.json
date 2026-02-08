@@ -1,0 +1,170 @@
+{
+  "model_type": "apartment_price_regressor",
+  "timestamp": "2026-02-08T22:49:04.687386",
+  "data_summary": {
+    "test_samples": 2567,
+    "features": 56,
+    "feature_names": [
+      "area_exclusive",
+      "floor",
+      "transaction_year",
+      "transaction_month",
+      "transaction_quarter",
+      "building_age",
+      "floor_ratio",
+      "total_floors",
+      "total_units",
+      "parking_ratio",
+      "brand_tier",
+      "sido_encoded",
+      "sigungu_encoded",
+      "sigungu_target_enc",
+      "dong_target_enc",
+      "price_lag_1m",
+      "price_lag_3m",
+      "price_rolling_6m_mean",
+      "price_rolling_6m_std",
+      "price_yoy_change",
+      "volume_lag_1m",
+      "distance_to_subway",
+      "subway_count_1km",
+      "distance_to_school",
+      "school_count_1km",
+      "distance_to_academy",
+      "academy_count_1km",
+      "distance_to_hospital",
+      "hospital_count_1km",
+      "distance_to_mart",
+      "convenience_count_500m",
+      "distance_to_park",
+      "poi_score",
+      "base_rate",
+      "mortgage_rate",
+      "jeonse_ratio",
+      "buying_power_index",
+      "transaction_volume",
+      "price_change_rate",
+      "reb_price_index",
+      "reb_rent_index",
+      "is_old_building",
+      "is_reconstruction_target",
+      "reconstruction_premium",
+      "school_district_grade",
+      "is_premium_school_district",
+      "price_vs_previous",
+      "price_vs_complex_avg",
+      "price_vs_area_avg",
+      "direction_premium",
+      "view_premium",
+      "is_remodeled",
+      "remodel_premium",
+      "footfall_score",
+      "commercial_density",
+      "store_diversity_index"
+    ]
+  },
+  "metrics": {
+    "mape": 23.731930664348617
+  },
+  "residual_info": {
+    "residual_std": 147020394.40471524,
+    "residual_percentiles": {
+      "5": -220459948.79999995,
+      "10": -153392140.79999998,
+      "25": -71091440.0,
+      "75": 67165792.0,
+      "90": 154368160.00000003,
+      "95": 218733699.19999993
+    },
+    "mape": 23.731930664348617,
+    "test_count": 2567
+  },
+  "feature_importance_top20": [
+    {
+      "feature": "school_district_grade",
+      "importance": 0.21971498429775238
+    },
+    {
+      "feature": "dong_target_enc",
+      "importance": 0.15245196223258972
+    },
+    {
+      "feature": "transaction_volume",
+      "importance": 0.13506253063678741
+    },
+    {
+      "feature": "buying_power_index",
+      "importance": 0.11579446494579315
+    },
+    {
+      "feature": "jeonse_ratio",
+      "importance": 0.09402279555797577
+    },
+    {
+      "feature": "sigungu_target_enc",
+      "importance": 0.07545635849237442
+    },
+    {
+      "feature": "is_premium_school_district",
+      "importance": 0.05709104984998703
+    },
+    {
+      "feature": "area_exclusive",
+      "importance": 0.0510023757815361
+    },
+    {
+      "feature": "price_change_rate",
+      "importance": 0.04536129906773567
+    },
+    {
+      "feature": "sigungu_encoded",
+      "importance": 0.020597904920578003
+    },
+    {
+      "feature": "floor",
+      "importance": 0.017990797758102417
+    },
+    {
+      "feature": "floor_ratio",
+      "importance": 0.01545350905507803
+    },
+    {
+      "feature": "transaction_year",
+      "importance": 0.0
+    },
+    {
+      "feature": "transaction_month",
+      "importance": 0.0
+    },
+    {
+      "feature": "transaction_quarter",
+      "importance": 0.0
+    },
+    {
+      "feature": "building_age",
+      "importance": 0.0
+    },
+    {
+      "feature": "total_floors",
+      "importance": 0.0
+    },
+    {
+      "feature": "total_units",
+      "importance": 0.0
+    },
+    {
+      "feature": "parking_ratio",
+      "importance": 0.0
+    },
+    {
+      "feature": "brand_tier",
+      "importance": 0.0
+    }
+  ],
+  "hyperparameters": {
+    "n_estimators": 1000,
+    "max_depth": 7,
+    "learning_rate": 0.03
+  },
+  "note": "Generated from existing model artifacts (training interrupted by Supabase 500 error)"
+}

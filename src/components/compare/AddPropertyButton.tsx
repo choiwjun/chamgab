@@ -17,14 +17,14 @@ export function AddPropertyButton({ onClick }: AddPropertyButtonProps) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
       onClick={onClick}
-      className="flex-shrink-0 w-full sm:w-72 md:w-80 min-h-[400px] border border-dashed border-editorial-dark/20 bg-editorial-sand/20 hover:bg-editorial-sand/50 hover:border-editorial-gold transition-all flex flex-col items-center justify-center gap-4 group"
+      className="group flex min-h-[400px] w-full flex-shrink-0 flex-col items-center justify-center gap-4 rounded-xl border-2 border-dashed border-[#E5E8EB] bg-[#F9FAFB] transition-all hover:border-[#3182F6] hover:bg-white sm:w-72 md:w-80"
     >
-      <div className="w-12 h-12 border border-editorial-dark/10 bg-white flex items-center justify-center group-hover:border-editorial-gold transition-colors">
-        <Plus className="w-6 h-6 text-editorial-ink/30 group-hover:text-editorial-gold transition-colors" />
+      <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-[#E5E8EB] bg-white transition-colors group-hover:border-[#3182F6]">
+        <Plus className="h-6 w-6 text-[#8B95A1] transition-colors group-hover:text-[#3182F6]" />
       </div>
       <div className="text-center">
-        <p className="text-sm tracking-wide text-editorial-dark mb-1">매물 추가</p>
-        <p className="text-xs text-editorial-ink/40">최대 4개까지 비교 가능</p>
+        <p className="mb-1 text-sm font-medium text-[#191F28]">매물 추가</p>
+        <p className="text-xs text-[#8B95A1]">최대 4개까지 비교 가능</p>
       </div>
     </motion.button>
   )

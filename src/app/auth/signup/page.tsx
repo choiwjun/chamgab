@@ -10,19 +10,16 @@ export const metadata: Metadata = {
 
 export default function SignupPage() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-editorial-bg px-6 py-12">
+    <main className="flex min-h-screen flex-col items-center justify-center bg-white px-6 py-12">
       <div className="w-full max-w-md">
         {/* 로고 */}
-        <div className="text-center mb-12">
+        <div className="mb-12 text-center">
           <Link href="/" className="inline-block">
-            <h1 className="font-display text-4xl text-editorial-gold italic tracking-tight">
+            <h1 className="text-4xl font-bold tracking-tight text-gray-900">
               참값
             </h1>
           </Link>
-          <div className="mt-4 flex justify-center">
-            <div className="w-12 h-px bg-editorial-gold/50" />
-          </div>
-          <p className="mt-4 text-sm text-editorial-ink/50 tracking-wide">
+          <p className="mt-3 text-sm text-gray-600">
             AI가 분석하는 부동산의 진짜 가치
           </p>
         </div>
@@ -31,11 +28,11 @@ export default function SignupPage() {
         <SignupForm />
 
         {/* 하단 링크 */}
-        <div className="text-center text-sm mt-8">
-          <span className="text-editorial-ink/50">이미 계정이 있으신가요? </span>
+        <div className="mt-8 text-center text-sm">
+          <span className="text-gray-600">이미 계정이 있으신가요? </span>
           <Link
             href="/auth/login"
-            className="text-editorial-gold hover:text-editorial-dark transition-colors"
+            className="text-blue-500 transition-colors hover:text-blue-600"
           >
             로그인
           </Link>

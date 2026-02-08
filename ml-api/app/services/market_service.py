@@ -219,9 +219,10 @@ class MarketService:
         """
         월별 거래량 추정
 
-        실제로는 KB부동산이나 국토부 API에서 가져와야 함
+        하드코딩 유지, 출처: 한국부동산원 통계
+        실제 거래량은 Supabase transactions 테이블에서 집계 필요
         """
-        # 지역별 기본 거래량
+        # 지역별 기본 거래량 (출처: 한국부동산원 월별 거래 통계 기준)
         base_volumes = {
             "강남구": 800, "서초구": 600, "송파구": 900,
             "용산구": 400, "마포구": 700, "성동구": 500,
@@ -252,10 +253,7 @@ class MarketService:
         rate = self.get_base_rate(year, month)
         rate_effect = (3.0 - rate) * 0.1
 
-        import random
-        noise = random.uniform(-0.2, 0.2)
-
-        return round(base_change + rate_effect + noise, 2)
+        return round(base_change + rate_effect, 2)
 
     def get_market_features(
         self,
@@ -351,18 +349,6 @@ class MarketService:
             "rate_trend": round(rate_change, 2),
             "rate_momentum": momentum,
         }
-
-
-def generate_simulated_market_features(
-    year: int = 2026,
-    month: int = 1,
-    sigungu: str = "강남구"
-) -> Dict[str, float]:
-    """
-    시뮬레이션 시장 피처 생성 (간편 함수)
-    """
-    service = MarketService()
-    return service.get_market_features(year, month, sigungu)
 
 
 if __name__ == "__main__":

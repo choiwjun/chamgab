@@ -46,9 +46,9 @@ export default function IndustryPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-gray-50">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <div className="mx-auto mb-4 h-16 w-16 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" />
           <p className="text-gray-600">업종 통계를 불러오는 중...</p>
         </div>
       </div>
@@ -57,16 +57,20 @@ export default function IndustryPage() {
 
   if (error || !statistics) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center max-w-md px-4">
-          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <span className="text-red-600 text-2xl">!</span>
+      <div className="flex min-h-screen items-center justify-center bg-gray-50">
+        <div className="max-w-md px-4 text-center">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-red-100">
+            <span className="text-2xl text-red-600">!</span>
           </div>
-          <h2 className="text-xl font-bold text-gray-900 mb-2">오류가 발생했습니다</h2>
-          <p className="text-gray-600 mb-6">{error || '데이터를 불러올 수 없습니다.'}</p>
+          <h2 className="mb-2 text-xl font-bold text-gray-900">
+            오류가 발생했습니다
+          </h2>
+          <p className="mb-6 text-gray-600">
+            {error || '데이터를 불러올 수 없습니다.'}
+          </p>
           <button
             onClick={() => router.push('/business-analysis')}
-            className="px-6 py-3 bg-primary-500 text-white rounded-lg hover:bg-primary-600"
+            className="rounded-lg bg-blue-500 px-6 py-3 text-white hover:bg-blue-600"
           >
             돌아가기
           </button>
@@ -77,14 +81,14 @@ export default function IndustryPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 py-8">
+      <div className="mx-auto max-w-7xl px-4 py-8">
         {/* 헤더 */}
         <div className="mb-8">
           <button
             onClick={() => router.push('/business-analysis')}
-            className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-4"
+            className="mb-4 flex items-center gap-2 text-gray-600 hover:text-gray-900"
           >
-            <ArrowLeft className="w-5 h-5" />
+            <ArrowLeft className="h-5 w-5" />
             <span>돌아가기</span>
           </button>
         </div>
@@ -93,14 +97,16 @@ export default function IndustryPage() {
         <IndustryOverview statistics={statistics} />
 
         {/* 하단 CTA */}
-        <div className="mt-8 p-6 bg-white rounded-xl shadow-sm text-center">
-          <h3 className="font-semibold text-gray-900 mb-2">이 업종으로 창업을 고려 중이신가요?</h3>
-          <p className="text-gray-600 mb-4">
+        <div className="mt-8 rounded-xl border border-gray-200 bg-white p-6 text-center">
+          <h3 className="mb-2 font-semibold text-gray-900">
+            이 업종으로 창업을 고려 중이신가요?
+          </h3>
+          <p className="mb-4 text-gray-600">
             원하는 상권을 선택해서 상세한 분석 결과를 확인해보세요.
           </p>
           <button
             onClick={() => router.push('/business-analysis')}
-            className="px-6 py-3 bg-primary-500 text-white rounded-lg hover:bg-primary-600"
+            className="rounded-lg bg-blue-500 px-6 py-3 text-white hover:bg-blue-600"
           >
             상권 분석 시작하기
           </button>

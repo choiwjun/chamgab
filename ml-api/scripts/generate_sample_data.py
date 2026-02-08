@@ -1,7 +1,8 @@
 """
-ML 모델 학습을 위한 샘플 실거래 데이터 생성
+DEV-ONLY: ML 모델 학습을 위한 샘플 실거래 데이터 생성
 
-실제 국토교통부 API 데이터가 없을 때 테스트용으로 사용
+주의: 이 스크립트는 개발/테스트 전용입니다.
+프로덕션에서는 collect_all_transactions.py로 실제 데이터를 수집하세요.
 """
 import os
 import sys

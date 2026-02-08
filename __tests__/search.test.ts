@@ -12,6 +12,41 @@ vi.mock('next/headers', () => ({
   })),
 }))
 
+// Mock Supabase client (테스트 환경에서 DB 연결 없이 동작)
+const mockFrom = vi.fn(() => ({
+  select: vi.fn().mockReturnThis(),
+  eq: vi.fn().mockReturnThis(),
+  not: vi.fn().mockReturnThis(),
+  order: vi.fn().mockReturnThis(),
+  limit: vi.fn().mockResolvedValue({
+    data: [
+      {
+        name: '강남구',
+        avg_price: 1500000000,
+        price_change_weekly: 0.5,
+        updated_at: new Date().toISOString(),
+      },
+      {
+        name: '서초구',
+        avg_price: 1300000000,
+        price_change_weekly: -0.2,
+        updated_at: new Date().toISOString(),
+      },
+      {
+        name: '송파구',
+        avg_price: 1100000000,
+        price_change_weekly: 0.1,
+        updated_at: new Date().toISOString(),
+      },
+    ],
+    error: null,
+  }),
+}))
+
+vi.mock('@supabase/supabase-js', () => ({
+  createClient: vi.fn(() => ({ from: mockFrom })),
+}))
+
 describe('P2-R3-T1: Popular Searches API', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -60,7 +95,7 @@ describe('P2-R3-T1: Popular Searches API', () => {
       const data = await response.json()
 
       // 각 아이템의 필수 필드 검증
-      data.items.forEach((item: any) => {
+      data.items.forEach((item: Record<string, unknown>) => {
         expect(item).toHaveProperty('rank')
         expect(item).toHaveProperty('keyword')
         expect(item).toHaveProperty('search_count')
@@ -85,7 +120,7 @@ describe('P2-R3-T1: Popular Searches API', () => {
       const data = await response.json()
 
       // change가 'up' 또는 'down'인 경우 change_rank가 있어야 함
-      data.items.forEach((item: any) => {
+      data.items.forEach((item: Record<string, unknown>) => {
         if (item.change === 'up' || item.change === 'down') {
           expect(item).toHaveProperty('change_rank')
           expect(typeof item.change_rank).toBe('number')
@@ -126,9 +161,12 @@ describe('P2-R3-T1: Popular Searches API', () => {
     it('should support limit query parameter', async () => {
       const { GET } = await import('@/app/api/search/popular/route')
 
-      const request = new Request('http://localhost/api/search/popular?limit=5', {
-        method: 'GET',
-      })
+      const request = new Request(
+        'http://localhost/api/search/popular?limit=5',
+        {
+          method: 'GET',
+        }
+      )
 
       const response = await GET(request)
       const data = await response.json()

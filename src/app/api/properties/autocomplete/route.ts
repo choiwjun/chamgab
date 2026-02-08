@@ -8,11 +8,14 @@ export const dynamic = 'force-dynamic'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import type { SearchSuggestion } from '@/types/property'
+import { sanitizeFilterInput } from '@/lib/sanitize'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-)
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+  )
+}
 
 /**
  * GET /api/properties/autocomplete
@@ -29,6 +32,7 @@ const supabase = createClient(
  */
 export async function GET(request: NextRequest) {
   try {
+    const supabase = getSupabase()
     const searchParams = request.nextUrl.searchParams
     const query = searchParams.get('q') || ''
     const limit = Math.min(parseInt(searchParams.get('limit') || '10'), 20)
@@ -41,6 +45,15 @@ export async function GET(request: NextRequest) {
       })
     }
 
+    // PostgREST filter injection 방지: 특수문자 제거
+    const sanitizedQuery = sanitizeFilterInput(query)
+    if (sanitizedQuery.length < 2) {
+      return NextResponse.json({
+        suggestions: [],
+        error: 'Query must be at least 2 characters after sanitization',
+      })
+    }
+
     // 병렬로 모든 검색 실행
     const [regionsResult, complexesResult, propertiesResult] =
       await Promise.all([
@@ -48,7 +61,7 @@ export async function GET(request: NextRequest) {
         supabase
           .from('regions')
           .select('id, name, level')
-          .ilike('name', `%${query}%`)
+          .ilike('name', `%${sanitizedQuery}%`)
           .in('level', [2, 3]) // 시군구, 읍면동만
           .order('level', { ascending: true }) // 시군구 먼저
           .limit(3),
@@ -57,14 +70,18 @@ export async function GET(request: NextRequest) {
         supabase
           .from('complexes')
           .select('id, name, address')
-          .or(`name.ilike.%${query}%,address.ilike.%${query}%`)
+          .or(
+            `name.ilike.%${sanitizedQuery}%,address.ilike.%${sanitizedQuery}%`
+          )
           .limit(3),
 
         // 3. 매물 검색
         supabase
           .from('properties')
           .select('id, name, address')
-          .or(`name.ilike.%${query}%,address.ilike.%${query}%`)
+          .or(
+            `name.ilike.%${sanitizedQuery}%,address.ilike.%${sanitizedQuery}%`
+          )
           .limit(4),
       ])
 

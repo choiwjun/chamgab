@@ -8,7 +8,6 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { useAuthStore } from '@/stores/authStore'
 
 // 로그인 스키마
 const loginSchema = z.object({
@@ -24,7 +23,6 @@ interface LoginFormProps {
 
 export function LoginForm({ redirectUrl = '/' }: LoginFormProps) {
   const router = useRouter()
-  const { setUser } = useAuthStore()
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -61,7 +59,7 @@ export function LoginForm({ redirectUrl = '/' }: LoginFormProps) {
       }
 
       if (authData.user) {
-        setUser(authData.user)
+        // AuthProvider의 onAuthStateChange가 자동으로 상태 업데이트
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         router.push(redirectUrl as any)
         router.refresh()
@@ -111,10 +109,10 @@ export function LoginForm({ redirectUrl = '/' }: LoginFormProps) {
           type="button"
           onClick={() => handleSocialLogin('google')}
           disabled={!!socialLoading}
-          className="flex w-full items-center justify-center gap-3 border border-editorial-dark/10 bg-white px-4 py-3.5 text-sm tracking-wide text-editorial-dark transition-colors hover:border-editorial-dark/30 hover:bg-editorial-sand/20 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex w-full items-center justify-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3.5 text-sm text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {socialLoading === 'google' ? (
-            <Loader2 className="h-5 w-5 animate-spin text-editorial-ink/50" />
+            <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
           ) : (
             <svg className="h-5 w-5" viewBox="0 0 24 24">
               <path
@@ -142,7 +140,7 @@ export function LoginForm({ redirectUrl = '/' }: LoginFormProps) {
           type="button"
           onClick={() => handleSocialLogin('kakao')}
           disabled={!!socialLoading}
-          className="flex w-full items-center justify-center gap-3 bg-[#FEE500] px-4 py-3.5 text-sm tracking-wide text-[#191919] transition-colors hover:bg-[#FDD800] disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex w-full items-center justify-center gap-3 rounded-lg bg-[#FEE500] px-4 py-3.5 text-sm text-[#191919] transition-colors hover:bg-[#FDD800] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {socialLoading === 'kakao' ? (
             <Loader2 className="h-5 w-5 animate-spin" />
@@ -161,7 +159,7 @@ export function LoginForm({ redirectUrl = '/' }: LoginFormProps) {
           type="button"
           onClick={() => handleSocialLogin('naver')}
           disabled={!!socialLoading}
-          className="flex w-full items-center justify-center gap-3 bg-[#03C75A] px-4 py-3.5 text-sm tracking-wide text-white transition-colors hover:bg-[#02B350] disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex w-full items-center justify-center gap-3 rounded-lg bg-[#03C75A] px-4 py-3.5 text-sm text-white transition-colors hover:bg-[#02B350] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {socialLoading === 'naver' ? (
             <Loader2 className="h-5 w-5 animate-spin" />
@@ -180,10 +178,10 @@ export function LoginForm({ redirectUrl = '/' }: LoginFormProps) {
       {/* 구분선 */}
       <div className="relative">
         <div className="absolute inset-0 flex items-center">
-          <span className="w-full border-t border-editorial-dark/10" />
+          <span className="w-full border-t border-gray-200" />
         </div>
         <div className="relative flex justify-center">
-          <span className="bg-editorial-bg px-6 text-xs tracking-widest uppercase text-editorial-ink/40">or</span>
+          <span className="bg-white px-4 text-sm text-gray-500">또는</span>
         </div>
       </div>
 
@@ -192,28 +190,28 @@ export function LoginForm({ redirectUrl = '/' }: LoginFormProps) {
         <div>
           <label
             htmlFor="email"
-            className="block text-xs tracking-widest uppercase text-editorial-ink/60 mb-2"
+            className="mb-2 block text-sm font-medium text-gray-700"
           >
-            Email
+            이메일
           </label>
           <input
             {...register('email')}
             type="email"
             id="email"
             placeholder="email@example.com"
-            className="block w-full border border-editorial-dark/10 bg-white px-4 py-3.5 text-sm text-editorial-dark placeholder-editorial-ink/30 focus:border-editorial-gold focus:outline-none transition-colors"
+            className="block w-full rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 placeholder-gray-400 transition-colors focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
           {errors.email && (
-            <p className="mt-2 text-xs text-red-600">{errors.email.message}</p>
+            <p className="mt-2 text-xs text-red-500">{errors.email.message}</p>
           )}
         </div>
 
         <div>
           <label
             htmlFor="password"
-            className="block text-xs tracking-widest uppercase text-editorial-ink/60 mb-2"
+            className="mb-2 block text-sm font-medium text-gray-700"
           >
-            Password
+            비밀번호
           </label>
           <div className="relative">
             <input
@@ -221,12 +219,12 @@ export function LoginForm({ redirectUrl = '/' }: LoginFormProps) {
               type={showPassword ? 'text' : 'password'}
               id="password"
               placeholder="비밀번호 입력"
-              className="block w-full border border-editorial-dark/10 bg-white px-4 py-3.5 pr-12 text-sm text-editorial-dark placeholder-editorial-ink/30 focus:border-editorial-gold focus:outline-none transition-colors"
+              className="block w-full rounded-lg border border-gray-200 bg-white px-4 py-3 pr-12 text-sm text-gray-900 placeholder-gray-400 transition-colors focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-editorial-ink/40 hover:text-editorial-dark transition-colors"
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-gray-600"
             >
               {showPassword ? (
                 <EyeOff className="h-4 w-4" />
@@ -236,7 +234,7 @@ export function LoginForm({ redirectUrl = '/' }: LoginFormProps) {
             </button>
           </div>
           {errors.password && (
-            <p className="mt-2 text-xs text-red-600">
+            <p className="mt-2 text-xs text-red-500">
               {errors.password.message}
             </p>
           )}
@@ -244,7 +242,7 @@ export function LoginForm({ redirectUrl = '/' }: LoginFormProps) {
 
         {/* 에러 메시지 */}
         {error && (
-          <div className="border-l-2 border-red-500 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
             {error}
           </div>
         )}
@@ -253,15 +251,15 @@ export function LoginForm({ redirectUrl = '/' }: LoginFormProps) {
         <button
           type="submit"
           disabled={isLoading}
-          className="flex w-full items-center justify-center bg-editorial-dark px-4 py-3.5 text-sm tracking-widest uppercase text-white transition-colors hover:bg-editorial-gold disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex w-full items-center justify-center rounded-lg bg-blue-500 px-4 py-3.5 text-sm font-semibold text-white transition-colors hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isLoading ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Processing...
+              로그인 중...
             </>
           ) : (
-            'Sign In'
+            '로그인'
           )}
         </button>
       </form>
@@ -270,7 +268,7 @@ export function LoginForm({ redirectUrl = '/' }: LoginFormProps) {
       <div className="text-center">
         <a
           href="/auth/forgot-password"
-          className="text-xs tracking-wide text-editorial-ink/50 hover:text-editorial-gold transition-colors"
+          className="text-sm text-blue-500 transition-colors hover:text-blue-600"
         >
           비밀번호를 잊으셨나요?
         </a>

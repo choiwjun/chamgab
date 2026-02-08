@@ -5,10 +5,12 @@ import { NextRequest, NextResponse } from 'next/server'
 // 동적 렌더링 강제 (searchParams 사용)
 export const dynamic = 'force-dynamic'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-)
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+  )
+}
 
 /**
  * GET /api/transactions
@@ -16,9 +18,31 @@ const supabase = createClient(
  */
 export async function GET(request: NextRequest) {
   try {
+    const supabase = getSupabase()
     const searchParams = request.nextUrl.searchParams
     const complex_id = searchParams.get('complex_id')
     const property_id = searchParams.get('property_id')
+    const distinctAreas = searchParams.get('distinct_areas') === 'true'
+
+    // distinct_areas 모드: 단지의 고유 전용면적 목록 반환
+    if (distinctAreas && complex_id) {
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('area_exclusive')
+        .eq('complex_id', complex_id)
+        .not('area_exclusive', 'is', null)
+        .order('area_exclusive', { ascending: true })
+
+      if (error) {
+        return NextResponse.json({ areas: [] }, { status: 503 })
+      }
+
+      const unique = Array.from(
+        new Set((data || []).map((r) => r.area_exclusive as number))
+      )
+      return NextResponse.json({ areas: unique })
+    }
+
     const page = parseInt(searchParams.get('page') || '1')
     const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 100)
 
@@ -39,27 +63,11 @@ export async function GET(request: NextRequest) {
     const { data, count, error } = await query
 
     if (error) {
-      // Mock 데이터 반환
-      const mockTransactions = Array.from({ length: 5 }, (_, i) => ({
-        id: `mock-tx-${i}`,
-        complex_id,
-        property_id,
-        transaction_date: new Date(Date.now() - i * 30 * 24 * 60 * 60 * 1000)
-          .toISOString()
-          .split('T')[0],
-        price: 800000000 + Math.floor(Math.random() * 200000000),
-        area_exclusive: 84.5 + Math.random() * 30,
-        floor: Math.floor(Math.random() * 20) + 1,
-        created_at: new Date().toISOString(),
-      }))
-
-      return NextResponse.json({
-        items: mockTransactions,
-        total: 5,
-        page,
-        limit,
-        is_mock: true,
-      })
+      console.error('[Transactions API] Supabase error:', error.message)
+      return NextResponse.json(
+        { items: [], total: 0, error: 'Database error' },
+        { status: 503 }
+      )
     }
 
     return NextResponse.json({

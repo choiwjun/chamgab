@@ -6,10 +6,12 @@ export const dynamic = 'force-dynamic'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-)
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+  )
+}
 
 /**
  * GET /api/chamgab/:id
@@ -20,6 +22,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const supabase = getSupabase()
     const { id: propertyId } = await params
 
     // 유효한 분석 결과 조회 (만료되지 않은 것)
@@ -33,20 +36,8 @@ export async function GET(
       .single()
 
     if (error || !analysis) {
-      // 분석 결과 없음 - Mock 데이터 반환 (개발용)
-      const mockAnalysis = {
-        id: 'mock-' + propertyId,
-        property_id: propertyId,
-        chamgab_price: 850000000,
-        min_price: 800000000,
-        max_price: 900000000,
-        confidence: 0.92,
-        analyzed_at: new Date().toISOString(),
-        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        created_at: new Date().toISOString(),
-      }
-
-      return NextResponse.json({ analysis: mockAnalysis, is_mock: true })
+      // 분석 결과 없음 (정상 응답 - 아직 분석 안 됨)
+      return NextResponse.json({ analysis: null })
     }
 
     return NextResponse.json({ analysis })

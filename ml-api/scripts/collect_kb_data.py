@@ -486,12 +486,76 @@ class KbDataCollector:
         return region_prices
 
 
+def save_to_supabase(df: pd.DataFrame) -> int:
+    """
+    수집된 KB 데이터를 Supabase transactions 테이블에 저장
+
+    Args:
+        df: 학습 데이터 DataFrame
+
+    Returns:
+        저장된 행 수
+    """
+    import os
+    from dotenv import load_dotenv
+
+    env_path = Path(__file__).parent.parent / ".env"
+    if env_path.exists():
+        load_dotenv(env_path)
+
+    url = os.getenv("SUPABASE_URL")
+    key = os.getenv("SUPABASE_SERVICE_KEY")
+
+    if not url or not key:
+        print("SUPABASE_URL / SUPABASE_SERVICE_KEY 환경변수가 설정되지 않았습니다.")
+        print("Supabase 저장을 건너뜁니다.")
+        return 0
+
+    try:
+        from supabase import create_client
+        client = create_client(url, key)
+
+        # DataFrame → transactions 테이블 형식 변환
+        records = []
+        for _, row in df.iterrows():
+            records.append({
+                "id": row.get("id"),
+                "price": int(row.get("price", 0)),
+                "area_exclusive": float(row.get("area_exclusive", 0)),
+                "floor": int(row.get("floor", 0)),
+                "dong": row.get("dong", ""),
+                "transaction_date": row.get("transaction_date", ""),
+                "buyer_type": row.get("buyer_type", "일반"),
+            })
+
+        # 배치 삽입 (500건씩)
+        batch_size = 500
+        total_saved = 0
+
+        for i in range(0, len(records), batch_size):
+            batch = records[i:i + batch_size]
+            result = client.table("transactions").upsert(
+                batch, on_conflict="id"
+            ).execute()
+            saved = len(result.data) if result.data else 0
+            total_saved += saved
+            print(f"  Supabase 저장: {i + saved}/{len(records)}건")
+
+        print(f"\n[OK] Supabase 저장 완료: {total_saved}건")
+        return total_saved
+
+    except Exception as e:
+        print(f"Supabase 저장 실패: {e}")
+        return 0
+
+
 def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="KB부동산 데이터 수집")
     parser.add_argument("--region", type=str, default="서울", help="지역명 (기본: 서울)")
     parser.add_argument("--save-csv", action="store_true", help="CSV로 저장")
+    parser.add_argument("--save-supabase", action="store_true", help="Supabase에 저장")
     parser.add_argument("--generate-training", action="store_true", help="학습 데이터 생성")
     parser.add_argument("--count", type=int, default=10000, help="생성할 레코드 수")
     parser.add_argument("--output", type=str, default="scripts/kb_transactions.csv", help="출력 파일 경로")
@@ -507,10 +571,14 @@ def main():
 
         df = collector.generate_training_data(args.count)
 
-        # 저장
+        # CSV 저장
         output_path = Path(__file__).parent.parent / args.output
         df.to_csv(output_path, index=False, encoding="utf-8-sig")
         print(f"\n저장됨: {output_path}")
+
+        # Supabase 저장 (옵션)
+        if args.save_supabase:
+            save_to_supabase(df)
 
         # 요약
         print(f"\n지역별 분포:")

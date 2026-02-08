@@ -4,7 +4,13 @@
 'use client'
 
 import { ReactNode, useEffect, useRef } from 'react'
-import { motion, AnimatePresence, PanInfo, useMotionValue, useTransform } from 'framer-motion'
+import {
+  motion,
+  AnimatePresence,
+  PanInfo,
+  useMotionValue,
+  useTransform,
+} from 'framer-motion'
 import { X } from 'lucide-react'
 
 interface BottomSheetProps {
@@ -70,7 +76,10 @@ export function BottomSheet({
     }
   }, [isOpen])
 
-  const handleDragEnd = (_: any, info: PanInfo) => {
+  const handleDragEnd = (
+    _: MouseEvent | TouchEvent | PointerEvent,
+    info: PanInfo
+  ) => {
     if (info.offset.y > 100 || info.velocity.y > 500) {
       onClose()
     }
@@ -114,19 +123,13 @@ export function BottomSheet({
             dragElastic={{ top: 0, bottom: 0.5 }}
             onDragEnd={handleDragEnd}
             style={{ y, opacity }}
-            className={`
-              absolute bottom-0 left-0 right-0
-              bg-white rounded-t-2xl shadow-xl
-              ${heightClasses[height]}
-              flex flex-col
-              touch-none
-            `}
+            className={`absolute bottom-0 left-0 right-0 rounded-t-xl bg-white shadow-sm ${heightClasses[height]} flex touch-none flex-col`}
           >
             {/* 드래그 핸들 */}
             {draggable && (
-              <div className="flex justify-center pt-3 pb-2">
+              <div className="flex justify-center pb-2 pt-3">
                 <div
-                  className="w-12 h-1 bg-gray-300 rounded-full"
+                  className="h-1 w-12 rounded-full bg-gray-300"
                   aria-hidden="true"
                 />
               </div>
@@ -134,24 +137,25 @@ export function BottomSheet({
 
             {/* 헤더 */}
             {title && (
-              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-                <h2 id="bottomsheet-title" className="text-lg font-semibold text-gray-900">
+              <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+                <h2
+                  id="bottomsheet-title"
+                  className="text-lg font-semibold text-gray-900"
+                >
                   {title}
                 </h2>
                 <button
                   onClick={onClose}
-                  className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                  className="rounded-lg p-2 transition-colors hover:bg-gray-100"
                   aria-label="바텀시트 닫기"
                 >
-                  <X className="w-5 h-5 text-gray-500" aria-hidden="true" />
+                  <X className="h-5 w-5 text-gray-500" aria-hidden="true" />
                 </button>
               </div>
             )}
 
             {/* 콘텐츠 */}
-            <div className="flex-1 overflow-y-auto px-6 py-4">
-              {children}
-            </div>
+            <div className="flex-1 overflow-y-auto px-6 py-4">{children}</div>
           </motion.div>
         </div>
       )}
@@ -188,8 +192,8 @@ export function ConfirmBottomSheet({
 
   const confirmButtonClass =
     variant === 'danger'
-      ? 'bg-red-600 hover:bg-red-700 text-white'
-      : 'bg-[#1E3A5F] hover:bg-[#2E5A8F] text-white'
+      ? 'bg-red-500 hover:bg-red-600 text-white'
+      : 'bg-blue-500 hover:bg-blue-600 text-white'
 
   return (
     <BottomSheet isOpen={isOpen} onClose={onClose} title={title} height="auto">
@@ -199,13 +203,13 @@ export function ConfirmBottomSheet({
         <div className="flex gap-3">
           <button
             onClick={onClose}
-            className="flex-1 px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium text-gray-700"
+            className="flex-1 rounded-lg border border-gray-300 px-4 py-3 font-medium text-gray-700 transition-colors hover:bg-gray-50"
           >
             {cancelLabel}
           </button>
           <button
             onClick={handleConfirm}
-            className={`flex-1 px-4 py-3 rounded-lg transition-colors font-medium ${confirmButtonClass}`}
+            className={`flex-1 rounded-lg px-4 py-3 font-medium transition-colors ${confirmButtonClass}`}
           >
             {confirmLabel}
           </button>

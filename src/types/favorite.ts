@@ -24,5 +24,4 @@ export interface FavoriteResponse {
   total: number
   page: number
   limit: number
-  is_mock?: boolean
 }

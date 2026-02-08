@@ -5,6 +5,7 @@
 export const dynamic = 'force-dynamic'
 
 import { HeroSection } from '@/components/home/HeroSection'
+import { ServiceSelector } from '@/components/home/ServiceSelector'
 import { PriceTrends } from '@/components/home/PriceTrends'
 import { PopularProperties } from '@/components/home/PopularProperties'
 import { ServiceIntro } from '@/components/home/ServiceIntro'
@@ -13,6 +14,7 @@ export default function HomePage() {
   return (
     <main className="min-h-screen">
       <HeroSection />
+      <ServiceSelector />
       <PriceTrends />
       <PopularProperties />
       <ServiceIntro />

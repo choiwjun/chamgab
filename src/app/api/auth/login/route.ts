@@ -22,7 +22,9 @@ export async function POST(request: Request) {
     const validationResult = loginSchema.safeParse(body)
 
     if (!validationResult.success) {
-      const errorMessage = validationResult.error.errors[0]?.message || '입력값이 올바르지 않습니다'
+      const errorMessage =
+        validationResult.error.errors[0]?.message ||
+        '입력값이 올바르지 않습니다'
       return NextResponse.json<AuthErrorResponse>(
         { error: errorMessage },
         { status: 400 }
@@ -43,7 +45,10 @@ export async function POST(request: Request) {
       // 인증 실패 (잘못된 이메일/비밀번호)
       if (error.message.includes('Invalid login credentials')) {
         return NextResponse.json<AuthErrorResponse>(
-          { error: '이메일 또는 비밀번호가 올바르지 않습니다', code: 'INVALID_CREDENTIALS' },
+          {
+            error: '이메일 또는 비밀번호가 올바르지 않습니다',
+            code: 'INVALID_CREDENTIALS',
+          },
           { status: 401 }
         )
       }
@@ -79,7 +84,7 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error('Login error:', error)
     return NextResponse.json<AuthErrorResponse>(
-      { error: '서버 오류가 발생했습니다' },
+      { error: '로그인 중 오류가 발생했습니다.' },
       { status: 500 }
     )
   }

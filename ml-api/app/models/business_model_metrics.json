@@ -1,0 +1,161 @@
+{
+  "model_type": "business_success_classifier",
+  "timestamp": "2026-02-08T22:11:43.734987",
+  "data_summary": {
+    "train_samples": 113620,
+    "test_samples": 29975,
+    "features": 32,
+    "feature_names": [
+      "survival_rate",
+      "survival_rate_normalized",
+      "monthly_avg_sales",
+      "monthly_avg_sales_log",
+      "sales_growth_rate",
+      "sales_per_store",
+      "sales_volatility",
+      "store_count",
+      "store_count_log",
+      "density_level",
+      "franchise_ratio",
+      "competition_ratio",
+      "market_saturation",
+      "viability_index",
+      "growth_potential",
+      "foot_traffic_score",
+      "peak_hour_ratio",
+      "weekend_ratio",
+      "sales_lag_1m",
+      "sales_lag_3m",
+      "sales_rolling_6m_mean",
+      "sales_rolling_6m_std",
+      "store_count_lag_1m",
+      "survival_rate_lag_1m",
+      "month_sin",
+      "month_cos",
+      "region_avg_survival",
+      "industry_avg_survival",
+      "region_industry_density_ratio",
+      "foot_traffic_per_store",
+      "evening_morning_ratio",
+      "age_concentration_index"
+    ]
+  },
+  "metrics": {
+    "accuracy": 0.6294912427022519,
+    "precision": 0.6325006862475981,
+    "recall": 0.7230904412226197,
+    "f1": 0.674768654093944,
+    "auc_roc": 0.6778558309702967,
+    "brier_score": 0.2247491906215956,
+    "log_loss": 0.6401905940664143
+  },
+  "confusion_matrix": [
+    [7348, 6694],
+    [4412, 11521]
+  ],
+  "cross_validation": {
+    "mean": 0.622488718034431,
+    "std": 0.006149284208303741,
+    "scores": [
+      0.615702824669898, 0.6185024235333445, 0.6184188534180177,
+      0.6303693799097443, 0.6294501086411499
+    ]
+  },
+  "feature_importance_top20": [
+    {
+      "feature": "viability_index",
+      "importance": 0.12652741372585297
+    },
+    {
+      "feature": "industry_avg_survival",
+      "importance": 0.09638568758964539
+    },
+    {
+      "feature": "survival_rate_normalized",
+      "importance": 0.08077371120452881
+    },
+    {
+      "feature": "survival_rate",
+      "importance": 0.06925512850284576
+    },
+    {
+      "feature": "sales_volatility",
+      "importance": 0.04731038212776184
+    },
+    {
+      "feature": "sales_growth_rate",
+      "importance": 0.03899216279387474
+    },
+    {
+      "feature": "sales_rolling_6m_mean",
+      "importance": 0.024894805625081062
+    },
+    {
+      "feature": "market_saturation",
+      "importance": 0.024819539859890938
+    },
+    {
+      "feature": "franchise_ratio",
+      "importance": 0.0238992590457201
+    },
+    {
+      "feature": "store_count_lag_1m",
+      "importance": 0.023472962900996208
+    },
+    {
+      "feature": "region_avg_survival",
+      "importance": 0.023311372846364975
+    },
+    {
+      "feature": "monthly_avg_sales",
+      "importance": 0.023253297433257103
+    },
+    {
+      "feature": "survival_rate_lag_1m",
+      "importance": 0.023131752386689186
+    },
+    {
+      "feature": "age_concentration_index",
+      "importance": 0.023022616282105446
+    },
+    {
+      "feature": "growth_potential",
+      "importance": 0.02297738380730152
+    },
+    {
+      "feature": "store_count",
+      "importance": 0.022869765758514404
+    },
+    {
+      "feature": "sales_per_store",
+      "importance": 0.022603189572691917
+    },
+    {
+      "feature": "sales_rolling_6m_std",
+      "importance": 0.022351225838065147
+    },
+    {
+      "feature": "sales_lag_1m",
+      "importance": 0.02234780788421631
+    },
+    {
+      "feature": "sales_lag_3m",
+      "importance": 0.022332096472382545
+    }
+  ],
+  "hyperparameters": {
+    "n_estimators": 300,
+    "max_depth": 6,
+    "learning_rate": 0.1,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "min_child_weight": 3,
+    "gamma": 0.1,
+    "reg_alpha": 0.1,
+    "reg_lambda": 1.0,
+    "scale_pos_weight": 1.0,
+    "random_state": 42,
+    "n_jobs": -1
+  },
+  "training_duration_seconds": 30.1
+}

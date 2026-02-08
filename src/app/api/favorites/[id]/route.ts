@@ -3,13 +3,8 @@
 // 동적 렌더링 강제 (Supabase 사용)
 export const dynamic = 'force-dynamic'
 
-import { createClient } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-)
 
 /**
  * PATCH /api/favorites/:id
@@ -20,6 +15,16 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const supabase = await createClient()
+
+    // 인증 확인
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { id } = await params
     const body = await request.json()
     const { notify_enabled } = body
@@ -35,6 +40,7 @@ export async function PATCH(
       .from('favorites')
       .update({ notify_enabled })
       .eq('id', id)
+      .eq('user_id', user.id)
       .select()
       .single()
 
@@ -64,12 +70,23 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const supabase = await createClient()
+
+    // 인증 확인
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { id } = await params
 
     const { error } = await supabase
       .from('favorites')
       .delete()
       .eq('id', id)
+      .eq('user_id', user.id)
 
     if (error) {
       return NextResponse.json(

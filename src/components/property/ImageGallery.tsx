@@ -58,13 +58,13 @@ export function ImageGallery({ images, alt }: ImageGalleryProps) {
           <>
             <button
               onClick={goToPrevious}
-              className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-black/50 p-2 text-white transition hover:bg-black/70"
+              className="absolute left-2 top-1/2 -translate-y-1/2 rounded-lg bg-black/50 p-2 text-white transition hover:bg-black/70"
             >
               <ChevronLeft className="h-5 w-5" />
             </button>
             <button
               onClick={goToNext}
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-black/50 p-2 text-white transition hover:bg-black/70"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg bg-black/50 p-2 text-white transition hover:bg-black/70"
             >
               <ChevronRight className="h-5 w-5" />
             </button>
@@ -74,7 +74,7 @@ export function ImageGallery({ images, alt }: ImageGalleryProps) {
         {/* 확대 버튼 */}
         <button
           onClick={() => setIsLightboxOpen(true)}
-          className="absolute right-2 top-2 rounded-full bg-black/50 p-2 text-white transition hover:bg-black/70"
+          className="absolute right-2 top-2 rounded-lg bg-black/50 p-2 text-white transition hover:bg-black/70"
         >
           <Expand className="h-4 w-4" />
         </button>

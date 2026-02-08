@@ -16,7 +16,11 @@ interface PropertyColumnProps {
   onRemove: () => void
 }
 
-export function PropertyColumn({ property, factors, onRemove }: PropertyColumnProps) {
+export function PropertyColumn({
+  property,
+  factors,
+  onRemove,
+}: PropertyColumnProps) {
   const topFactors = factors?.slice(0, 3) || []
   const region = property.address?.split(' ')[0] || '서울'
 
@@ -26,84 +30,80 @@ export function PropertyColumn({ property, factors, onRemove }: PropertyColumnPr
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.95 }}
       transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-      className="relative flex-shrink-0 w-full sm:w-72 md:w-80 border border-editorial-dark/5 bg-white group"
+      className="group relative w-full flex-shrink-0 rounded-xl border border-[#E5E8EB] bg-white transition-colors hover:border-[#3182F6]/30 sm:w-72 md:w-80"
     >
-      {/* 상단 골드 라인 */}
-      <div className="absolute top-0 left-0 w-full h-0.5 bg-editorial-gold" />
-
       {/* 삭제 버튼 */}
       <button
         onClick={onRemove}
-        className="absolute top-4 right-4 z-10 p-1.5 border border-editorial-dark/10 bg-white hover:border-red-300 hover:text-red-500 transition-colors"
+        className="absolute right-4 top-4 z-10 rounded-lg border border-[#E5E8EB] bg-white p-1.5 transition-colors hover:border-[#F04452] hover:text-[#F04452]"
         aria-label="매물 제거"
       >
-        <X className="w-3.5 h-3.5" />
+        <X className="h-3.5 w-3.5" />
       </button>
 
       {/* 정보 */}
       <div className="p-6">
         {/* 지역 태그 */}
-        <div className="flex items-center justify-between mb-4">
-          <span className="text-xs tracking-[0.15em] uppercase text-editorial-gold">
-            {region}
-          </span>
+        <div className="mb-4 flex items-center justify-between">
+          <span className="text-xs font-medium text-[#8B95A1]">{region}</span>
         </div>
 
         {/* 매물명 */}
-        <Link
-          href={`/property/${property.id}`}
-          className="block group/link"
-        >
-          <h3 className="font-serif text-lg text-editorial-dark leading-tight mb-2 group-hover/link:text-editorial-gold transition-colors line-clamp-2">
+        <Link href={`/property/${property.id}`} className="group/link block">
+          <h3 className="mb-2 line-clamp-2 text-lg font-semibold leading-tight text-[#191F28] transition-colors group-hover/link:text-[#3182F6]">
             {property.name}
           </h3>
         </Link>
 
         {/* 주소 */}
-        <div className="flex items-start gap-1.5 mb-6">
-          <MapPin className="w-3.5 h-3.5 text-editorial-ink/30 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-editorial-ink/50 line-clamp-1">{property.address}</p>
+        <div className="mb-6 flex items-start gap-1.5">
+          <MapPin className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-[#8B95A1]" />
+          <p className="line-clamp-1 text-sm text-[#4E5968]">
+            {property.address}
+          </p>
         </div>
 
         {/* 구분선 */}
-        <div className="h-px bg-editorial-dark/5 mb-4" />
+        <div className="mb-4 h-px bg-[#E5E8EB]" />
 
         {/* 비교 항목 */}
         <div className="space-y-3 text-sm">
           {/* 참값 */}
-          <div className="flex justify-between items-center">
-            <span className="text-xs tracking-wide uppercase text-editorial-ink/50">참값</span>
-            <span className="font-serif text-lg text-editorial-gold">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-[#8B95A1]">참값</span>
+            <span className="text-lg font-bold text-[#3182F6]">
               {formatCurrency(property.chamgab_price)}
             </span>
           </div>
 
           {/* 실거래가 */}
-          <div className="flex justify-between items-center py-2 border-t border-editorial-dark/5">
-            <span className="text-xs tracking-wide text-editorial-ink/50">실거래가</span>
-            <span className="text-editorial-dark">
+          <div className="flex items-center justify-between border-t border-[#E5E8EB] py-2">
+            <span className="text-xs text-[#8B95A1]">실거래가</span>
+            <span className="font-medium text-[#191F28]">
               {formatCurrency(property.latest_price)}
             </span>
           </div>
 
           {/* 전용면적 */}
-          <div className="flex justify-between items-center py-2 border-t border-editorial-dark/5">
-            <span className="text-xs tracking-wide text-editorial-ink/50">전용면적</span>
-            <span className="text-editorial-dark">{formatArea(property.area_exclusive)}</span>
+          <div className="flex items-center justify-between border-t border-[#E5E8EB] py-2">
+            <span className="text-xs text-[#8B95A1]">전용면적</span>
+            <span className="font-medium text-[#191F28]">
+              {formatArea(property.area_exclusive)}
+            </span>
           </div>
 
           {/* 건축년도 */}
-          <div className="flex justify-between items-center py-2 border-t border-editorial-dark/5">
-            <span className="text-xs tracking-wide text-editorial-ink/50">건축년도</span>
-            <span className="text-editorial-dark">
+          <div className="flex items-center justify-between border-t border-[#E5E8EB] py-2">
+            <span className="text-xs text-[#8B95A1]">건축년도</span>
+            <span className="font-medium text-[#191F28]">
               {property.built_year ? `${property.built_year}년` : '-'}
             </span>
           </div>
 
           {/* 층수 */}
-          <div className="flex justify-between items-center py-2 border-t border-editorial-dark/5">
-            <span className="text-xs tracking-wide text-editorial-ink/50">층수</span>
-            <span className="text-editorial-dark">
+          <div className="flex items-center justify-between border-t border-[#E5E8EB] py-2">
+            <span className="text-xs text-[#8B95A1]">층수</span>
+            <span className="font-medium text-[#191F28]">
               {property.floors ? `${property.floors}층` : '-'}
             </span>
           </div>
@@ -111,17 +111,24 @@ export function PropertyColumn({ property, factors, onRemove }: PropertyColumnPr
 
         {/* 가격요인 Top 3 */}
         {topFactors.length > 0 && (
-          <div className="mt-6 pt-4 border-t border-editorial-dark/10">
-            <h4 className="text-xs tracking-widest uppercase text-editorial-ink/50 mb-3">
-              Price Factors
+          <div className="mt-6 border-t border-[#E5E8EB] pt-4">
+            <h4 className="mb-3 text-xs font-semibold text-[#8B95A1]">
+              가격 요인
             </h4>
             <div className="space-y-2">
               {topFactors.map((factor) => (
-                <div key={factor.id} className="flex items-center justify-between text-sm">
-                  <span className="text-editorial-ink/70">{factor.factor_name_ko}</span>
+                <div
+                  key={factor.id}
+                  className="flex items-center justify-between text-sm"
+                >
+                  <span className="text-[#4E5968]">
+                    {factor.factor_name_ko}
+                  </span>
                   <span
                     className={
-                      factor.direction === 'positive' ? 'text-editorial-sage' : 'text-red-500'
+                      factor.direction === 'positive'
+                        ? 'font-medium text-[#00C471]'
+                        : 'font-medium text-[#F04452]'
                     }
                   >
                     {factor.direction === 'positive' ? '+' : ''}
@@ -136,10 +143,10 @@ export function PropertyColumn({ property, factors, onRemove }: PropertyColumnPr
         {/* CTA */}
         <Link
           href={`/property/${property.id}`}
-          className="mt-6 flex items-center justify-center gap-2 py-3 border border-editorial-dark/10 text-xs tracking-widest uppercase text-editorial-dark hover:bg-editorial-dark hover:text-white transition-colors"
+          className="mt-6 flex items-center justify-center gap-2 rounded-xl border border-[#E5E8EB] py-3 text-sm font-medium text-[#191F28] transition-colors hover:bg-[#F9FAFB]"
         >
           <span>상세 보기</span>
-          <ArrowUpRight className="w-3.5 h-3.5" />
+          <ArrowUpRight className="h-3.5 w-3.5" />
         </Link>
       </div>
     </motion.div>

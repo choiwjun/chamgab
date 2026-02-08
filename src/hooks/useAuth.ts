@@ -5,7 +5,7 @@
 
 import { useAuth as useAuthContext } from '@/providers/AuthProvider'
 import { useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 /**
  * 인증 상태 관리 훅 (AuthProvider 기반)
@@ -22,31 +22,29 @@ export function useAuth() {
 
   /**
    * 인증이 필요한 페이지에서 사용
-   * 비로그인 시 로그인 페이지로 리다이렉트
+   * 비로그인 시 로그인 페이지로 리다이렉트 (명령형)
    */
-  const requireAuth = () => {
-    useEffect(() => {
-      if (!authContext.isLoading && !authContext.isAuthenticated) {
-        router.push('/auth/login' as any)
-      }
-    }, [authContext.isLoading, authContext.isAuthenticated])
-  }
+  const requireAuth = useCallback(() => {
+    if (!authContext.isLoading && !authContext.isAuthenticated) {
+      router.push('/auth/login' as never)
+    }
+  }, [authContext.isLoading, authContext.isAuthenticated, router])
 
-  // 읽지 않은 알림 개수 가져오기 (mock)
+  // 읽지 않은 알림 개수 가져오기
   useEffect(() => {
     if (authContext.isAuthenticated) {
-      // TODO: 실제 API 호출로 대체
-      // const fetchNotifications = async () => {
-      //   const { data } = await supabase
-      //     .from('notifications')
-      //     .select('count')
-      //     .eq('user_id', authContext.user!.id)
-      //     .eq('is_read', false)
-      //   setUnreadNotificationCount(data?.[0]?.count || 0)
-      // }
-      // fetchNotifications()
-
-      setUnreadNotificationCount(3)
+      const fetchUnreadCount = async () => {
+        try {
+          const res = await fetch('/api/notifications?limit=1&unread_only=true')
+          if (res.ok) {
+            const data = await res.json()
+            setUnreadNotificationCount(data.unread_count || 0)
+          }
+        } catch {
+          setUnreadNotificationCount(0)
+        }
+      }
+      fetchUnreadCount()
     } else {
       setUnreadNotificationCount(0)
     }

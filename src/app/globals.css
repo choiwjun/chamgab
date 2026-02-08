@@ -3,7 +3,6 @@
 @tailwind utilities;
 
 @layer utilities {
-  /* 스크롤바 숨김 (가로 스크롤용) */
   .scrollbar-hide {
     -ms-overflow-style: none;
     scrollbar-width: none;
@@ -14,25 +13,44 @@
 }
 
 :root {
-  --primary: #1E3A5F;
-  --primary-light: #2E5A8F;
-  --accent: #D4A853;
-  --chamgab-up: #10B981;
-  --chamgab-down: #EF4444;
-  --chamgab-neutral: #64748B;
+  --primary: #3182f6;
+  --primary-dark: #1b64da;
+  --chamgab-up: #00c471;
+  --chamgab-down: #f04452;
+  --chamgab-neutral: #8b95a1;
+  --background: #ffffff;
+  --foreground: #191f28;
+}
+
+.dark {
+  --primary: #3182f6;
+  --primary-dark: #1b64da;
+  --chamgab-up: #00c471;
+  --chamgab-down: #f04452;
+  --chamgab-neutral: #8b95a1;
+  --background: #191f28;
+  --foreground: #f9fafb;
 }
 
 body {
-  font-family: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont,
-    system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo',
-    'Noto Sans KR', 'Malgun Gothic', 'Apple Color Emoji', 'Segoe UI Emoji',
-    'Segoe UI Symbol', sans-serif;
+  font-family:
+    'Pretendard Variable',
+    Pretendard,
+    -apple-system,
+    BlinkMacSystemFont,
+    system-ui,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--background);
+  color: var(--foreground);
 }
 
-/* 참값 가격 표시 */
+/* 가격 표시 */
 .chamgab-price {
   font-weight: 700;
-  color: var(--primary);
+  font-variant-numeric: tabular-nums;
+  color: var(--foreground);
 }
 
 .chamgab-price.up {
@@ -43,7 +61,11 @@ body {
   color: var(--chamgab-down);
 }
 
-/* 신뢰도 프로그레스 바 */
+/* 신뢰도 바 */
 .confidence-bar {
-  background: linear-gradient(90deg, var(--chamgab-up) var(--confidence), #e5e7eb var(--confidence));
+  background: linear-gradient(
+    90deg,
+    var(--chamgab-up) var(--confidence),
+    #e5e8eb var(--confidence)
+  );
 }

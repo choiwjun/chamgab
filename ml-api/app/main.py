@@ -5,17 +5,30 @@
 - 유사 거래 검색
 - 전국 아파트 데이터 자동 수집 및 분석
 """
+import os
 import pickle
 from pathlib import Path
+from dotenv import load_dotenv
 
-from fastapi import FastAPI
+# Load environment variables from .env file
+env_path = Path(__file__).parent.parent / ".env"
+if env_path.exists():
+    load_dotenv(env_path)
+
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
-from app.api import predict, factors, similar, health, commercial
+from app.api import predict, factors, similar, health, commercial, chamgab, integrated, reports
 from app.api import collect, analyze, scheduler
 from app.core.config import settings
 from app.core.scheduler import data_scheduler
+from app.core.migrate import auto_migrate
+from app.services.business_model_service import business_model_service
 
 
 # 모델 경로
@@ -23,16 +36,24 @@ MODELS_DIR = Path(__file__).parent / "models"
 MODEL_PATH = MODELS_DIR / "xgboost_model.pkl"
 SHAP_PATH = MODELS_DIR / "shap_explainer.pkl"
 ARTIFACTS_PATH = MODELS_DIR / "feature_artifacts.pkl"
+BUSINESS_MODEL_PATH = MODELS_DIR / "business_model.pkl"
+RESIDUAL_PATH = MODELS_DIR / "residual_info.pkl"
+LGBM_PATH = MODELS_DIR / "lgbm_model.pkl"
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Load ML models
+    # Startup: 자동 마이그레이션 (transactions 컬럼 추가)
+    auto_migrate()
+
+    # Load ML models
     print("Loading ML models...")
 
     app.state.model = None
     app.state.shap_explainer = None
     app.state.feature_artifacts = None
+    app.state.residual_info = None
+    app.state.lgbm_model = None
 
     try:
         if MODEL_PATH.exists():
@@ -50,6 +71,22 @@ async def lifespan(app: FastAPI):
                 app.state.feature_artifacts = pickle.load(f)
             print(f"Feature artifacts loaded: {ARTIFACTS_PATH}")
 
+        if RESIDUAL_PATH.exists():
+            with open(RESIDUAL_PATH, "rb") as f:
+                app.state.residual_info = pickle.load(f)
+            print(f"Residual info loaded: {RESIDUAL_PATH}")
+
+        if LGBM_PATH.exists():
+            with open(LGBM_PATH, "rb") as f:
+                app.state.lgbm_model = pickle.load(f)
+            print(f"LightGBM model loaded: {LGBM_PATH}")
+
+        # 상권 성공 예측 모델 로드
+        if BUSINESS_MODEL_PATH.exists():
+            business_model_service.load(str(BUSINESS_MODEL_PATH))
+        else:
+            print("Warning: No business model found. Run train_business_model.py first.")
+
         if app.state.model:
             print("ML models loaded successfully!")
         else:
@@ -58,9 +95,9 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Error loading models: {e}")
 
-    # Start scheduler (optional: can be enabled via API)
-    # data_scheduler.start()
-    print("Scheduler available. Use /api/scheduler/start to enable.")
+    # 스케줄러 자동 시작 (수집 + 학습 통합)
+    data_scheduler.set_app(app)
+    data_scheduler.start()
 
     yield
 
@@ -70,12 +107,24 @@ async def lifespan(app: FastAPI):
         data_scheduler.stop()
 
 
+limiter = Limiter(key_func=get_remote_address)
+
 app = FastAPI(
     title="참값 ML API",
     description="AI 부동산 가격 분석 서비스",
     version="0.1.0",
     lifespan=lifespan,
 )
+
+# Rate Limiting
+app.state.limiter = limiter
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={"error": "요청이 너무 많습니다. 잠시 후 다시 시도해주세요."},
+    )
 
 # CORS
 app.add_middleware(
@@ -99,6 +148,18 @@ app.include_router(scheduler.router, prefix="/api", tags=["Scheduler"])
 
 # 상권분석 라우터
 app.include_router(commercial.router, tags=["Commercial"])
+
+# 참값 분석 라우터
+app.include_router(chamgab.router, tags=["Chamgab"])
+
+# 통합 분석 라우터
+app.include_router(integrated.router, tags=["Integrated"])
+
+# 리포트 생성 라우터
+app.include_router(reports.router, tags=["Reports"])
+
+# 게이미피케이션 라우터 (비활성화 - Supabase 기반 재구현 필요)
+# app.include_router(gamification.router, tags=["Gamification"])
 
 
 @app.get("/")

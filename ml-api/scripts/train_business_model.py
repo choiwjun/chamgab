@@ -6,7 +6,9 @@ XGBoost 창업 성공 예측 모델 학습
     python -m scripts.train_business_model --tune  # 하이퍼파라미터 튜닝
 """
 import argparse
+import json
 import pickle
+import time
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Tuple
@@ -19,8 +21,10 @@ from sklearn.model_selection import (
     train_test_split,
     cross_val_score,
     StratifiedKFold,
+    TimeSeriesSplit,
     GridSearchCV
 )
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import (
     accuracy_score,
     precision_score,
@@ -28,7 +32,9 @@ from sklearn.metrics import (
     f1_score,
     roc_auc_score,
     classification_report,
-    confusion_matrix
+    confusion_matrix,
+    brier_score_loss,
+    log_loss as sklearn_log_loss,
 )
 
 
@@ -51,14 +57,28 @@ class BusinessSuccessTrainer:
         "n_jobs": -1,
     }
 
-    # 피처 컬럼 (success_score 제외 - 데이터 누수 방지)
+    # 피처 컬럼 (v2 - 32개, BusinessFeatureEngineer.FEATURE_COLUMNS와 동기화)
     FEATURE_COLUMNS = [
-        "survival_rate",
-        "monthly_avg_sales",
-        "sales_growth_rate",
-        "store_count",
-        "franchise_ratio",
-        "competition_ratio",
+        # 기존 18개
+        "survival_rate", "survival_rate_normalized",
+        "monthly_avg_sales", "monthly_avg_sales_log",
+        "sales_growth_rate", "sales_per_store", "sales_volatility",
+        "store_count", "store_count_log", "density_level",
+        "franchise_ratio", "competition_ratio", "market_saturation",
+        "viability_index", "growth_potential",
+        "foot_traffic_score", "peak_hour_ratio", "weekend_ratio",
+        # 시간 lag (6개)
+        "sales_lag_1m", "sales_lag_3m",
+        "sales_rolling_6m_mean", "sales_rolling_6m_std",
+        "store_count_lag_1m", "survival_rate_lag_1m",
+        # 계절성 (2개)
+        "month_sin", "month_cos",
+        # 교차 (3개)
+        "region_avg_survival", "industry_avg_survival",
+        "region_industry_density_ratio",
+        # 유동인구 파생 (3개)
+        "foot_traffic_per_store", "evening_morning_ratio",
+        "age_concentration_index",
     ]
 
     def __init__(self):
@@ -67,14 +87,16 @@ class BusinessSuccessTrainer:
         self.feature_names: Optional[list] = None
 
     def prepare_data(
-        self, df: pd.DataFrame, target_col: str = "success"
+        self, df: pd.DataFrame, target_col: str = "success",
+        time_col: str = "base_year_month"
     ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
         """
-        학습 데이터 준비
+        학습 데이터 준비 (v2 - 시간 기반 분할 우선)
 
         Args:
             df: 전체 데이터프레임
             target_col: 타겟 컬럼명 (0: 실패, 1: 성공)
+            time_col: 시간 순서 컬럼명
 
         Returns:
             X_train, X_test, y_train, y_test
@@ -89,10 +111,27 @@ class BusinessSuccessTrainer:
         # 결측치 처리
         X = X.fillna(X.median())
 
-        # Train/Test 분할 (Stratified)
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42, stratify=y
-        )
+        # 시간 기반 분할 (미래 데이터 누수 방지)
+        if time_col in df.columns:
+            unique_months = sorted(df[time_col].unique())
+            split_idx = int(len(unique_months) * 0.8)
+            train_months = set(unique_months[:split_idx])
+            test_months = set(unique_months[split_idx:])
+
+            train_mask = df[time_col].isin(train_months)
+            test_mask = df[time_col].isin(test_months)
+
+            X_train, X_test = X[train_mask], X[test_mask]
+            y_train, y_test = y[train_mask], y[test_mask]
+
+            print(f"\n시간 기반 분할:")
+            print(f"  Train months: {sorted(train_months)[:3]}...{sorted(train_months)[-1:]}")
+            print(f"  Test months: {sorted(test_months)}")
+        else:
+            # Fallback: Stratified random split
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, random_state=42, stratify=y
+            )
 
         print(f"\n{'='*60}")
         print("데이터 준비")
@@ -126,9 +165,16 @@ class BusinessSuccessTrainer:
         if params is None:
             params = self.DEFAULT_PARAMS.copy()
 
+        # 자동 클래스 불균형 대응
+        neg_count = int((y_train == 0).sum())
+        pos_count = int((y_train == 1).sum())
+        if pos_count > 0 and 'scale_pos_weight' not in params:
+            params['scale_pos_weight'] = round(neg_count / pos_count, 2)
+
         print(f"\n{'='*60}")
         print("모델 학습")
         print(f"{'='*60}")
+        print(f"클래스 비율: 0={neg_count}, 1={pos_count} (scale_pos_weight={params.get('scale_pos_weight', 1.0)})")
         print(f"파라미터:")
         for key, value in params.items():
             print(f"  {key}: {value}")
@@ -169,12 +215,18 @@ class BusinessSuccessTrainer:
         f1 = f1_score(y_test, y_pred, zero_division=0)
         auc_roc = roc_auc_score(y_test, y_pred_proba)
 
+        # 캘리브레이션 메트릭
+        brier = brier_score_loss(y_test, y_pred_proba)
+        logloss = sklearn_log_loss(y_test, y_pred_proba)
+
         metrics = {
             "Accuracy": accuracy,
             "Precision": precision,
             "Recall": recall,
             "F1": f1,
             "AUC-ROC": auc_roc,
+            "Brier": brier,
+            "LogLoss": logloss,
         }
 
         print(f"\n{'='*60}")
@@ -185,6 +237,7 @@ class BusinessSuccessTrainer:
 
         # 혼동 행렬
         cm = confusion_matrix(y_test, y_pred)
+        self.last_cm = cm
         print(f"\n혼동 행렬:")
         print(cm)
 
@@ -324,11 +377,11 @@ class BusinessSuccessTrainer:
         print(f"{cv}-Fold 교차 검증")
         print(f"{'='*60}")
 
-        # Stratified K-Fold
-        skf = StratifiedKFold(n_splits=cv, shuffle=True, random_state=42)
+        # TimeSeriesSplit (시간 순서 보존)
+        tscv = TimeSeriesSplit(n_splits=cv)
 
         # Accuracy
-        scores = cross_val_score(self.model, X, y, cv=skf, scoring="accuracy")
+        scores = cross_val_score(self.model, X, y, cv=tscv, scoring="accuracy")
 
         print(f"\nAccuracy: {scores.mean():.4f} (+/- {scores.std() * 2:.4f})")
         print(f"Fold별 점수: {scores}")
@@ -403,17 +456,73 @@ class BusinessSuccessTrainer:
 
         return grid_search.best_params_
 
+    def tune_with_optuna(
+        self,
+        X_train: pd.DataFrame,
+        y_train: pd.Series,
+        n_trials: int = 50
+    ) -> dict:
+        """
+        Optuna 기반 하이퍼파라미터 튜닝
+
+        Args:
+            X_train: 학습 데이터
+            y_train: 학습 타겟
+            n_trials: 탐색 시행 횟수
+
+        Returns:
+            최적 파라미터
+        """
+        import optuna
+        optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+        print(f"\n{'='*60}")
+        print(f"Optuna 하이퍼파라미터 튜닝 ({n_trials} trials)")
+        print(f"{'='*60}")
+
+        def objective(trial):
+            params = {
+                "n_estimators": trial.suggest_int("n_estimators", 100, 500),
+                "max_depth": trial.suggest_int("max_depth", 3, 10),
+                "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
+                "subsample": trial.suggest_float("subsample", 0.6, 1.0),
+                "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
+                "min_child_weight": trial.suggest_int("min_child_weight", 1, 10),
+                "gamma": trial.suggest_float("gamma", 0.0, 1.0),
+                "reg_alpha": trial.suggest_float("reg_alpha", 0.0, 1.0),
+                "reg_lambda": trial.suggest_float("reg_lambda", 0.5, 3.0),
+                "random_state": 42,
+                "n_jobs": -1,
+            }
+
+            model = xgb.XGBClassifier(**params)
+            skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+            scores = cross_val_score(model, X_train, y_train, cv=skf, scoring="accuracy")
+            return scores.mean()
+
+        study = optuna.create_study(direction="maximize")
+        study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
+
+        print(f"\n최적 파라미터:")
+        for key, value in study.best_params.items():
+            print(f"  {key}: {value}")
+        print(f"\n최고 점수: {study.best_value:.4f}")
+
+        return study.best_params
+
 
 def main():
     parser = argparse.ArgumentParser(description="창업 성공 예측 모델 학습")
     parser.add_argument("--data", type=str, help="학습 데이터 경로 (CSV/Parquet)")
     parser.add_argument("--tune", action="store_true", help="하이퍼파라미터 튜닝")
-    parser.add_argument("--output", type=str, default="models/business_model.pkl", help="모델 저장 경로")
+    parser.add_argument("--output", type=str, default="app/models/business_model.pkl", help="모델 저장 경로")
     args = parser.parse_args()
 
     print(f"\n{'='*60}")
     print("창업 성공 예측 모델 학습")
     print(f"{'='*60}\n")
+
+    start_time = time.time()
 
     # 데이터 로드
     if args.data:
@@ -424,52 +533,61 @@ def main():
         else:
             raise ValueError("지원하지 않는 파일 형식입니다")
     else:
-        # 데모용 샘플 데이터 생성
-        print("⚠ 데이터 경로가 지정되지 않아 샘플 데이터를 사용합니다\n")
-        np.random.seed(42)
-        n_samples = 1000
+        print("⚠ 데이터 경로가 지정되지 않았습니다.")
+        print("  python -m scripts.train_business_model --data scripts/business_training_data.csv")
+        sys.exit(1)
 
-        df = pd.DataFrame({
-            "survival_rate": np.random.uniform(50, 90, n_samples),
-            "monthly_avg_sales": np.random.uniform(20000000, 80000000, n_samples),
-            "sales_growth_rate": np.random.uniform(-5, 10, n_samples),
-            "store_count": np.random.randint(50, 200, n_samples),
-            "franchise_ratio": np.random.uniform(0.1, 0.6, n_samples),
-            "competition_ratio": np.random.uniform(0.8, 2.0, n_samples),
-            "success_score": np.random.uniform(40, 90, n_samples),
-        })
+    # BusinessFeatureEngineer로 피처 생성 + 라벨 생성
+    import sys as _sys
+    from pathlib import Path as PathLib
+    _sys.path.insert(0, str(PathLib(__file__).parent.parent))
+    from scripts.feature_engineering import BusinessFeatureEngineer
 
-        # 타겟 생성: success_score 60점 기준
-        df["success"] = (df["success_score"] >= 60).astype(int)
+    bfe = BusinessFeatureEngineer()
+    X_full, y_full, df_featured = bfe.prepare_training_data(df=df)
 
     # 트레이너 초기화
     trainer = BusinessSuccessTrainer()
 
-    # 데이터 준비
-    X_train, X_test, y_train, y_test = trainer.prepare_data(df)
+    # 시간 기반 데이터 분할
+    if 'base_year_month' in df_featured.columns:
+        X_train, X_test, y_train, y_test = trainer.prepare_data(
+            df_featured, target_col='success', time_col='base_year_month')
+    else:
+        X_train, X_test, y_train, y_test = trainer.prepare_data(df_featured)
 
     # 하이퍼파라미터 튜닝 (옵션)
     if args.tune:
-        best_params = trainer.tune_hyperparameters(X_train, y_train)
+        best_params = trainer.tune_with_optuna(X_train, y_train, n_trials=50)
         # 기본 파라미터에 최적 파라미터 병합
         params = {**trainer.DEFAULT_PARAMS, **best_params}
     else:
         params = None
 
-    # 모델 학습
+    # 모델 학습 (전체 train 데이터)
     trainer.train(X_train, y_train, params=params)
 
-    # 모델 평가
+    # SHAP Explainer 생성 (캘리브레이션 전, base XGBoost 모델로)
+    trainer.create_shap_explainer(X_train.sample(min(100, len(X_train)), random_state=42))
+
+    # 피처 중요도 (base 모델에서 추출)
+    importance = trainer.get_feature_importance()
+
+    # Platt scaling 캘리브레이션 (5-fold CV)
+    print(f"\n{'='*60}")
+    print("Platt Scaling 캘리브레이션 (5-fold CV)")
+    print(f"{'='*60}")
+    base_model = trainer.model  # SHAP용 base 모델 보관
+    calibrated = CalibratedClassifierCV(base_model, method="sigmoid", cv=5)
+    calibrated.fit(X_train, y_train)
+    trainer.model = calibrated
+    print("[OK] 캘리브레이션 완료!")
+
+    # 모델 평가 (캘리브레이션된 모델로)
     metrics = trainer.evaluate(X_test, y_test)
 
     # 교차 검증
-    trainer.cross_validate(pd.concat([X_train, X_test]), pd.concat([y_train, y_test]))
-
-    # SHAP Explainer 생성 (학습 데이터 샘플링)
-    trainer.create_shap_explainer(X_train.sample(min(100, len(X_train))))
-
-    # 피처 중요도
-    importance = trainer.get_feature_importance()
+    cv_result = trainer.cross_validate(pd.concat([X_train, X_test]), pd.concat([y_train, y_test]))
     print(f"\n{'='*60}")
     print("피처 중요도")
     print(f"{'='*60}")
@@ -480,6 +598,41 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = Path(__file__).parent.parent / args.output
     trainer.save_model(str(output_path))
+
+    # 메트릭 JSON 영구 저장
+    cm = getattr(trainer, 'last_cm', None)
+    metrics_json = {
+        "model_type": "business_success_classifier",
+        "timestamp": datetime.now().isoformat(),
+        "data_summary": {
+            "train_samples": len(X_train),
+            "test_samples": len(X_test),
+            "features": len(trainer.feature_names or []),
+            "feature_names": trainer.feature_names,
+        },
+        "metrics": {
+            "accuracy": float(metrics.get("Accuracy", 0)),
+            "precision": float(metrics.get("Precision", 0)),
+            "recall": float(metrics.get("Recall", 0)),
+            "f1": float(metrics.get("F1", 0)),
+            "auc_roc": float(metrics.get("AUC-ROC", 0)),
+            "brier_score": float(metrics.get("Brier", 0)),
+            "log_loss": float(metrics.get("LogLoss", 0)),
+        },
+        "confusion_matrix": cm.tolist() if cm is not None else None,
+        "cross_validation": {
+            "mean": float(cv_result["mean"]),
+            "std": float(cv_result["std"]),
+            "scores": [float(s) for s in cv_result["scores"]],
+        },
+        "feature_importance_top20": importance.head(20).to_dict("records"),
+        "hyperparameters": {k: v for k, v in (params or trainer.DEFAULT_PARAMS).items() if not callable(v)},
+        "training_duration_seconds": round(time.time() - start_time, 1),
+    }
+    metrics_path = output_dir / "business_model_metrics.json"
+    with open(metrics_path, "w", encoding="utf-8") as f:
+        json.dump(metrics_json, f, indent=2, ensure_ascii=False)
+    print(f"메트릭 저장: {metrics_path}")
 
     print(f"\n{'='*60}")
     print("학습 완료!")

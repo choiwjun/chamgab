@@ -12,42 +12,6 @@ interface Notification {
   created_at: string
 }
 
-// Mock 데이터
-const MOCK_NOTIFICATIONS: Notification[] = [
-  {
-    id: '1',
-    type: 'chamgab_changed',
-    title: '참값이 변경되었습니다',
-    body: '래미안 레이크팰리스의 참값이 5% 상승했습니다.',
-    is_read: false,
-    created_at: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-  },
-  {
-    id: '2',
-    type: 'transaction_new',
-    title: '새로운 거래가 등록되었습니다',
-    body: '반포자이 아파트 인근에 새로운 실거래가가 등록되었습니다.',
-    is_read: false,
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
-  },
-  {
-    id: '3',
-    type: 'report_ready',
-    title: '리포트가 준비되었습니다',
-    body: '요청하신 PDF 리포트가 다운로드 가능합니다.',
-    is_read: true,
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
-  },
-  {
-    id: '4',
-    type: 'system',
-    title: '서비스 업데이트 안내',
-    body: '새로운 기능이 추가되었습니다. 지금 확인해보세요!',
-    is_read: true,
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3).toISOString(),
-  },
-]
-
 const getIcon = (type: Notification['type']) => {
   switch (type) {
     case 'chamgab_changed':
@@ -82,32 +46,59 @@ export function NotificationList() {
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    // Mock API 호출
     const fetchNotifications = async () => {
       setIsLoading(true)
-      await new Promise(resolve => setTimeout(resolve, 500))
-      setNotifications(MOCK_NOTIFICATIONS)
-      setIsLoading(false)
+      try {
+        const res = await fetch('/api/notifications?limit=50')
+        if (res.ok) {
+          const data = await res.json()
+          setNotifications(data.notifications || [])
+        } else {
+          setNotifications([])
+        }
+      } catch {
+        setNotifications([])
+      } finally {
+        setIsLoading(false)
+      }
     }
     fetchNotifications()
   }, [])
 
-  const markAsRead = (id: string) => {
-    setNotifications(prev =>
-      prev.map(n => (n.id === id ? { ...n, is_read: true } : n))
+  const markAsRead = async (id: string) => {
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, is_read: true } : n))
     )
+    try {
+      await fetch('/api/notifications', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [id] }),
+      })
+    } catch {
+      // 낙관적 UI - 실패해도 UI는 유지
+    }
   }
 
-  const markAllAsRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
+  const markAllAsRead = async () => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })))
+    try {
+      await fetch('/api/notifications', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ all: true }),
+      })
+    } catch {
+      // 낙관적 UI - 실패해도 UI는 유지
+    }
   }
 
-  const unreadCount = notifications.filter(n => !n.is_read).length
+  const unreadCount = notifications.filter((n) => !n.is_read).length
 
   if (isLoading) {
     return (
       <div className="space-y-4">
-        {[1, 2, 3].map(i => (
+        {[1, 2, 3].map((i) => (
           <div key={i} className="animate-pulse rounded-lg bg-white p-4 shadow">
             <div className="flex gap-3">
               <div className="h-10 w-10 rounded-full bg-gray-200" />
@@ -149,7 +140,7 @@ export function NotificationList() {
       )}
 
       <div className="space-y-2">
-        {notifications.map(notification => (
+        {notifications.map((notification) => (
           <div
             key={notification.id}
             onClick={() => markAsRead(notification.id)}
@@ -173,7 +164,9 @@ export function NotificationList() {
                     {formatTime(notification.created_at)}
                   </span>
                 </div>
-                <p className="mt-1 text-sm text-gray-600">{notification.body}</p>
+                <p className="mt-1 text-sm text-gray-600">
+                  {notification.body}
+                </p>
               </div>
             </div>
           </div>

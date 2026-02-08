@@ -21,12 +21,7 @@ const PLANS: Plan[] = [
     price: 0,
     description: '부동산 분석 시작하기',
     icon: <Zap className="h-6 w-6" />,
-    features: [
-      '일일 분석 10회',
-      '가격 요인 5개',
-      '유사 거래 5개',
-      '기본 지원',
-    ],
+    features: ['일일 분석 10회', '가격 요인 5개', '유사 거래 5개', '기본 지원'],
   },
   {
     id: 'premium_monthly',
@@ -61,13 +56,17 @@ const PLANS: Plan[] = [
 ]
 
 export function PlanSelector() {
-  const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'yearly'>('monthly')
-  const [selectedPlan, setSelectedPlan] = useState<string | null>(null)
+  const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'yearly'>(
+    'monthly'
+  )
+  const [, setSelectedPlan] = useState<string | null>(null)
+  const [showComingSoon, setShowComingSoon] = useState(false)
 
   const handleSelectPlan = (planId: string) => {
     setSelectedPlan(planId)
     // TODO: Toss Payments 연동
-    alert(`${planId} 플랜을 선택했습니다. 결제 기능은 준비 중입니다.`)
+    setShowComingSoon(true)
+    setTimeout(() => setShowComingSoon(false), 3000)
   }
 
   const formatPrice = (price: number) => {
@@ -77,6 +76,13 @@ export function PlanSelector() {
 
   return (
     <div>
+      {/* 결제 준비 중 메시지 */}
+      {showComingSoon && (
+        <div className="mb-6 rounded-xl border border-[#8B95A1]/20 bg-[#F2F4F6] px-4 py-3 text-center">
+          <p className="text-sm text-[#8B95A1]">결제 기능은 준비 중입니다</p>
+        </div>
+      )}
+
       {/* 결제 주기 토글 */}
       <div className="mb-8 flex justify-center">
         <div className="inline-flex rounded-lg bg-gray-100 p-1">
@@ -106,7 +112,7 @@ export function PlanSelector() {
 
       {/* 플랜 카드 */}
       <div className="grid gap-6 md:grid-cols-3">
-        {PLANS.map(plan => {
+        {PLANS.map((plan) => {
           const price =
             billingPeriod === 'yearly' && plan.yearlyPrice
               ? Math.floor(plan.yearlyPrice / 12)
@@ -115,8 +121,8 @@ export function PlanSelector() {
           return (
             <div
               key={plan.id}
-              className={`relative overflow-hidden rounded-2xl bg-white p-6 shadow-lg transition hover:shadow-xl ${
-                plan.recommended ? 'ring-2 ring-primary' : ''
+              className={`relative overflow-hidden rounded-xl border border-gray-100 border-gray-200 bg-white p-6 transition hover:border ${
+                plan.recommended ? 'ring-2 ring-blue-500' : ''
               }`}
             >
               {plan.recommended && (
@@ -125,7 +131,7 @@ export function PlanSelector() {
                 </div>
               )}
 
-              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-gray-100 text-primary">
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-gray-100 text-blue-500">
                 {plan.icon}
               </div>
 
@@ -147,7 +153,7 @@ export function PlanSelector() {
               </div>
 
               <ul className="mb-6 space-y-3">
-                {plan.features.map(feature => (
+                {plan.features.map((feature) => (
                   <li key={feature} className="flex items-center gap-2 text-sm">
                     <Check className="h-4 w-4 flex-shrink-0 text-green-500" />
                     <span className="text-gray-600">{feature}</span>
@@ -182,29 +188,43 @@ export function PlanSelector() {
           <table className="w-full">
             <thead>
               <tr className="border-b">
-                <th className="py-4 text-left font-medium text-gray-500">기능</th>
-                <th className="py-4 text-center font-medium text-gray-900">Free</th>
-                <th className="py-4 text-center font-medium text-primary">Premium</th>
-                <th className="py-4 text-center font-medium text-gray-900">Business</th>
+                <th className="py-4 text-left font-medium text-gray-500">
+                  기능
+                </th>
+                <th className="py-4 text-center font-medium text-gray-900">
+                  Free
+                </th>
+                <th className="py-4 text-center font-medium text-blue-500">
+                  Premium
+                </th>
+                <th className="py-4 text-center font-medium text-gray-900">
+                  Business
+                </th>
               </tr>
             </thead>
             <tbody>
               <tr className="border-b">
                 <td className="py-4 text-gray-600">일일 분석</td>
                 <td className="py-4 text-center">10회</td>
-                <td className="py-4 text-center font-medium text-primary">무제한</td>
+                <td className="py-4 text-center font-medium text-blue-500">
+                  무제한
+                </td>
                 <td className="py-4 text-center font-medium">무제한</td>
               </tr>
               <tr className="border-b">
                 <td className="py-4 text-gray-600">가격 요인</td>
                 <td className="py-4 text-center">5개</td>
-                <td className="py-4 text-center font-medium text-primary">10개</td>
+                <td className="py-4 text-center font-medium text-blue-500">
+                  10개
+                </td>
                 <td className="py-4 text-center font-medium">10개</td>
               </tr>
               <tr className="border-b">
                 <td className="py-4 text-gray-600">유사 거래</td>
                 <td className="py-4 text-center">5개</td>
-                <td className="py-4 text-center font-medium text-primary">20개</td>
+                <td className="py-4 text-center font-medium text-blue-500">
+                  20개
+                </td>
                 <td className="py-4 text-center font-medium">20개</td>
               </tr>
               <tr className="border-b">
