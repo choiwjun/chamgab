@@ -17,7 +17,9 @@ XGBoost 가격 예측 모델 학습 (v2 - 고도화)
     python -m scripts.train_model --ensemble      # LightGBM 앙상블
 """
 import argparse
+import json
 import pickle
+import time
 from pathlib import Path
 from datetime import datetime
 
@@ -390,6 +392,8 @@ def main():
     trainer = XGBoostTrainer(fe, csv_path=args.csv)
 
     try:
+        start_time = time.time()
+
         # 1. 데이터 준비 (시간 기반 분할)
         X_train, X_val, X_test, y_train, y_val, y_test = trainer.prepare_data()
 
@@ -420,10 +424,10 @@ def main():
 
         # 6. 교차 검증
         X_full, y_full = fe.prepare_training_data(csv_path=args.csv)
-        trainer.cross_validate(X_full, y_full)
+        cv_result = trainer.cross_validate(X_full, y_full)
 
         # 7. Feature Importance
-        trainer.get_feature_importance()
+        importance_df = trainer.get_feature_importance()
 
         # 8. SHAP Explainer
         trainer.create_shap_explainer(X_test)
@@ -510,6 +514,44 @@ def main():
             with open(lgbm_path, "wb") as f:
                 pickle.dump(lgbm_model, f)
             print(f"LightGBM 모델 저장: {lgbm_path}")
+
+        # 메트릭 JSON 영구 저장
+        metrics_json = {
+            "model_type": "apartment_price_regressor",
+            "timestamp": datetime.now().isoformat(),
+            "data_summary": {
+                "train_samples": len(X_train),
+                "val_samples": len(X_val),
+                "test_samples": len(X_test),
+                "features": len(fe.feature_names),
+                "feature_names": fe.feature_names,
+            },
+            "metrics": {
+                "mae": float(metrics["MAE"]),
+                "rmse": float(metrics["RMSE"]),
+                "r2": float(metrics["R2"]),
+                "mape": float(metrics["MAPE"]),
+            },
+            "residual_info": trainer.residual_info,
+            "cross_validation": {
+                "cv_mape_mean": float(cv_result["cv_mape_mean"]),
+                "cv_mape_std": float(cv_result["cv_mape_std"]),
+                "cv_mape_scores": [float(s) for s in cv_result["cv_mape_scores"]],
+            },
+            "feature_importance_top20": [
+                {"feature": name, "importance": float(imp)}
+                for name, imp in zip(
+                    fe.feature_names,
+                    trainer.model.feature_importances_
+                )
+            ][:20],
+            "hyperparameters": {k: v for k, v in trainer.DEFAULT_PARAMS.items() if not callable(v)},
+            "training_duration_seconds": round(time.time() - start_time, 1),
+        }
+        metrics_path = models_dir / "apartment_model_metrics.json"
+        with open(metrics_path, "w", encoding="utf-8") as f:
+            json.dump(metrics_json, f, indent=2, ensure_ascii=False)
+        print(f"메트릭 저장: {metrics_path}")
 
         print(f"\n=== 학습 완료 (v2) ===")
         print(f"모델: {model_path}")

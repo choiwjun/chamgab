@@ -1422,40 +1422,59 @@ class BusinessFeatureEngineer:
         df = self.create_features(df)
 
         if 'success' not in df.columns:
-            # 복합 시그널 기반 성공 라벨
-            # 1. 생존율 시그널 (40%): 업종 중앙값 초과
+            # 확률적 복합 시그널 기반 성공 라벨 (v3 - sigmoid + luck + Bernoulli)
+
+            # 1. 생존율 시그널 (sigmoid, 0~1 연속값)
             if 'industry_small_code' in df.columns and len(df) > 100:
                 ind_median_surv = df.groupby('industry_small_code')['survival_rate'].transform('median')
-                survival_signal = (df['survival_rate'] > ind_median_surv).astype(float)
+                survival_diff = df['survival_rate'] - ind_median_surv
             else:
-                survival_signal = (df['survival_rate'] > df['survival_rate'].median()).astype(float)
+                survival_diff = df['survival_rate'] - df['survival_rate'].median()
+            survival_signal = 1 / (1 + np.exp(-survival_diff / 8.0))
 
-            # 2. 성장 시그널 (25%): 동일 업종 중앙값 초과
+            # 2. 성장 시그널 (sigmoid)
             if 'industry_small_code' in df.columns and len(df) > 100:
                 ind_median_growth = df.groupby('industry_small_code')['sales_growth_rate'].transform('median')
-                growth_signal = (df['sales_growth_rate'] > ind_median_growth).astype(float)
+                growth_diff = df['sales_growth_rate'] - ind_median_growth
             else:
-                growth_signal = (df['sales_growth_rate'] > 0).astype(float)
+                growth_diff = df['sales_growth_rate']
+            growth_signal = 1 / (1 + np.exp(-growth_diff / 5.0))
 
-            # 3. 시장 포지션 시그널 (20%): viability 40th percentile 초과
-            market_signal = (df['viability_index'] > df['viability_index'].quantile(0.4)).astype(float)
+            # 3. 시장 포지션 시그널 (sigmoid around 40th percentile)
+            viab_p40 = df['viability_index'].quantile(0.4)
+            market_signal = 1 / (1 + np.exp(-(df['viability_index'] - viab_p40) / 8.0))
 
-            # 4. 안정성 시그널 (15%): 낮은 변동성 + 프랜차이즈 > 5%
-            stability_signal = (
-                (df['sales_volatility'] < df['sales_volatility'].quantile(0.7)) &
-                (df['franchise_ratio'] > 0.05)
-            ).astype(float)
+            # 4. 안정성 시그널 (sigmoid - 변동성 낮을수록 높음)
+            vol_p70 = df['sales_volatility'].quantile(0.7)
+            stability_signal = 1 / (1 + np.exp((df['sales_volatility'] - vol_p70) / 3.0))
 
+            # 5. 가중 합산
             composite = (
-                survival_signal * 0.40 +
+                survival_signal * 0.35 +
                 growth_signal * 0.25 +
                 market_signal * 0.20 +
-                stability_signal * 0.15
+                stability_signal * 0.20
             )
-            df['success'] = (composite >= 0.50).astype(int)
+
+            # 6. 운 요소 (15% 랜덤 노이즈)
+            np.random.seed(42)
+            luck = np.random.uniform(-0.15, 0.15, len(df))
+            composite_noisy = np.clip(composite + luck, 0, 1)
+
+            # 7. Bernoulli 샘플링 (확률적 라벨)
+            success_prob = 1 / (1 + np.exp(-(composite_noisy - 0.50) / 0.08))
+            df['success'] = np.random.binomial(1, success_prob)
 
             pos_rate = df['success'].mean()
-            print(f"Success label: {pos_rate:.1%} positive rate (composite signal)")
+            print(f"Success label: {pos_rate:.1%} positive rate (stochastic sigmoid)")
+
+            # 상관관계 검증
+            for feat_name in ['survival_rate', 'sales_growth_rate']:
+                if feat_name in df.columns:
+                    corr = np.corrcoef(df[feat_name].values, df['success'].values)[0, 1]
+                    print(f"  Label correlation with {feat_name}: {corr:.3f}")
+                    if abs(corr) > 0.75:
+                        print(f"  ⚠ WARNING: {feat_name} correlation too high ({corr:.3f})")
 
         available_features = [col for col in self.FEATURE_COLUMNS if col in df.columns]
         self.feature_names = available_features

@@ -53,12 +53,17 @@ export async function GET(request: Request) {
     )
   }
 
-  // state에서 redirect URL 추출
+  // state에서 redirect URL 추출 (Open Redirect 방지)
   let redirect = '/'
   if (state) {
     try {
       const stateData = JSON.parse(Buffer.from(state, 'base64').toString())
-      redirect = stateData.redirect || '/'
+      const raw = stateData.redirect || '/'
+      // 내부 경로만 허용 (프로토콜 상대 URL, 외부 URL 차단)
+      redirect =
+        typeof raw === 'string' && raw.startsWith('/') && !raw.startsWith('//')
+          ? raw
+          : '/'
     } catch {
       // state 파싱 실패 시 기본값 사용
     }

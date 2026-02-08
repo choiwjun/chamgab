@@ -2,10 +2,13 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from typing import Dict, Any, Optional
 from uuid import UUID
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from app.services.model_service import ModelService
 
 router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
 
 
 class PredictRequest(BaseModel):
@@ -22,6 +25,7 @@ class PredictResponse(BaseModel):
 
 
 @router.post("/predict", response_model=PredictResponse)
+@limiter.limit("30/minute")
 async def predict_price(request_body: PredictRequest, request: Request):
     """
     XGBoost 모델을 사용하여 부동산 참값을 예측합니다.

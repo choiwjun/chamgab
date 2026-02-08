@@ -88,6 +88,8 @@ class BusinessModelService:
         weekend_ratio: float = 35.0,
         evening_traffic: float = 0.0,
         morning_traffic: float = 0.0,
+        sigungu_code: Optional[str] = None,
+        industry_code: Optional[str] = None,
     ) -> dict:
         """
         창업 성공 확률 예측
@@ -118,6 +120,8 @@ class BusinessModelService:
             weekend_ratio=weekend_ratio,
             evening_traffic=evening_traffic,
             morning_traffic=morning_traffic,
+            sigungu_code=sigungu_code,
+            industry_code=industry_code,
         )
 
         # 예측
@@ -136,6 +140,37 @@ class BusinessModelService:
             "feature_contributions": feature_contributions,
         }
 
+    def _fetch_lag_data(self, sigungu_code: str, industry_code: str) -> Optional[dict]:
+        """Supabase에서 최근 6개월 매출 이력 조회 → 실제 lag 피처 계산"""
+        try:
+            supabase = get_supabase_client()
+            response = (
+                supabase.table("sales_statistics")
+                .select("monthly_avg_sales, base_year_month")
+                .eq("sigungu_code", sigungu_code)
+                .eq("industry_small_code", industry_code)
+                .order("base_year_month", desc=True)
+                .limit(6)
+                .execute()
+            )
+
+            if not response.data or len(response.data) < 2:
+                return None
+
+            sales_history = [
+                row["monthly_avg_sales"] for row in reversed(response.data)
+            ]
+
+            return {
+                "sales_lag_1m": sales_history[-2] if len(sales_history) >= 2 else sales_history[-1],
+                "sales_lag_3m": sales_history[-4] if len(sales_history) >= 4 else sales_history[0],
+                "sales_rolling_6m_mean": float(np.mean(sales_history)),
+                "sales_rolling_6m_std": float(np.std(sales_history)),
+            }
+        except Exception as e:
+            print(f"[BusinessModelService] lag 조회 실패: {e}")
+            return None
+
     def _prepare_features(self, **kwargs) -> pd.DataFrame:
         """학습 시와 동일한 피처 엔지니어링 (BusinessFeatureEngineer.create_features 일치, v2 - 32개)"""
         survival_rate = kwargs["survival_rate"]
@@ -149,6 +184,8 @@ class BusinessModelService:
         weekend_ratio = kwargs["weekend_ratio"]
         evening_traffic = kwargs.get("evening_traffic", 0.0)
         morning_traffic = kwargs.get("morning_traffic", 0.0)
+        sigungu_code = kwargs.get("sigungu_code")
+        industry_code = kwargs.get("industry_code")
 
         # ── 기존 18개 파생 피처 ──
         survival_rate_normalized = survival_rate / 100.0
@@ -186,11 +223,21 @@ class BusinessModelService:
         )
         growth_potential = max(0, min(growth_potential, 100))
 
-        # ── 시간 lag 피처 (6개) - inference 시 lag 없으므로 현재값 사용 ──
-        sales_lag_1m = monthly_avg_sales
-        sales_lag_3m = monthly_avg_sales
-        sales_rolling_6m_mean = monthly_avg_sales
-        sales_rolling_6m_std = 0.0  # 단일 시점이므로 변동 없음
+        # ── 시간 lag 피처 (6개) - 실제 이력 데이터 우선, fallback으로 현재값 ──
+        lag_data = None
+        if sigungu_code and industry_code:
+            lag_data = self._fetch_lag_data(sigungu_code, industry_code)
+
+        if lag_data:
+            sales_lag_1m = lag_data["sales_lag_1m"]
+            sales_lag_3m = lag_data["sales_lag_3m"]
+            sales_rolling_6m_mean = lag_data["sales_rolling_6m_mean"]
+            sales_rolling_6m_std = lag_data["sales_rolling_6m_std"]
+        else:
+            sales_lag_1m = monthly_avg_sales
+            sales_lag_3m = monthly_avg_sales
+            sales_rolling_6m_mean = monthly_avg_sales
+            sales_rolling_6m_std = 0.0
         store_count_lag_1m = float(store_count)
         survival_rate_lag_1m = survival_rate
 

@@ -26,14 +26,21 @@
 import hashlib
 from typing import Optional, List, Dict
 from datetime import datetime, timedelta
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from app.core.database import get_supabase_client
 from app.services.business_model_service import business_model_service
 
 
 router = APIRouter(prefix="/api/commercial", tags=["commercial"])
+limiter = Limiter(key_func=get_remote_address)
+
+# 데이터 출처 및 면책 문구
+_DATA_SOURCE = "소상공인진흥공단(SBIZ) 실제 점포수 기반 AI 분석"
+_DISCLAIMER = "본 분석은 AI 모델 기반 추정치이며, 실제 결과와 다를 수 있습니다"
 
 
 # ============================================================================
@@ -91,6 +98,8 @@ class DistrictDetail(BaseModel):
     name: str
     description: str
     statistics: DistrictStatistics
+    data_source: str = _DATA_SOURCE
+    disclaimer: str = _DISCLAIMER
 
 
 class Industry(BaseModel):
@@ -111,6 +120,8 @@ class BusinessPredictionResult(BaseModel):
     confidence: float
     factors: List[PredictionFactor]
     recommendation: str
+    data_source: str = _DATA_SOURCE
+    disclaimer: str = _DISCLAIMER
 
 
 class RegionComparison(BaseModel):
@@ -122,6 +133,8 @@ class RegionComparison(BaseModel):
 
 class RegionComparisonResult(BaseModel):
     comparisons: List[RegionComparison]
+    data_source: str = _DATA_SOURCE
+    disclaimer: str = _DISCLAIMER
 
 
 class TopRegion(BaseModel):
@@ -137,6 +150,8 @@ class IndustryStatistics(BaseModel):
     avg_survival_rate: float
     avg_monthly_sales: float
     top_regions: List[TopRegion]
+    data_source: str = _DATA_SOURCE
+    disclaimer: str = _DISCLAIMER
 
 
 class TrendData(BaseModel):
@@ -151,6 +166,8 @@ class BusinessTrends(BaseModel):
     district_code: str
     industry_code: str
     trends: List[TrendData]
+    data_source: str = _DATA_SOURCE
+    disclaimer: str = _DISCLAIMER
 
 
 class TimeSlotTraffic(BaseModel):
@@ -185,6 +202,8 @@ class DistrictCharacteristics(BaseModel):
     weekend_sales_ratio: float
     recommended_business_hours: str
     target_customer_profile: str
+    data_source: str = _DATA_SOURCE
+    disclaimer: str = _DISCLAIMER
 
 
 # ============================================================================
@@ -488,7 +507,9 @@ async def get_district_detail(code: str):
 # ============================================================================
 
 @router.post("/predict", response_model=BusinessPredictionResult)
+@limiter.limit("30/minute")
 async def predict_business_success(
+    request: Request,
     district_code: str,
     industry_code: str,
     survival_rate: Optional[float] = None,
@@ -562,6 +583,8 @@ async def predict_business_success(
         weekend_ratio=weekend_ratio,
         evening_traffic=evening_traffic,
         morning_traffic=morning_traffic,
+        sigungu_code=district_code,
+        industry_code=industry_code,
     )
 
     success_probability = result["success_probability"]
@@ -922,6 +945,8 @@ class PeakHoursResponse(BaseModel):
     peak_hours: Dict[str, TimeSlotScore]
     best_time: str
     recommendation: str
+    data_source: str = _DATA_SOURCE
+    disclaimer: str = _DISCLAIMER
 
 
 @router.get("/districts/{code}/peak-hours", response_model=PeakHoursResponse)
@@ -983,6 +1008,8 @@ class DemographicsResponse(BaseModel):
     primary_target: str
     persona: PersonaInfo
     suggested_industries: List[IndustryMatch]
+    data_source: str = _DATA_SOURCE
+    disclaimer: str = _DISCLAIMER
 
 
 @router.get("/districts/{code}/demographics", response_model=DemographicsResponse)
@@ -1055,6 +1082,8 @@ class WeekendAnalysisResponse(BaseModel):
     advantage: str
     difference_percent: float
     recommendation: str
+    data_source: str = _DATA_SOURCE
+    disclaimer: str = _DISCLAIMER
 
 
 @router.get("/districts/{code}/weekend-analysis", response_model=WeekendAnalysisResponse)
@@ -1094,6 +1123,8 @@ class DistrictProfileResponse(BaseModel):
     lifestyle: str
     success_factors: List[str]
     best_industries: List[str]
+    data_source: str = _DATA_SOURCE
+    disclaimer: str = _DISCLAIMER
 
 
 @router.get("/districts/{code}/profile", response_model=DistrictProfileResponse)
@@ -1203,6 +1234,8 @@ class CompetitionAnalysisResponse(BaseModel):
     density_score: int
     alternatives: List[AlternativeDistrict]
     recommendation: str
+    data_source: str = _DATA_SOURCE
+    disclaimer: str = _DISCLAIMER
 
 
 @router.get("/districts/{code}/competition", response_model=CompetitionAnalysisResponse)
@@ -1294,6 +1327,8 @@ class GrowthPotentialResponse(BaseModel):
     prediction_3months: GrowthPrediction
     signals: List[GrowthSignal]
     recommendation: str
+    data_source: str = _DATA_SOURCE
+    disclaimer: str = _DISCLAIMER
 
 
 @router.get("/districts/{code}/growth-potential", response_model=GrowthPotentialResponse)
@@ -1382,6 +1417,8 @@ class IndustryRecommendationResponse(BaseModel):
     recommendations: List[IndustryRecommendation]
     analysis_summary: AnalysisSummary
     analyzed_at: str
+    data_source: str = _DATA_SOURCE
+    disclaimer: str = _DISCLAIMER
 
 
 @router.get("/districts/{code}/recommend-industry", response_model=IndustryRecommendationResponse)

@@ -96,8 +96,8 @@ class ModelService:
         # 4. 잔차 기반 신뢰 구간
         min_price, max_price = self._calculate_confidence_interval(prediction)
 
-        # 5. 신뢰도 계산
-        confidence = self._calculate_confidence(property_data)
+        # 5. 신뢰도 계산 (모델 불확실성 기반)
+        confidence = self._calculate_confidence(property_data, prediction, min_price, max_price)
         confidence_level = self._get_confidence_level(confidence)
 
         return {
@@ -538,20 +538,55 @@ class ModelService:
 
         return min_price, max_price
 
-    def _calculate_confidence(self, property_data: dict) -> float:
-        """신뢰도 계산 (0.0 ~ 1.0)"""
-        score = 0.5
+    def _calculate_confidence(
+        self,
+        property_data: dict,
+        prediction: int = 0,
+        min_price: int = 0,
+        max_price: int = 0,
+    ) -> float:
+        """
+        모델 불확실성 기반 신뢰도 계산 (0.0 ~ 1.0)
 
+        3가지 요소를 가중 합산:
+        1. 모델 정확도 (MAPE 기반) - 60%
+        2. 예측 정밀도 (신뢰구간 폭 / 예측값) - 30%
+        3. 데이터 완전성 보너스 - 10%
+        """
+        # 1. 모델 정확도 신뢰도 (MAPE 기반)
+        # MAPE 10% → 0.90, 20% → 0.80, 30% → 0.70
+        mape = self.residual_info.get("mape", 30.0)
+        model_confidence = max(0.3, min(0.95, 1.0 - mape / 100.0))
+
+        # 2. 예측 정밀도 (신뢰구간 폭이 좁을수록 높은 신뢰)
+        if prediction > 0 and max_price > min_price:
+            interval_ratio = (max_price - min_price) / prediction
+            # ratio 0.2 → 0.90, 0.4 → 0.80, 0.6 → 0.70
+            interval_confidence = max(0.3, min(0.95, 1.0 - interval_ratio / 2.0))
+        else:
+            interval_confidence = 0.5
+
+        # 3. 데이터 완전성 보너스 (최대 0.05)
+        data_bonus = 0.0
         if property_data.get("complex_name"):
-            score += 0.2
+            data_bonus += 0.01
         if property_data.get("complex_brand"):
-            score += 0.1
+            data_bonus += 0.01
         if property_data.get("area_exclusive"):
-            score += 0.1
+            data_bonus += 0.01
         if property_data.get("complex_built_year") or property_data.get("prop_built_year"):
-            score += 0.1
+            data_bonus += 0.01
+        if property_data.get("complex_total_units"):
+            data_bonus += 0.01
 
-        return min(1.0, score)
+        # 가중 합산: 모델 60% + 구간 30% + 데이터 10%
+        confidence = (
+            model_confidence * 0.6
+            + interval_confidence * 0.3
+            + data_bonus * 2.0  # 0.05 * 2.0 = 0.10 max
+        )
+
+        return round(min(0.95, max(0.30, confidence)), 2)
 
     def _get_confidence_level(self, confidence: float) -> str:
         """신뢰도 레벨 반환"""

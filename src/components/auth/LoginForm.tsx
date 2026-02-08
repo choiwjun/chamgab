@@ -8,7 +8,6 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { useAuthStore } from '@/stores/authStore'
 
 // 로그인 스키마
 const loginSchema = z.object({
@@ -24,7 +23,6 @@ interface LoginFormProps {
 
 export function LoginForm({ redirectUrl = '/' }: LoginFormProps) {
   const router = useRouter()
-  const { setUser } = useAuthStore()
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -61,7 +59,7 @@ export function LoginForm({ redirectUrl = '/' }: LoginFormProps) {
       }
 
       if (authData.user) {
-        setUser(authData.user)
+        // AuthProvider의 onAuthStateChange가 자동으로 상태 업데이트
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         router.push(redirectUrl as any)
         router.refresh()

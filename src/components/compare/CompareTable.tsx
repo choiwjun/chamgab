@@ -133,8 +133,7 @@ export function CompareTable() {
   }
 
   const handleAddProperty = () => {
-    // TODO: 검색 모달 열기 (Phase 5)
-    console.log('검색 모달 구현 예정 (Phase 5)')
+    // Phase 5에서 검색 모달 구현 예정
   }
 
   if (isLoading) {

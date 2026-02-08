@@ -123,8 +123,7 @@ export default function ReportGenerator({
   }
 
   const handleKakaoShare = () => {
-    // 실제 카카오톡 공유 구현은 Kakao SDK 필요
-    console.log('카카오톡 공유 기능은 향후 구현 예정입니다.')
+    // Kakao SDK 연동 후 구현 예정
   }
 
   return (

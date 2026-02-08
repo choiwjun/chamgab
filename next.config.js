@@ -5,7 +5,7 @@ const nextConfig = {
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: '*.supabase.co',
+        hostname: 'csnmpkixzzszuxcsdwou.supabase.co',
       },
       {
         protocol: 'https',
@@ -22,6 +22,13 @@ const nextConfig = {
 
   // SWC minify (기본값이지만 명시적으로)
   swcMinify: true,
+
+  // 프로덕션 빌드에서 console.log 자동 제거 (console.error는 유지)
+  compiler: {
+    removeConsole: process.env.NODE_ENV === 'production'
+      ? { exclude: ['error', 'warn'] }
+      : false,
+  },
 
   // Experimental features
   experimental: {

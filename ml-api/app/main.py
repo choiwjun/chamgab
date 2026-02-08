@@ -15,9 +15,13 @@ env_path = Path(__file__).parent.parent / ".env"
 if env_path.exists():
     load_dotenv(env_path)
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from app.api import predict, factors, similar, health, commercial, chamgab, integrated, reports
 from app.api import collect, analyze, scheduler
@@ -103,12 +107,24 @@ async def lifespan(app: FastAPI):
         data_scheduler.stop()
 
 
+limiter = Limiter(key_func=get_remote_address)
+
 app = FastAPI(
     title="참값 ML API",
     description="AI 부동산 가격 분석 서비스",
     version="0.1.0",
     lifespan=lifespan,
 )
+
+# Rate Limiting
+app.state.limiter = limiter
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={"error": "요청이 너무 많습니다. 잠시 후 다시 시도해주세요."},
+    )
 
 # CORS
 app.add_middleware(

@@ -78,9 +78,12 @@ export async function POST(request: NextRequest) {
     if (direction) features.direction = direction
     if (complex_id) features.complex_id = complex_id
 
-    // ML API 호출
+    // ML API 호출 (10초 타임아웃)
     let prediction
     try {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 10000)
+
       const mlResponse = await fetch(`${ML_API_URL}/api/predict`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -88,7 +91,9 @@ export async function POST(request: NextRequest) {
           property_id: resolvedPropertyId || complex_id,
           features,
         }),
+        signal: controller.signal,
       })
+      clearTimeout(timeout)
 
       if (!mlResponse.ok) {
         throw new Error('ML API response not ok')
@@ -97,7 +102,16 @@ export async function POST(request: NextRequest) {
       prediction = await mlResponse.json()
     } catch (mlError) {
       console.error('[Chamgab API] ML API error:', mlError)
-      return NextResponse.json({ error: 'ML API unavailable' }, { status: 503 })
+      const isTimeout =
+        mlError instanceof DOMException && mlError.name === 'AbortError'
+      return NextResponse.json(
+        {
+          error: isTimeout
+            ? '분석 요청 시간이 초과되었습니다.'
+            : 'ML API unavailable',
+        },
+        { status: isTimeout ? 504 : 503 }
+      )
     }
 
     // 분석 결과 저장 (resolvedPropertyId가 있을 때만)

@@ -17,7 +17,7 @@ from app.core.scheduler import data_scheduler
 
 router = APIRouter(prefix="/scheduler", tags=["Scheduler"])
 
-VALID_JOB_TYPES = ["daily", "weekly", "monthly", "train_business", "train_all"]
+VALID_JOB_TYPES = ["daily", "weekly", "monthly", "collect_commercial", "train_business", "train_all"]
 
 
 class SchedulerStatusResponse(BaseModel):

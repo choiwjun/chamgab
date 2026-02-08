@@ -186,6 +186,41 @@ class DataScheduler:
             print(f"[스케줄러] 월간 수집 실패: {e}")
 
     # ─────────────────────────────────────────────
+    # 상권 데이터 수집 (SBIZ API)
+    # ─────────────────────────────────────────────
+
+    async def weekly_commercial_collection(self):
+        """
+        주간 상권 데이터 수집
+        - SBIZ API에서 실제 점포 수 수집 → 캘리브레이션된 통계 생성
+        - 매주 금요일 오전 2시 실행 (화요일 학습 전 데이터 준비)
+        - 5개 테이블 업데이트: business/sales/store_statistics, foot_traffic/district_characteristics
+        """
+        job_id = f"commercial_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        print(f"[스케줄러] 주간 상권 데이터 수집 시작: {job_id}")
+
+        # Step 1: API 수집 + 데이터 생성 + Supabase 저장 (한 번에)
+        ok = self._run_script(
+            "scripts.collect_business_statistics",
+            args=["--months", "24"],
+            timeout=3600  # 1시간 (API 호출 130개 지역 × 7개 업종)
+        )
+
+        if ok:
+            print(f"[스케줄러] 상권 데이터 수집 완료: {job_id}")
+        else:
+            print(f"[스케줄러] 상권 데이터 수집 실패: {job_id}")
+            # 캐시가 있으면 fallback으로 재시도
+            print("[스케줄러] 캐시 데이터로 재시도...")
+            ok = self._run_script(
+                "scripts.collect_business_statistics",
+                args=["--skip-api", "--months", "24"],
+                timeout=300
+            )
+            if ok:
+                print(f"[스케줄러] 캐시 기반 상권 데이터 생성 완료")
+
+    # ─────────────────────────────────────────────
     # 학습 작업 (신규)
     # ─────────────────────────────────────────────
 
@@ -499,6 +534,15 @@ class DataScheduler:
             replace_existing=True,
         )
 
+        # 주간 상권 데이터 수집: 매주 금요일 오전 2시
+        self.scheduler.add_job(
+            self.weekly_commercial_collection,
+            CronTrigger(day_of_week="fri", hour=2, minute=0),
+            id="weekly_commercial_collection",
+            name="주간 상권 데이터 수집 (SBIZ API)",
+            replace_existing=True,
+        )
+
         # 주간 상권 학습: 매주 화요일 오전 3시
         self.scheduler.add_job(
             self.weekly_business_training,
@@ -575,6 +619,8 @@ class DataScheduler:
             await self.weekly_business_training()
         elif job_type == "train_all":
             await self.monthly_full_training()
+        elif job_type == "collect_commercial":
+            await self.weekly_commercial_collection()
         elif job_type == "catchup":
             await self.startup_catchup()
         else:

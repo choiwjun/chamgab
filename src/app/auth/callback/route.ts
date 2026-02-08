@@ -17,8 +17,12 @@ export async function GET(request: Request) {
   // OAuth 인증 코드
   const code = searchParams.get('code')
 
-  // 원래 리다이렉트 경로 (next 또는 redirect 파라미터)
-  const next = searchParams.get('next') ?? searchParams.get('redirect') ?? '/'
+  // 원래 리다이렉트 경로 (Open Redirect 방지: 내부 경로만 허용)
+  const raw = searchParams.get('next') ?? searchParams.get('redirect') ?? '/'
+  const next =
+    typeof raw === 'string' && raw.startsWith('/') && !raw.startsWith('//')
+      ? raw
+      : '/'
 
   // OAuth 에러 처리
   const error = searchParams.get('error')
@@ -36,7 +40,8 @@ export async function GET(request: Request) {
       const supabase = await createClient()
 
       // 코드로 세션 교환
-      const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
+      const { error: exchangeError } =
+        await supabase.auth.exchangeCodeForSession(code)
 
       if (!exchangeError) {
         // 인증 성공 - 원래 경로로 리다이렉트

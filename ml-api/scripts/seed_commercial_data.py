@@ -209,7 +209,7 @@ REGIONAL_TRENDS: Dict[str, float] = {
 }
 
 
-def stochastic_variation(seed_str: str, base_val: float, pct_range: float = 0.15, noise_std: float = 0.05) -> float:
+def stochastic_variation(seed_str: str, base_val: float, pct_range: float = 0.25, noise_std: float = 0.15) -> float:
     """Hash-based variation + Gaussian noise for realistic distribution"""
     h = int(hashlib.md5(seed_str.encode()).hexdigest()[:8], 16)
     rng = np.random.RandomState(h % (2**31))
@@ -262,6 +262,13 @@ def generate_data(base_year_month: str, month_index: int = 0) -> Tuple[List[Dict
                 seed + '_surv', survival_base, 0.08, 0.02
             ))), 2)
 
+            # 교란 요인: 10% 외부 충격 (임대료 폭등, 재개발 등), 5% 보너스 (젠트리피케이션)
+            confound_h = int(hashlib.md5(f"{seed}_confound".encode()).hexdigest()[:8], 16)
+            if confound_h % 100 < 10:
+                survival_rate = round(max(20, survival_rate - 15 * (confound_h % 10) / 10), 2)
+            elif confound_h % 100 < 15:
+                survival_rate = round(min(95, survival_rate + 10 * (confound_h % 10) / 10), 2)
+
             # 개업/폐업 건수 (생존율에서 역산)
             monthly_churn = max(1, int(store_count * 0.02))  # 월 2% 변동
             open_count = max(0, int(stochastic_variation(
@@ -284,6 +291,14 @@ def generate_data(base_year_month: str, month_index: int = 0) -> Tuple[List[Dict
             growth_rate = round(stochastic_variation(
                 seed + '_growth', growth_base, 0.30, 0.05
             ), 2)
+
+            # 반직관적 이상치 (7%): 높은 생존율+마이너스 성장, 낮은 생존율+높은 성장
+            anomaly_h = int(hashlib.md5(f"{seed}_anomaly".encode()).hexdigest()[:8], 16)
+            if anomaly_h % 100 < 7:
+                if anomaly_h % 2 == 0 and survival_rate > 70:
+                    growth_rate = round(-(5.0 + anomaly_h % 10), 2)
+                elif survival_rate < 50:
+                    growth_rate = round(8.0 + anomaly_h % 10, 2)
 
             # 주말/주중 매출비율 (업종별 다름)
             weekend_base = 35  # 기본 35%

@@ -6,7 +6,9 @@ XGBoost 창업 성공 예측 모델 학습
     python -m scripts.train_business_model --tune  # 하이퍼파라미터 튜닝
 """
 import argparse
+import json
 import pickle
+import time
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Tuple
@@ -22,6 +24,7 @@ from sklearn.model_selection import (
     TimeSeriesSplit,
     GridSearchCV
 )
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import (
     accuracy_score,
     precision_score,
@@ -29,7 +32,9 @@ from sklearn.metrics import (
     f1_score,
     roc_auc_score,
     classification_report,
-    confusion_matrix
+    confusion_matrix,
+    brier_score_loss,
+    log_loss as sklearn_log_loss,
 )
 
 
@@ -210,12 +215,18 @@ class BusinessSuccessTrainer:
         f1 = f1_score(y_test, y_pred, zero_division=0)
         auc_roc = roc_auc_score(y_test, y_pred_proba)
 
+        # 캘리브레이션 메트릭
+        brier = brier_score_loss(y_test, y_pred_proba)
+        logloss = sklearn_log_loss(y_test, y_pred_proba)
+
         metrics = {
             "Accuracy": accuracy,
             "Precision": precision,
             "Recall": recall,
             "F1": f1,
             "AUC-ROC": auc_roc,
+            "Brier": brier,
+            "LogLoss": logloss,
         }
 
         print(f"\n{'='*60}")
@@ -226,6 +237,7 @@ class BusinessSuccessTrainer:
 
         # 혼동 행렬
         cm = confusion_matrix(y_test, y_pred)
+        self.last_cm = cm
         print(f"\n혼동 행렬:")
         print(cm)
 
@@ -510,6 +522,8 @@ def main():
     print("창업 성공 예측 모델 학습")
     print(f"{'='*60}\n")
 
+    start_time = time.time()
+
     # 데이터 로드
     if args.data:
         if args.data.endswith(".csv"):
@@ -550,20 +564,30 @@ def main():
     else:
         params = None
 
-    # 모델 학습
+    # 모델 학습 (전체 train 데이터)
     trainer.train(X_train, y_train, params=params)
 
-    # 모델 평가
+    # SHAP Explainer 생성 (캘리브레이션 전, base XGBoost 모델로)
+    trainer.create_shap_explainer(X_train.sample(min(100, len(X_train)), random_state=42))
+
+    # 피처 중요도 (base 모델에서 추출)
+    importance = trainer.get_feature_importance()
+
+    # Platt scaling 캘리브레이션 (5-fold CV)
+    print(f"\n{'='*60}")
+    print("Platt Scaling 캘리브레이션 (5-fold CV)")
+    print(f"{'='*60}")
+    base_model = trainer.model  # SHAP용 base 모델 보관
+    calibrated = CalibratedClassifierCV(base_model, method="sigmoid", cv=5)
+    calibrated.fit(X_train, y_train)
+    trainer.model = calibrated
+    print("[OK] 캘리브레이션 완료!")
+
+    # 모델 평가 (캘리브레이션된 모델로)
     metrics = trainer.evaluate(X_test, y_test)
 
     # 교차 검증
-    trainer.cross_validate(pd.concat([X_train, X_test]), pd.concat([y_train, y_test]))
-
-    # SHAP Explainer 생성 (학습 데이터 샘플링)
-    trainer.create_shap_explainer(X_train.sample(min(100, len(X_train))))
-
-    # 피처 중요도
-    importance = trainer.get_feature_importance()
+    cv_result = trainer.cross_validate(pd.concat([X_train, X_test]), pd.concat([y_train, y_test]))
     print(f"\n{'='*60}")
     print("피처 중요도")
     print(f"{'='*60}")
@@ -574,6 +598,41 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = Path(__file__).parent.parent / args.output
     trainer.save_model(str(output_path))
+
+    # 메트릭 JSON 영구 저장
+    cm = getattr(trainer, 'last_cm', None)
+    metrics_json = {
+        "model_type": "business_success_classifier",
+        "timestamp": datetime.now().isoformat(),
+        "data_summary": {
+            "train_samples": len(X_train),
+            "test_samples": len(X_test),
+            "features": len(trainer.feature_names or []),
+            "feature_names": trainer.feature_names,
+        },
+        "metrics": {
+            "accuracy": float(metrics.get("Accuracy", 0)),
+            "precision": float(metrics.get("Precision", 0)),
+            "recall": float(metrics.get("Recall", 0)),
+            "f1": float(metrics.get("F1", 0)),
+            "auc_roc": float(metrics.get("AUC-ROC", 0)),
+            "brier_score": float(metrics.get("Brier", 0)),
+            "log_loss": float(metrics.get("LogLoss", 0)),
+        },
+        "confusion_matrix": cm.tolist() if cm is not None else None,
+        "cross_validation": {
+            "mean": float(cv_result["mean"]),
+            "std": float(cv_result["std"]),
+            "scores": [float(s) for s in cv_result["scores"]],
+        },
+        "feature_importance_top20": importance.head(20).to_dict("records"),
+        "hyperparameters": {k: v for k, v in (params or trainer.DEFAULT_PARAMS).items() if not callable(v)},
+        "training_duration_seconds": round(time.time() - start_time, 1),
+    }
+    metrics_path = output_dir / "business_model_metrics.json"
+    with open(metrics_path, "w", encoding="utf-8") as f:
+        json.dump(metrics_json, f, indent=2, ensure_ascii=False)
+    print(f"메트릭 저장: {metrics_path}")
 
     print(f"\n{'='*60}")
     print("학습 완료!")
