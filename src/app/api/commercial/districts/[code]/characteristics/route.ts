@@ -42,8 +42,9 @@ export async function GET(
       '17-21': num(footData.time_17_21),
       '21-24': num(footData.time_21_24),
     }
-    const totalTraffic =
-      Object.values(timeSlots).reduce((a, b) => a + b, 0) || 1
+    const rawTraffic = Object.values(timeSlots).reduce((a, b) => a + b, 0)
+    const hasFootTraffic = rawTraffic > 0
+    const totalTraffic = rawTraffic || 1
     const timeDistribution = Object.entries(timeSlots).map(([slot, count]) => ({
       time_slot: slot,
       traffic_count: count,
@@ -80,9 +81,13 @@ export async function GET(
       else districtType = '복합상권'
     }
     if (!primaryAgeGroup) {
-      primaryAgeGroup = Object.entries(ageGroups).sort(
-        (a, b) => b[1] - a[1]
-      )[0][0]
+      if (hasFootTraffic) {
+        primaryAgeGroup = Object.entries(ageGroups).sort(
+          (a, b) => b[1] - a[1]
+        )[0][0]
+      } else {
+        primaryAgeGroup = '30대'
+      }
     }
 
     // 인구 비율
@@ -107,18 +112,23 @@ export async function GET(
     let peakTimeStart = (charData.peak_time_start as string) || ''
     let peakTimeEnd = (charData.peak_time_end as string) || ''
     if (!peakTimeStart) {
-      const peakSlot = Object.entries(timeSlots).sort(
-        (a, b) => b[1] - a[1]
-      )[0][0]
-      const slotMap: Record<string, [string, string]> = {
-        '06-11': ['06:00', '11:00'],
-        '11-14': ['11:00', '14:00'],
-        '14-17': ['14:00', '17:00'],
-        '17-21': ['17:00', '21:00'],
-        '21-24': ['21:00', '24:00'],
-        '00-06': ['00:00', '06:00'],
+      if (hasFootTraffic) {
+        const peakSlot = Object.entries(timeSlots).sort(
+          (a, b) => b[1] - a[1]
+        )[0][0]
+        const slotMap: Record<string, [string, string]> = {
+          '06-11': ['06:00', '11:00'],
+          '11-14': ['11:00', '14:00'],
+          '14-17': ['14:00', '17:00'],
+          '17-21': ['17:00', '21:00'],
+          '21-24': ['21:00', '24:00'],
+          '00-06': ['00:00', '06:00'],
+        }
+        ;[peakTimeStart, peakTimeEnd] = slotMap[peakSlot] || ['11:00', '21:00']
+      } else {
+        peakTimeStart = '11:00'
+        peakTimeEnd = '14:00'
       }
-      ;[peakTimeStart, peakTimeEnd] = slotMap[peakSlot] || ['11:00', '21:00']
     }
     const peakTraffic =
       num(charData.peak_time_traffic) || Math.max(...Object.values(timeSlots))

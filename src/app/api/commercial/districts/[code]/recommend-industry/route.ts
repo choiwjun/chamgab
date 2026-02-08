@@ -15,6 +15,7 @@ import {
   fetchBusinessStats,
   fetchSalesStats,
   latestByIndustry,
+  EXCLUDED_INDUSTRY_CODES,
   num,
 } from '../../../_helpers'
 
@@ -85,11 +86,15 @@ export async function GET(
       '20s': ['Q12', 'Q13', 'Q06', 'R01', 'R03', 'I02', 'Q11', 'S02'],
       '30s': ['Q01', 'Q12', 'Q04', 'S02', 'I01', 'S01', 'Q13'],
       '40s': ['Q01', 'Q04', 'D01', 'S01', 'N01', 'S04', 'I01'],
-      '50s': ['Q01', 'D01', 'N01', 'N03', 'L01', 'D03'],
-      '60s': ['Q01', 'D01', 'N01', 'N03', 'L01', 'L03'],
+      '50s': ['Q01', 'D01', 'N01', 'N03', 'D03', 'D05'],
+      '60s': ['Q01', 'D01', 'N01', 'N03', 'D05', 'D04'],
     }
 
     const recommendations = bizLatest
+      .filter(
+        (b) =>
+          !EXCLUDED_INDUSTRY_CODES.includes(String(b.industry_small_code || ''))
+      )
       .map((b) => {
         const ic = b.industry_small_code as string
         const iname = b.industry_name as string

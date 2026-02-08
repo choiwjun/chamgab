@@ -341,6 +341,18 @@ export function fallbackPredict(features: {
   }
 }
 
+/** 창업 추천에서 제외할 업종 (비상업/시설 업종) */
+export const EXCLUDED_INDUSTRY_CODES = [
+  'L05', // 장례식장
+  'L06', // 주유소
+  'L01', // 병원/의원
+  'L02', // 치과
+  'L03', // 한의원
+  'L04', // 어린이집/유치원
+  'I05', // 인테리어/건축
+  'I06', // 부동산중개
+]
+
 /** 피처 이름 → 한글 매핑 */
 export const FACTOR_NAME_MAP: Record<string, string> = {
   survival_rate: '생존율',

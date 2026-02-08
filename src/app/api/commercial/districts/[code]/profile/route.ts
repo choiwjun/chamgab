@@ -13,6 +13,7 @@ import {
   fetchFootTraffic,
   fetchBusinessStats,
   latestByIndustry,
+  EXCLUDED_INDUSTRY_CODES,
   num,
 } from '../../../_helpers'
 
@@ -107,12 +108,18 @@ export async function GET(
       ],
     }
 
-    // 실데이터 기반 추천 업종 (업종별 최신 월만, 중복 제거)
+    // 실데이터 기반 추천 업종 (업종별 최신 월만, 중복 제거, 비상업 업종 제외)
     const bizAll = latestByIndustry(await fetchBusinessStats(supabase, code))
     let bestIndustries = Array.from(
       new Set(
         bizAll
-          .filter((b) => b.industry_name)
+          .filter(
+            (b) =>
+              b.industry_name &&
+              !EXCLUDED_INDUSTRY_CODES.includes(
+                String(b.industry_small_code || '')
+              )
+          )
           .sort((a, b) => num(b.survival_rate) - num(a.survival_rate))
           .slice(0, 4)
           .map((b) => b.industry_name as string)

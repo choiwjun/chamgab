@@ -12,6 +12,7 @@ import {
   fetchFootTraffic,
   fetchBusinessStats,
   latestByIndustry,
+  EXCLUDED_INDUSTRY_CODES,
   num,
 } from '../../../_helpers'
 
@@ -47,9 +48,12 @@ export async function GET(
       }
     }
 
-    const primaryTarget = Object.entries(demographics).sort(
-      (a, b) => b[1].percentage - a[1].percentage
-    )[0][0]
+    const hasAgeData = Object.values(ages).some((v) => v > 0)
+    const primaryTarget = hasAgeData
+      ? Object.entries(demographics).sort(
+          (a, b) => b[1].percentage - a[1].percentage
+        )[0][0]
+      : '30s'
 
     const personaMap: Record<
       string,
@@ -77,14 +81,19 @@ export async function GET(
       '20s': ['Q12', 'Q13', 'Q06', 'R01', 'R03', 'I02'],
       '30s': ['Q01', 'Q12', 'Q04', 'S02', 'I01'],
       '40s': ['Q01', 'Q04', 'D01', 'N01', 'S01'],
-      '50s': ['Q01', 'D01', 'N01', 'N03', 'L01'],
-      '60s': ['Q01', 'D01', 'N01', 'N03', 'L03'],
+      '50s': ['Q01', 'D01', 'N01', 'N03', 'D03'],
+      '60s': ['Q01', 'D01', 'N01', 'N03', 'D04'],
     }
     const matchedCodes = ageIndustryMatch[primaryTarget] || []
 
     const bizAll = await fetchBusinessStats(supabase, code)
     let suggested = latestByIndustry(bizAll)
-      .filter((b) => b.industry_small_code && b.industry_name)
+      .filter(
+        (b) =>
+          b.industry_small_code &&
+          b.industry_name &&
+          !EXCLUDED_INDUSTRY_CODES.includes(String(b.industry_small_code))
+      )
       .map((b) => {
         const ic = b.industry_small_code as string
         const survival = num(b.survival_rate)
