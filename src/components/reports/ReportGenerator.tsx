@@ -55,6 +55,7 @@ export default function ReportGenerator({
 
   const [generatedReport, setGeneratedReport] =
     useState<ReportGenerationResponse | null>(null)
+  const [copied, setCopied] = useState(false)
 
   const generateMutation = useMutation({
     mutationFn: async (request: ReportGenerationRequest) => {
@@ -113,7 +114,8 @@ export default function ReportGenerator({
     if (generatedReport) {
       try {
         await navigator.clipboard.writeText(generatedReport.share_url)
-        alert('공유 링크가 클립보드에 복사되었습니다!')
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
       } catch (err) {
         console.error('Failed to copy:', err)
       }
@@ -121,10 +123,8 @@ export default function ReportGenerator({
   }
 
   const handleKakaoShare = () => {
-    if (generatedReport) {
-      // 실제 카카오톡 공유 구현은 Kakao SDK 필요
-      alert('카카오톡 공유 기능은 향후 구현 예정입니다.')
-    }
+    // 실제 카카오톡 공유 구현은 Kakao SDK 필요
+    console.log('카카오톡 공유 기능은 향후 구현 예정입니다.')
   }
 
   return (
@@ -165,17 +165,23 @@ export default function ReportGenerator({
                 </button>
                 <button
                   onClick={handleShare}
-                  className="flex items-center gap-2 rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                  className={`flex items-center gap-2 rounded px-4 py-2 text-sm font-medium transition-colors ${
+                    copied
+                      ? 'bg-[#00C471] text-white'
+                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                  }`}
                 >
                   <Share2 className="h-4 w-4" />
-                  링크 복사
+                  {copied ? '복사됨!' : '링크 복사'}
                 </button>
                 <button
                   onClick={handleKakaoShare}
-                  className="flex items-center gap-2 rounded bg-yellow-400 px-4 py-2 text-sm font-medium text-gray-900 hover:bg-yellow-500"
+                  disabled
+                  className="flex cursor-not-allowed items-center gap-2 rounded bg-[#8B95A1] px-4 py-2 text-sm font-medium text-white"
+                  title="카카오톡 공유 기능은 향후 구현 예정입니다."
                 >
                   <Share2 className="h-4 w-4" />
-                  카카오톡 공유
+                  카카오톡 공유 (준비 중)
                 </button>
               </div>
             </div>

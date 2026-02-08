@@ -1,5 +1,5 @@
 'use client'
-const API_URL = process.env.NEXT_PUBLIC_ML_API_URL || 'http://localhost:8002'
+const API_URL = ''
 
 import { useQuery } from '@tanstack/react-query'
 import { Store, Users, TrendingUp, CheckCircle2 } from 'lucide-react'

@@ -9,6 +9,7 @@ import { ComplexCard } from './ComplexCard'
 import type { Complex } from '@/types/complex'
 
 interface ComplexListProps {
+  sido?: string
   sigungu?: string
   keyword?: string
 }
@@ -21,11 +22,13 @@ interface ComplexListResponse {
 }
 
 async function fetchComplexes(
+  sido?: string,
   sigungu?: string,
   keyword?: string,
   page: number = 1
 ): Promise<ComplexListResponse> {
   const params = new URLSearchParams()
+  if (sido) params.set('sido', sido)
   if (sigungu) params.set('sigungu', sigungu)
   if (keyword) params.set('keyword', keyword)
   params.set('page', String(page))
@@ -37,7 +40,7 @@ async function fetchComplexes(
   return res.json()
 }
 
-export function ComplexList({ sigungu, keyword }: ComplexListProps) {
+export function ComplexList({ sido, sigungu, keyword }: ComplexListProps) {
   const observerTarget = useRef<HTMLDivElement>(null)
 
   const {
@@ -48,8 +51,9 @@ export function ComplexList({ sigungu, keyword }: ComplexListProps) {
     isLoading,
     isError,
   } = useInfiniteQuery({
-    queryKey: ['complexes', sigungu, keyword],
-    queryFn: ({ pageParam = 1 }) => fetchComplexes(sigungu, keyword, pageParam),
+    queryKey: ['complexes', sido, sigungu, keyword],
+    queryFn: ({ pageParam = 1 }) =>
+      fetchComplexes(sido, sigungu, keyword, pageParam),
     getNextPageParam: (lastPage) => {
       const currentPage = lastPage.page
       const totalPages = Math.ceil(lastPage.total / lastPage.limit)

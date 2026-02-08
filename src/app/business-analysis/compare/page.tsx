@@ -20,6 +20,7 @@ function CompareRegionsContent() {
     useState<RegionComparisonResult | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [validationError, setValidationError] = useState<string | null>(null)
 
   // URL 파라미터에서 초기값 설정
   useEffect(() => {
@@ -54,11 +55,13 @@ function CompareRegionsContent() {
   // 지역 추가
   const addDistrict = (code: string) => {
     if (selectedDistricts.length >= 3) {
-      alert('최대 3개 지역까지 비교할 수 있습니다.')
+      setValidationError('최대 3개 지역까지 비교할 수 있습니다.')
+      setTimeout(() => setValidationError(null), 3000)
       return
     }
     if (!selectedDistricts.includes(code)) {
       setSelectedDistricts([...selectedDistricts, code])
+      setValidationError(null)
     }
   }
 
@@ -70,17 +73,18 @@ function CompareRegionsContent() {
   // 비교 실행
   const handleCompare = async () => {
     if (selectedDistricts.length < 2) {
-      alert('최소 2개 지역을 선택해주세요.')
+      setValidationError('최소 2개 지역을 선택해주세요.')
       return
     }
     if (!industryCode) {
-      alert('업종을 선택해주세요.')
+      setValidationError('업종을 선택해주세요.')
       return
     }
 
     try {
       setIsLoading(true)
       setError(null)
+      setValidationError(null)
 
       const result = await compareRegions(selectedDistricts, industryCode)
       setComparisonResult(result)
@@ -144,6 +148,11 @@ function CompareRegionsContent() {
                   onChange={addDistrict}
                   placeholder="지역 추가..."
                 />
+                {validationError && (
+                  <p className="mt-2 text-xs text-[#F04452]">
+                    {validationError}
+                  </p>
+                )}
               </div>
 
               {/* 선택된 지역 목록 */}

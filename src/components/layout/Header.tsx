@@ -5,7 +5,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Search,
@@ -130,8 +130,21 @@ function NavDropdown({
 export function Header() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isSearchExpanded, setIsSearchExpanded] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
   const { isAuthenticated } = useAuth()
   const pathname = usePathname()
+  const router = useRouter()
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault()
+    const q = searchQuery.trim()
+    if (q) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      router.push(`/search?q=${encodeURIComponent(q)}` as any)
+      setIsSearchExpanded(false)
+      setSearchQuery('')
+    }
+  }
 
   const isApartmentActive =
     pathname.startsWith('/search') ||
@@ -252,9 +265,14 @@ export function Header() {
               transition={{ duration: 0.2 }}
               className="overflow-hidden pb-4"
             >
-              <div className="relative mx-auto max-w-xl">
+              <form
+                onSubmit={handleSearch}
+                className="relative mx-auto max-w-xl"
+              >
                 <input
                   type="search"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="아파트명, 지역으로 검색"
                   className="w-full rounded-lg border border-[#E5E8EB] bg-white px-4 py-3 pl-11 text-[#191F28] placeholder-[#8B95A1] transition-colors focus:border-[#3182F6] focus:outline-none focus:ring-1 focus:ring-[#3182F6]"
                   autoFocus
@@ -264,7 +282,7 @@ export function Header() {
                   className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8B95A1]"
                   aria-hidden="true"
                 />
-              </div>
+              </form>
             </motion.div>
           )}
         </AnimatePresence>

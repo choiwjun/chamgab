@@ -10,6 +10,8 @@ on:
     - cron: '0 21 * * 2'
     # 수요일 - 유동인구
     - cron: '0 21 * * 3'
+    # 목요일 - POI 데이터
+    - cron: '0 21 * * 4'
   workflow_dispatch: # 수동 실행 가능
 
 env:
@@ -185,9 +187,40 @@ jobs:
           print('Footfall data collection done')
           "
 
+  collect-poi:
+    name: POI 데이터 수집
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # 목요일에만 실행 (주간) - POI는 자주 변하지 않음
+    if: github.event.schedule == '0 21 * * 4' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: ml-api/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          cd ml-api
+          pip install -r requirements.txt
+
+      - name: Collect POI data
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          KAKAO_REST_API_KEY: ${{ secrets.KAKAO_REST_API_KEY }}
+        run: |
+          cd ml-api
+          python scripts/collect_poi_data.py --all-regions
+
   notify-completion:
     name: 완료 알림
-    needs: [collect-transactions, collect-reb-index, collect-building-info, collect-footfall]
+    needs: [collect-transactions, collect-reb-index, collect-building-info, collect-footfall, collect-poi]
     runs-on: ubuntu-latest
     if: always()
 
@@ -199,3 +232,4 @@ jobs:
           echo "REB index: ${{ needs.collect-reb-index.result }}"
           echo "Building info: ${{ needs.collect-building-info.result }}"
           echo "Footfall: ${{ needs.collect-footfall.result }}"
+          echo "POI: ${{ needs.collect-poi.result }}"

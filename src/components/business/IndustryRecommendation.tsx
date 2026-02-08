@@ -10,7 +10,7 @@ import {
   Award,
 } from 'lucide-react'
 
-const API_URL = process.env.NEXT_PUBLIC_ML_API_URL || 'http://localhost:8002'
+const API_URL = ''
 
 interface IndustryRecommendation {
   industry_code: string
@@ -179,7 +179,7 @@ export function IndustryRecommendation({
         <h4 className="text-sm font-semibold text-gray-700">추천 업종 TOP 5</h4>
         {data.recommendations.map((rec, index) => (
           <div
-            key={rec.industry_code}
+            key={`${rec.industry_code}-${index}`}
             className={`rounded-lg border p-4 ${getMatchScoreColor(rec.match_score)}`}
           >
             <div className="mb-3 flex items-start justify-between">

@@ -52,7 +52,7 @@ export default function BusinessAnalysisPage() {
               <RegionSelect
                 value={districtCode}
                 onChange={setDistrictCode}
-                placeholder="예: 강남역 상권"
+                placeholder="예: 강남구, 분당구, 해운대구"
               />
             </div>
 

@@ -244,7 +244,42 @@ class TrainingDataPreparer:
                 features, business_stats, sales_stats, store_stats
             )
 
+        # POI 피처 추가
+        poi_df = self.fetch_poi_data()
+        if not poi_df.empty and "sigungu" in features.columns:
+            features = self._merge_poi_features(features, poi_df)
+
         return features
+
+    def _merge_poi_features(
+        self,
+        df: pd.DataFrame,
+        poi_df: pd.DataFrame
+    ) -> pd.DataFrame:
+        """POI 데이터를 sigungu 기준으로 머지"""
+        poi_cols = [
+            "region", "subway_count", "bus_count", "mart_count",
+            "park_count", "school_count", "hospital_count",
+            "bank_count", "restaurant_count", "cafe_count",
+            "gym_count", "poi_score",
+        ]
+        available_cols = [c for c in poi_cols if c in poi_df.columns]
+        poi_subset = poi_df[available_cols].copy()
+
+        # sigungu → region key (대부분 동일, 광역시 동일이름 구만 접두어)
+        result = df.merge(
+            poi_subset,
+            left_on="sigungu",
+            right_on="region",
+            how="left",
+            suffixes=("", "_poi"),
+        )
+        result.drop(columns=["region"], errors="ignore", inplace=True)
+
+        matched = result["poi_score"].notna().sum()
+        print(f"  POI 데이터 매칭: {matched}/{len(result)}건")
+
+        return result
 
     def add_business_features(
         self,

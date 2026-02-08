@@ -3,6 +3,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import type { Complex, ComplexSearchParams } from '@/types/complex'
+import { sanitizeFilterInput } from '@/lib/sanitize'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || '',
@@ -33,13 +34,21 @@ export async function getComplexes(
   }
   if (sigungu) {
     // sigungu 정확 매칭 또는 address에 지역명 포함 검색
-    query = query.or(`sigungu.eq.${sigungu},address.ilike.%${sigungu}%`)
+    const sanitizedSigungu = sanitizeFilterInput(sigungu)
+    if (sanitizedSigungu) {
+      query = query.or(
+        `sigungu.eq.${sanitizedSigungu},address.ilike.%${sanitizedSigungu}%`
+      )
+    }
   }
   if (keyword) {
     // 키워드가 지역명일 수 있으므로 이름, 시군구, 주소에서 모두 검색
-    query = query.or(
-      `name.ilike.%${keyword}%,sigungu.ilike.%${keyword}%,address.ilike.%${keyword}%`
-    )
+    const sanitizedKeyword = sanitizeFilterInput(keyword)
+    if (sanitizedKeyword) {
+      query = query.or(
+        `name.ilike.%${sanitizedKeyword}%,sigungu.ilike.%${sanitizedKeyword}%,address.ilike.%${sanitizedKeyword}%`
+      )
+    }
   }
 
   // 정렬 및 페이지네이션

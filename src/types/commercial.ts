@@ -7,6 +7,8 @@ export interface DistrictBasic {
   code: string
   name: string
   description: string
+  sido?: string
+  has_data?: boolean
 }
 
 export interface Industry {
@@ -14,6 +16,7 @@ export interface Industry {
   name: string
   category: string
   description?: string
+  has_data?: boolean
 }
 
 // 상권 통계

@@ -72,8 +72,15 @@ export function IndustrySelect({
 
   const selectedIndustry = industries.find((i) => i.code === value)
 
-  // 카테고리별로 그룹화
-  const categories = Array.from(new Set(industries.map((i) => i.category)))
+  // 카테고리별로 그룹화 (고정 순서)
+  const categoryOrder = ['음식', '소매', '서비스', '생활']
+  const categories = categoryOrder.filter((cat) =>
+    industries.some((i) => i.category === cat)
+  )
+  // 목록에 없는 카테고리도 추가
+  for (const i of industries) {
+    if (!categories.includes(i.category)) categories.push(i.category)
+  }
   const filteredIndustries = selectedCategory
     ? industries.filter((i) => i.category === selectedCategory)
     : industries
@@ -187,9 +194,16 @@ export function IndustrySelect({
                         </div>
                       )}
                     </div>
-                    <span className="rounded bg-gray-100 px-2 py-1 text-xs text-gray-400">
-                      {industry.category}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {industry.has_data === false && (
+                        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-400">
+                          데이터 수집중
+                        </span>
+                      )}
+                      <span className="rounded bg-gray-100 px-2 py-1 text-xs text-gray-400">
+                        {industry.category}
+                      </span>
+                    </div>
                   </div>
                 </li>
               ))

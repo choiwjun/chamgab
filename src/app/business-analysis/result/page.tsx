@@ -111,14 +111,8 @@ function BusinessAnalysisResultContent() {
         setIsLoading(true)
         setError(null)
 
-        // 병렬로 모든 데이터 로드
-        const [
-          predictionData,
-          characteristicsData,
-          detailData,
-          districts,
-          industries,
-        ] = await Promise.all([
+        // 병렬로 모든 데이터 로드 (일부 실패해도 나머지 표시)
+        const results = await Promise.allSettled([
           predictBusinessSuccess({
             district_code: districtCode,
             industry_code: industryCode,
@@ -129,11 +123,42 @@ function BusinessAnalysisResultContent() {
           getIndustries(),
         ])
 
-        setPrediction(predictionData)
-        setCharacteristics(characteristicsData)
-        setDistrictDetail(detailData)
-        setDistrict(districts.find((d) => d.code === districtCode) || null)
-        setIndustry(industries.find((i) => i.code === industryCode) || null)
+        const [predResult, charResult, detailResult, distResult, indResult] =
+          results
+
+        if (predResult.status === 'fulfilled') {
+          setPrediction(predResult.value)
+        }
+        if (charResult.status === 'fulfilled') {
+          setCharacteristics(charResult.value)
+        }
+        if (detailResult.status === 'fulfilled') {
+          setDistrictDetail(detailResult.value)
+        }
+        if (distResult.status === 'fulfilled') {
+          setDistrict(
+            distResult.value.find(
+              (d: DistrictBasic) => d.code === districtCode
+            ) || null
+          )
+        }
+        if (indResult.status === 'fulfilled') {
+          setIndustry(
+            indResult.value.find((i: Industry) => i.code === industryCode) ||
+              null
+          )
+        }
+
+        // 핵심 데이터(예측)도 실패하면 에러 표시
+        if (predResult.status === 'rejected') {
+          const err = predResult.reason
+          console.error('예측 실패:', err)
+          if (err instanceof APIError) {
+            setError(err.message)
+          } else {
+            setError('분석 결과를 불러오는데 실패했습니다. 다시 시도해주세요.')
+          }
+        }
       } catch (err) {
         console.error('데이터 로드 실패:', err)
         if (err instanceof APIError) {
@@ -160,14 +185,11 @@ function BusinessAnalysisResultContent() {
     )
   }
 
-  if (
-    error ||
-    !prediction ||
-    !characteristics ||
-    !districtDetail ||
-    !district ||
-    !industry
-  ) {
+  // 지역/업종 이름 (district 객체가 없어도 코드로 표시)
+  const districtName = district?.name || districtCode || '선택한 지역'
+  const industryName = industry?.name || industryCode || '선택한 업종'
+
+  if (error && !prediction) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gray-50">
         <div className="max-w-md px-4 text-center">
@@ -210,7 +232,7 @@ function BusinessAnalysisResultContent() {
                 상권 분석 결과
               </h1>
               <p className="text-gray-600">
-                {district.name} × {industry.name}
+                {districtName} × {industryName}
               </p>
             </div>
 
@@ -231,21 +253,27 @@ function BusinessAnalysisResultContent() {
         <div className="space-y-8">
           {/* 첫 번째 행: 성공 확률 + 상세 지표 */}
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-            <SuccessProbabilityCard
-              result={prediction}
-              districtName={district.name}
-              industryName={industry.name}
-            />
-            <MetricsCard
-              statistics={districtDetail.statistics}
-              characteristics={characteristics}
-            />
+            {prediction && (
+              <SuccessProbabilityCard
+                result={prediction}
+                districtName={districtName}
+                industryName={industryName}
+              />
+            )}
+            {districtDetail && (
+              <MetricsCard
+                statistics={districtDetail.statistics}
+                characteristics={characteristics ?? undefined}
+              />
+            )}
           </div>
 
           {/* 두 번째 행: 상권 특성 (전체 너비) */}
-          <div>
-            <DistrictCharacteristicsCard characteristics={characteristics} />
-          </div>
+          {characteristics && (
+            <div>
+              <DistrictCharacteristicsCard characteristics={characteristics} />
+            </div>
+          )}
 
           {/* Phase 6: 상권 분석 고도화 */}
           <div className="space-y-8">

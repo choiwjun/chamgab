@@ -25,9 +25,9 @@ export function HeroSection() {
 
         {/* Trust indicators */}
         <div className="mt-12 flex flex-wrap items-center justify-center gap-8 text-sm text-[#8B95A1]">
-          <div>370,000건+ 실거래</div>
+          <div>8,900+ 단지 분석</div>
           <div className="h-1 w-1 rounded-full bg-[#E5E8EB]" />
-          <div>전국 126개 지역</div>
+          <div>전국 79개 지역</div>
           <div className="h-1 w-1 rounded-full bg-[#E5E8EB]" />
           <div>AI 가격 분석</div>
         </div>

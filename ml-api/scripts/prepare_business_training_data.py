@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
-Prepare training data for business success prediction model
-Combines statistics from multiple tables and creates labeled training data
+Prepare training data for business success prediction model (v2)
+
+Combines statistics from multiple tables including foot_traffic,
+creates derived features, and produces labeled training data.
+
+Uses BusinessFeatureEngineer for advanced 32-feature pipeline.
 """
 import os
 import sys
@@ -20,12 +24,14 @@ except ImportError:
 
 try:
     import pandas as pd
+    import numpy as np
     from supabase import create_client, Client
 except ImportError:
     print("Installing required packages...")
     import subprocess
-    subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'pandas', 'supabase'])
+    subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'pandas', 'numpy', 'supabase'])
     import pandas as pd
+    import numpy as np
     from supabase import create_client, Client
 
 
@@ -39,34 +45,55 @@ if not SUPABASE_URL or not SUPABASE_KEY:
     sys.exit(1)
 
 
+def fetch_all_rows(supabase: Client, table_name: str) -> pd.DataFrame:
+    """Supabase 1000-row 제한 우회: 페이지네이션으로 전체 행 가져오기"""
+    all_data = []
+    page_size = 1000
+    offset = 0
+
+    while True:
+        response = supabase.table(table_name).select('*').range(
+            offset, offset + page_size - 1).execute()
+        if not response.data:
+            break
+        all_data.extend(response.data)
+        if len(response.data) < page_size:
+            break
+        offset += page_size
+
+    return pd.DataFrame(all_data) if all_data else pd.DataFrame()
+
+
 def fetch_statistics(supabase: Client) -> tuple:
-    """Fetch all statistics from Supabase"""
+    """Fetch all statistics from Supabase (with pagination)"""
     print("\nFetching statistics from Supabase...")
 
-    # Fetch business statistics
-    business_response = supabase.table('business_statistics').select('*').execute()
-    business_df = pd.DataFrame(business_response.data) if business_response.data else pd.DataFrame()
+    business_df = fetch_all_rows(supabase, 'business_statistics')
     print(f"  Business statistics: {len(business_df)} records")
 
-    # Fetch sales statistics
-    sales_response = supabase.table('sales_statistics').select('*').execute()
-    sales_df = pd.DataFrame(sales_response.data) if sales_response.data else pd.DataFrame()
+    sales_df = fetch_all_rows(supabase, 'sales_statistics')
     print(f"  Sales statistics: {len(sales_df)} records")
 
-    # Fetch store statistics
-    store_response = supabase.table('store_statistics').select('*').execute()
-    store_df = pd.DataFrame(store_response.data) if store_response.data else pd.DataFrame()
+    store_df = fetch_all_rows(supabase, 'store_statistics')
     print(f"  Store statistics: {len(store_df)} records")
 
-    return business_df, sales_df, store_df
+    foot_df = fetch_all_rows(supabase, 'foot_traffic_statistics')
+    print(f"  Foot traffic statistics: {len(foot_df)} records")
+
+    return business_df, sales_df, store_df, foot_df
 
 
-def combine_statistics(business_df: pd.DataFrame, sales_df: pd.DataFrame, store_df: pd.DataFrame) -> pd.DataFrame:
+def combine_statistics(
+    business_df: pd.DataFrame,
+    sales_df: pd.DataFrame,
+    store_df: pd.DataFrame,
+    foot_df: pd.DataFrame,
+) -> pd.DataFrame:
     """Combine statistics from multiple tables"""
     print("\nCombining statistics...")
 
     if business_df.empty or sales_df.empty or store_df.empty:
-        print("Warning: One or more tables are empty. Cannot combine.")
+        print("Warning: One or more core tables are empty. Cannot combine.")
         return pd.DataFrame()
 
     # Merge on commercial_district_code, industry_small_code, base_year_month
@@ -90,61 +117,112 @@ def combine_statistics(business_df: pd.DataFrame, sales_df: pd.DataFrame, store_
         suffixes=('', '_store')
     )
 
-    print(f"  Combined records: {len(combined)}")
+    print(f"  Combined (biz+sales+store): {len(combined)}")
+
+    # ── Foot traffic 병합 (sigungu_code 기준, 최신 분기) ──
+    if not foot_df.empty and 'sigungu_code' in foot_df.columns:
+        # 최신 분기만 사용 (지역별)
+        foot_latest = foot_df.sort_values('base_year_quarter', ascending=False) \
+            .drop_duplicates(subset=['sigungu_code'], keep='first').copy()
+
+        # foot_traffic_score 계산
+        foot_latest['foot_traffic_score'] = foot_latest['total_foot_traffic'].fillna(0) / 1000.0
+
+        # peak_hour_ratio (17-21시 / 활동 시간대 전체)
+        time_cols = ['time_06_11', 'time_11_14', 'time_14_17', 'time_17_21', 'time_21_24']
+        for c in time_cols:
+            foot_latest[c] = pd.to_numeric(foot_latest[c], errors='coerce').fillna(0)
+        total_active = foot_latest[time_cols].sum(axis=1).replace(0, 1)
+        foot_latest['peak_hour_ratio'] = foot_latest['time_17_21'] / total_active
+
+        # weekend_ratio (%)
+        weekday = pd.to_numeric(foot_latest['weekday_avg'], errors='coerce').fillna(0)
+        weekend = pd.to_numeric(foot_latest['weekend_avg'], errors='coerce').fillna(0)
+        total_weekly = (weekday + weekend).replace(0, 1)
+        foot_latest['weekend_ratio'] = weekend / total_weekly * 100
+
+        # 저녁/아침 트래픽 (파생 피처용)
+        foot_latest['evening_traffic'] = foot_latest['time_17_21']
+        foot_latest['morning_traffic'] = foot_latest['time_06_11'].replace(0, 1)
+
+        # 연령대 컬럼
+        age_cols_sel = ['sigungu_code', 'foot_traffic_score', 'peak_hour_ratio',
+                        'weekend_ratio', 'evening_traffic', 'morning_traffic']
+        age_data_cols = ['age_10s', 'age_20s', 'age_30s', 'age_40s', 'age_50s', 'age_60s_plus']
+        for c in age_data_cols:
+            if c in foot_latest.columns:
+                foot_latest[c] = pd.to_numeric(foot_latest[c], errors='coerce').fillna(0)
+                age_cols_sel.append(c)
+
+        ft_merge = foot_latest[age_cols_sel].copy()
+
+        # sigungu_code 확보 (combined에 없을 수 있음)
+        if 'sigungu_code' not in combined.columns:
+            # commercial_district_code의 앞 5자리가 sigungu_code
+            if 'sigungu_code_business' in combined.columns:
+                combined['sigungu_code'] = combined['sigungu_code_business']
+            else:
+                combined['sigungu_code'] = combined['commercial_district_code'].str[:5]
+
+        combined = pd.merge(combined, ft_merge, on='sigungu_code', how='left')
+        print(f"  After foot_traffic merge: {len(combined)}")
+    else:
+        print("  Foot traffic: no data (features will be 0)")
 
     return combined
 
 
 def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Create features for ML model"""
+    """Create features for ML model (v2 - delegates to BusinessFeatureEngineer)"""
     print("\nEngineering features...")
 
-    # Calculate franchise_ratio
-    df['franchise_ratio'] = df['franchise_count'] / df['store_count'].replace(0, 1)
+    # Calculate franchise_ratio and competition_ratio from raw columns
+    if 'franchise_count' in df.columns and 'store_count' in df.columns:
+        df['franchise_ratio'] = df['franchise_count'] / df['store_count'].replace(0, 1)
+    if 'operating_count' in df.columns and 'store_count' in df.columns:
+        df['competition_ratio'] = df['store_count'] / df['operating_count'].replace(0, 1)
 
-    # Calculate competition_ratio (store count vs operating count)
-    df['competition_ratio'] = df['store_count'] / df['operating_count'].replace(0, 1)
+    # Resolve duplicate columns from merges
+    for col in ['sigungu_code', 'sido_code', 'industry_name']:
+        for suffix in ['_business', '_sales', '_store']:
+            alt = f'{col}{suffix}'
+            if alt in df.columns and col not in df.columns:
+                df[col] = df[alt]
 
-    # Create success target based on survival_rate and sales_growth_rate
-    # Success = survival_rate > 70 AND sales_growth_rate > 0
-    df['success'] = (
-        (df['survival_rate'] > 70) &
-        (df['sales_growth_rate'] > 0)
-    ).astype(int)
-
-    # Select model features
-    feature_columns = [
-        'survival_rate',
-        'monthly_avg_sales',
-        'sales_growth_rate',
-        'store_count',
-        'franchise_ratio',
-        'competition_ratio',
-        'success',
+    # Select core + context columns for training data CSV
+    core_features = [
+        'survival_rate', 'monthly_avg_sales', 'sales_growth_rate',
+        'store_count', 'franchise_ratio', 'competition_ratio',
+        'foot_traffic_score', 'peak_hour_ratio', 'weekend_ratio',
+        'evening_traffic', 'morning_traffic',
     ]
-
-    # Additional context columns for reference
     context_columns = [
-        'commercial_district_code',
-        'industry_name',
-        'industry_small_code',
-        'base_year_month',
+        'commercial_district_code', 'industry_name', 'industry_small_code',
+        'sigungu_code', 'sido_code', 'base_year_month',
     ]
+    age_columns = ['age_10s', 'age_20s', 'age_30s', 'age_40s', 'age_50s', 'age_60s_plus']
 
-    # Select and clean
-    all_columns = context_columns + feature_columns
+    all_columns = context_columns + core_features + age_columns
     available_columns = [col for col in all_columns if col in df.columns]
     result = df[available_columns].copy()
 
     # Remove duplicates
     result = result.drop_duplicates()
 
-    # Remove rows with missing values in feature columns
-    result = result.dropna(subset=feature_columns)
+    # Remove rows with missing core features
+    required = ['survival_rate', 'monthly_avg_sales', 'sales_growth_rate', 'store_count']
+    result = result.dropna(subset=required)
+
+    # Fill optional feature NaNs
+    for col in ['foot_traffic_score', 'peak_hour_ratio', 'weekend_ratio']:
+        if col in result.columns:
+            result[col] = result[col].fillna(0)
+    for col in ['franchise_ratio', 'competition_ratio']:
+        if col in result.columns:
+            result[col] = result[col].fillna(result[col].median() if len(result) > 0 else 0.3)
 
     print(f"  Final training records: {len(result)}")
-    print(f"\nSuccess distribution:")
-    print(result['success'].value_counts())
+    print(f"  Columns: {list(result.columns)}")
 
     return result
 
@@ -152,7 +230,7 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
 def main():
     """Main execution"""
     print("=" * 60)
-    print("Preparing Business Success Training Data")
+    print("Preparing Business Success Training Data (v2)")
     print("=" * 60)
     print(f"Supabase URL: {SUPABASE_URL}")
     print("=" * 60)
@@ -161,17 +239,17 @@ def main():
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
     # Fetch data
-    business_df, sales_df, store_df = fetch_statistics(supabase)
+    business_df, sales_df, store_df, foot_df = fetch_statistics(supabase)
 
     if business_df.empty or sales_df.empty or store_df.empty:
         print("\nError: No data found in one or more tables.")
         print("\nPlease ensure:")
         print("  1. Migrations have been applied (015 and 016)")
-        print("  2. Sample data has been generated (run generate_commercial_sample_data.py)")
+        print("  2. Seed data has been generated (run seed_commercial_data.py)")
         sys.exit(1)
 
     # Combine statistics
-    combined_df = combine_statistics(business_df, sales_df, store_df)
+    combined_df = combine_statistics(business_df, sales_df, store_df, foot_df)
 
     if combined_df.empty:
         print("\nError: Could not combine statistics.")
@@ -194,10 +272,12 @@ def main():
     print("Summary")
     print("=" * 60)
     print(f"Total records: {len(training_df)}")
-    print(f"Features: survival_rate, monthly_avg_sales, sales_growth_rate,")
-    print(f"          store_count, franchise_ratio, competition_ratio")
-    print(f"Target: success (0=failure, 1=success)")
-    print("\nNext step: Run train_business_model.py with this data")
+    print(f"Unique months: {training_df['base_year_month'].nunique() if 'base_year_month' in training_df.columns else 'N/A'}")
+    print(f"Unique regions: {training_df['sigungu_code'].nunique() if 'sigungu_code' in training_df.columns else 'N/A'}")
+    print(f"Unique industries: {training_df['industry_small_code'].nunique() if 'industry_small_code' in training_df.columns else 'N/A'}")
+    has_ft = 'foot_traffic_score' in training_df.columns and training_df['foot_traffic_score'].sum() > 0
+    print(f"Foot traffic: {'connected' if has_ft else 'not available (all zeros)'}")
+    print(f"\nNext step: Run train_business_model.py with this data")
     print(f"  python -m scripts.train_business_model --data {output_file}")
 
 

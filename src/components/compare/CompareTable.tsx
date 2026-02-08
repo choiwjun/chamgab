@@ -133,8 +133,8 @@ export function CompareTable() {
   }
 
   const handleAddProperty = () => {
-    // TODO: 검색 모달 열기
-    alert('검색 모달 구현 예정 (Phase 5)')
+    // TODO: 검색 모달 열기 (Phase 5)
+    console.log('검색 모달 구현 예정 (Phase 5)')
   }
 
   if (isLoading) {
@@ -159,9 +159,11 @@ export function CompareTable() {
           </p>
           <button
             onClick={handleAddProperty}
-            className="rounded-xl bg-[#3182F6] px-8 py-3 text-sm font-medium text-white transition-colors hover:bg-[#1B64DA]"
+            disabled
+            className="cursor-not-allowed rounded-xl bg-[#8B95A1] px-8 py-3 text-sm font-medium text-white"
+            title="검색 모달 구현 예정 (Phase 5)"
           >
-            매물 추가하기
+            매물 추가하기 (준비 중)
           </button>
         </div>
       </div>
@@ -183,7 +185,12 @@ export function CompareTable() {
 
           {/* 매물 추가 버튼 (4개 미만일 때) */}
           {propertyIds.length < MAX_COMPARE && (
-            <AddPropertyButton onClick={handleAddProperty} />
+            <div className="relative">
+              <AddPropertyButton onClick={handleAddProperty} />
+              <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-lg bg-[#F2F4F6] px-3 py-1 text-xs text-[#8B95A1]">
+                준비 중
+              </div>
+            </div>
           )}
         </AnimatePresence>
       </div>

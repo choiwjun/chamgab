@@ -22,6 +22,27 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const complex_id = searchParams.get('complex_id')
     const property_id = searchParams.get('property_id')
+    const distinctAreas = searchParams.get('distinct_areas') === 'true'
+
+    // distinct_areas 모드: 단지의 고유 전용면적 목록 반환
+    if (distinctAreas && complex_id) {
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('area_exclusive')
+        .eq('complex_id', complex_id)
+        .not('area_exclusive', 'is', null)
+        .order('area_exclusive', { ascending: true })
+
+      if (error) {
+        return NextResponse.json({ areas: [] }, { status: 503 })
+      }
+
+      const unique = Array.from(
+        new Set((data || []).map((r) => r.area_exclusive as number))
+      )
+      return NextResponse.json({ areas: unique })
+    }
+
     const page = parseInt(searchParams.get('page') || '1')
     const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 100)
 

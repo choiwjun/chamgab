@@ -8,6 +8,18 @@ import { motion } from 'framer-motion'
 import type { Complex } from '@/types/complex'
 import { cn } from '@/lib/utils'
 
+type BadgeInfo = { label: string; color: string } | null
+
+function detectTypeBadge(name: string): BadgeInfo {
+  if (name.startsWith('빌라'))
+    return { label: '빌라', color: 'bg-emerald-50 text-emerald-600' }
+  if (name.startsWith('오피스텔'))
+    return { label: '오피스텔', color: 'bg-violet-50 text-violet-600' }
+  if (name.startsWith('단독주택'))
+    return { label: '단독주택', color: 'bg-orange-50 text-orange-600' }
+  return null
+}
+
 interface ComplexCardProps {
   complex: Complex
   className?: string
@@ -19,6 +31,8 @@ export function ComplexCard({
   className,
   index = 0,
 }: ComplexCardProps) {
+  const badge = detectTypeBadge(complex.name)
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 30 }}
@@ -36,18 +50,27 @@ export function ComplexCard({
         className="relative block h-full rounded-xl border border-gray-200 bg-white transition-all duration-300 hover:border-gray-300"
       >
         <div className="p-6">
-          {/* 상단: 지역 + 브랜드 */}
+          {/* 상단: 지역 + 유형 배지 또는 브랜드 */}
           <div className="mb-4 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold text-blue-500">
                 {complex.sigungu}
               </span>
-              {complex.brand && (
+              {badge ? (
+                <span
+                  className={cn(
+                    'rounded-full px-2 py-0.5 text-[10px] font-medium',
+                    badge.color
+                  )}
+                >
+                  {badge.label}
+                </span>
+              ) : complex.brand ? (
                 <>
                   <span className="text-gray-300">·</span>
                   <span className="text-xs text-gray-500">{complex.brand}</span>
                 </>
-              )}
+              ) : null}
             </div>
             <ArrowUpRight className="h-4 w-4 text-gray-300 transition-colors group-hover:text-blue-500" />
           </div>

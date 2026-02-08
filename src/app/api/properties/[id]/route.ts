@@ -79,11 +79,14 @@ export async function GET(
     if (error) {
       if (error.code === 'PGRST116') {
         return NextResponse.json(
-          { error: 'Property not found' },
+          { error: '매물 정보를 찾을 수 없습니다.' },
           { status: 404 }
         )
       }
-      return NextResponse.json({ error: error.message }, { status: 400 })
+      return NextResponse.json(
+        { error: '매물 정보 조회 중 오류가 발생했습니다.' },
+        { status: 400 }
+      )
     }
 
     // 응답 형식 변환 (complexes -> complex, location WKB → lat/lng)
@@ -98,7 +101,7 @@ export async function GET(
     return NextResponse.json(property)
   } catch {
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: '매물 정보 조회 중 오류가 발생했습니다.' },
       { status: 500 }
     )
   }

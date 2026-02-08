@@ -1183,14 +1183,18 @@ if __name__ == "__main__":
 # ============================================================================
 
 class BusinessFeatureEngineer:
-    """창업 성공 예측 모델용 피처 엔지니어링
+    """창업 성공 예측 모델용 피처 엔지니어링 (v2 - 32 피처)
 
     피처 카테고리:
     - 생존율 피처: survival_rate, survival_rate_normalized
     - 매출 피처: monthly_avg_sales, sales_growth_rate, sales_per_store, sales_volatility
     - 경쟁 피처: store_count, density_level, franchise_ratio, competition_ratio, market_saturation
-    - 복합 피처: success_score, viability_index, growth_potential
+    - 복합 피처: viability_index, growth_potential
     - 유동인구 피처: foot_traffic_score, peak_hour_ratio, weekend_ratio
+    - 시간 lag: sales_lag_1m, sales_lag_3m, sales_rolling_6m_mean/std, store_count_lag_1m, survival_rate_lag_1m
+    - 계절성: month_sin, month_cos
+    - 교차: region_avg_survival, industry_avg_survival, region_industry_density_ratio
+    - 유동인구 파생: foot_traffic_per_store, evening_morning_ratio, age_concentration_index
     """
 
     DENSITY_THRESHOLDS = {
@@ -1201,6 +1205,7 @@ class BusinessFeatureEngineer:
     }
 
     FEATURE_COLUMNS = [
+        # 기존 18개
         'survival_rate', 'survival_rate_normalized',
         'monthly_avg_sales', 'monthly_avg_sales_log',
         'sales_growth_rate', 'sales_per_store', 'sales_volatility',
@@ -1208,6 +1213,18 @@ class BusinessFeatureEngineer:
         'franchise_ratio', 'competition_ratio', 'market_saturation',
         'viability_index', 'growth_potential',
         'foot_traffic_score', 'peak_hour_ratio', 'weekend_ratio',
+        # 시간 lag (6개)
+        'sales_lag_1m', 'sales_lag_3m',
+        'sales_rolling_6m_mean', 'sales_rolling_6m_std',
+        'store_count_lag_1m', 'survival_rate_lag_1m',
+        # 계절성 (2개)
+        'month_sin', 'month_cos',
+        # 교차 (3개)
+        'region_avg_survival', 'industry_avg_survival',
+        'region_industry_density_ratio',
+        # 유동인구 파생 (3개)
+        'foot_traffic_per_store', 'evening_morning_ratio',
+        'age_concentration_index',
     ]
 
     def __init__(self):
@@ -1216,13 +1233,15 @@ class BusinessFeatureEngineer:
         self.is_fitted = False
 
     def create_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """상권 분석용 피처 생성"""
+        """상권 분석용 피처 생성 (v2 - 32개)"""
         df = df.copy()
 
+        # ── 기존 기본 피처 ──
         df['survival_rate'] = df['survival_rate'].fillna(70.0)
         df['survival_rate_normalized'] = df['survival_rate'] / 100.0
 
-        df['monthly_avg_sales'] = df['monthly_avg_sales'].fillna(df['monthly_avg_sales'].median() if len(df) > 0 else 30000000)
+        df['monthly_avg_sales'] = df['monthly_avg_sales'].fillna(
+            df['monthly_avg_sales'].median() if len(df) > 0 else 30000000)
         df['monthly_avg_sales_log'] = np.log1p(df['monthly_avg_sales'])
         df['sales_growth_rate'] = df['sales_growth_rate'].fillna(0.0)
 
@@ -1257,10 +1276,124 @@ class BusinessFeatureEngineer:
             (100 - df['market_saturation']) / 100 * 50
         ).clip(0, 100)
 
+        # 유동인구 기본값
         if 'foot_traffic_score' not in df.columns:
             df['foot_traffic_score'] = 0.0
+        if 'peak_hour_ratio' not in df.columns:
             df['peak_hour_ratio'] = 0.0
+        if 'weekend_ratio' not in df.columns:
             df['weekend_ratio'] = 0.0
+
+        # ── 신규 피처 ──
+        df = self._create_temporal_features(df)
+        df = self._create_seasonal_features(df)
+        df = self._create_interaction_features(df)
+        df = self._create_foot_traffic_derived(df)
+
+        return df
+
+    def _create_temporal_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """시간 lag 피처 (아파트 모델의 temporal features 패턴 적용)"""
+        lag_cols = ['sales_lag_1m', 'sales_lag_3m', 'sales_rolling_6m_mean',
+                    'sales_rolling_6m_std', 'store_count_lag_1m', 'survival_rate_lag_1m']
+
+        has_time = 'base_year_month' in df.columns and len(df) > 100
+        has_group = 'sigungu_code' in df.columns and 'industry_small_code' in df.columns
+
+        if not has_time or not has_group:
+            for col in lag_cols:
+                if col not in df.columns:
+                    df[col] = np.nan
+            return df
+
+        df = df.sort_values('base_year_month')
+        group_key = ['sigungu_code', 'industry_small_code']
+
+        # sales lag
+        df['sales_lag_1m'] = df.groupby(group_key)['monthly_avg_sales'].shift(1)
+        df['sales_lag_3m'] = df.groupby(group_key)['monthly_avg_sales'].shift(3)
+
+        # rolling stats (window=6)
+        rolling = df.groupby(group_key)['monthly_avg_sales'].rolling(
+            window=6, min_periods=2)
+        df['sales_rolling_6m_mean'] = rolling.mean().reset_index(level=[0, 1], drop=True)
+        df['sales_rolling_6m_std'] = rolling.std().reset_index(level=[0, 1], drop=True)
+
+        # store_count, survival_rate lag
+        df['store_count_lag_1m'] = df.groupby(group_key)['store_count'].shift(1)
+        df['survival_rate_lag_1m'] = df.groupby(group_key)['survival_rate'].shift(1)
+
+        # Fill NaN with current values (first months have no lag)
+        df['sales_lag_1m'] = df['sales_lag_1m'].fillna(df['monthly_avg_sales'])
+        df['sales_lag_3m'] = df['sales_lag_3m'].fillna(df['monthly_avg_sales'])
+        df['sales_rolling_6m_mean'] = df['sales_rolling_6m_mean'].fillna(df['monthly_avg_sales'])
+        df['sales_rolling_6m_std'] = df['sales_rolling_6m_std'].fillna(0)
+        df['store_count_lag_1m'] = df['store_count_lag_1m'].fillna(df['store_count'])
+        df['survival_rate_lag_1m'] = df['survival_rate_lag_1m'].fillna(df['survival_rate'])
+
+        return df
+
+    def _create_seasonal_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """계절성 피처 (순환 인코딩 - 12월→1월 연속성 보존)"""
+        if 'base_year_month' in df.columns:
+            month = pd.to_datetime(df['base_year_month'], format='%Y%m', errors='coerce').dt.month
+            df['month_sin'] = np.sin(2 * np.pi * month / 12).fillna(0)
+            df['month_cos'] = np.cos(2 * np.pi * month / 12).fillna(0)
+        else:
+            df['month_sin'] = 0.0
+            df['month_cos'] = 0.0
+        return df
+
+    def _create_interaction_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """지역-업종 교차 피처"""
+        # 지역 평균 생존율
+        if 'sigungu_code' in df.columns and len(df) > 10:
+            df['region_avg_survival'] = df.groupby('sigungu_code')['survival_rate'].transform('mean')
+        else:
+            df['region_avg_survival'] = df['survival_rate']
+
+        # 업종 평균 생존율
+        if 'industry_small_code' in df.columns and len(df) > 10:
+            df['industry_avg_survival'] = df.groupby('industry_small_code')['survival_rate'].transform('mean')
+        else:
+            df['industry_avg_survival'] = df['survival_rate']
+
+        # 지역 점포밀도 / 업종 평균 점포밀도
+        if 'industry_small_code' in df.columns and len(df) > 10:
+            industry_avg_stores = df.groupby('industry_small_code')['store_count'].transform('mean')
+            df['region_industry_density_ratio'] = df['store_count'] / industry_avg_stores.replace(0, 1)
+        else:
+            df['region_industry_density_ratio'] = 1.0
+
+        return df
+
+    def _create_foot_traffic_derived(self, df: pd.DataFrame) -> pd.DataFrame:
+        """유동인구 파생 피처"""
+        # 점포당 유동인구
+        ft = df['foot_traffic_score'].fillna(0)
+        sc = df['store_count'].replace(0, 1)
+        df['foot_traffic_per_store'] = ft / sc
+
+        # 저녁/아침 유동인구 비율
+        if 'evening_traffic' in df.columns and 'morning_traffic' in df.columns:
+            morning = df['morning_traffic'].replace(0, 1)
+            df['evening_morning_ratio'] = df['evening_traffic'] / morning
+        else:
+            # peak_hour_ratio가 높으면 저녁 우세
+            df['evening_morning_ratio'] = 1.0 + df['peak_hour_ratio'].fillna(0)
+
+        # 연령대 집중도 (HHI - Herfindahl index)
+        age_cols = [c for c in df.columns if c.startswith('age_') and c.endswith(('_pct', 's', '_plus'))]
+        age_count_cols = [c for c in df.columns if c in
+                          ['age_10s', 'age_20s', 'age_30s', 'age_40s', 'age_50s', 'age_60s_plus']]
+        if age_count_cols and len(age_count_cols) >= 4:
+            age_data = df[age_count_cols].fillna(0)
+            totals = age_data.sum(axis=1).replace(0, 1)
+            proportions = age_data.div(totals, axis=0)
+            df['age_concentration_index'] = (proportions ** 2).sum(axis=1)
+        else:
+            # 균등 분포 기본값 (6그룹 → 1/6^2 * 6 ≈ 0.167)
+            df['age_concentration_index'] = 0.167
 
         return df
 
@@ -1280,7 +1413,7 @@ class BusinessFeatureEngineer:
         return df
 
     def prepare_training_data(self, df: pd.DataFrame = None, n_samples: int = 2000) -> Tuple:
-        """학습용 X, y 데이터 준비"""
+        """학습용 X, y 데이터 준비 (v2 - 복합 시그널 라벨)"""
         if df is None or df.empty:
             raise ValueError(
                 "학습 데이터가 필요합니다. prepare_business_training_data.py를 먼저 실행하세요."
@@ -1289,11 +1422,40 @@ class BusinessFeatureEngineer:
         df = self.create_features(df)
 
         if 'success' not in df.columns:
-            df['success'] = (
-                (df['survival_rate'] > 65) &
-                (df['sales_growth_rate'] > -2) &
-                (df['viability_index'] > 50)
-            ).astype(int)
+            # 복합 시그널 기반 성공 라벨
+            # 1. 생존율 시그널 (40%): 업종 중앙값 초과
+            if 'industry_small_code' in df.columns and len(df) > 100:
+                ind_median_surv = df.groupby('industry_small_code')['survival_rate'].transform('median')
+                survival_signal = (df['survival_rate'] > ind_median_surv).astype(float)
+            else:
+                survival_signal = (df['survival_rate'] > df['survival_rate'].median()).astype(float)
+
+            # 2. 성장 시그널 (25%): 동일 업종 중앙값 초과
+            if 'industry_small_code' in df.columns and len(df) > 100:
+                ind_median_growth = df.groupby('industry_small_code')['sales_growth_rate'].transform('median')
+                growth_signal = (df['sales_growth_rate'] > ind_median_growth).astype(float)
+            else:
+                growth_signal = (df['sales_growth_rate'] > 0).astype(float)
+
+            # 3. 시장 포지션 시그널 (20%): viability 40th percentile 초과
+            market_signal = (df['viability_index'] > df['viability_index'].quantile(0.4)).astype(float)
+
+            # 4. 안정성 시그널 (15%): 낮은 변동성 + 프랜차이즈 > 5%
+            stability_signal = (
+                (df['sales_volatility'] < df['sales_volatility'].quantile(0.7)) &
+                (df['franchise_ratio'] > 0.05)
+            ).astype(float)
+
+            composite = (
+                survival_signal * 0.40 +
+                growth_signal * 0.25 +
+                market_signal * 0.20 +
+                stability_signal * 0.15
+            )
+            df['success'] = (composite >= 0.50).astype(int)
+
+            pos_rate = df['success'].mean()
+            print(f"Success label: {pos_rate:.1%} positive rate (composite signal)")
 
         available_features = [col for col in self.FEATURE_COLUMNS if col in df.columns]
         self.feature_names = available_features

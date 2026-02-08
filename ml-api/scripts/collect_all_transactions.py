@@ -14,6 +14,9 @@ from typing import List, Dict, Any
 import httpx
 from lxml import etree
 from supabase import create_client
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # 로그 디렉토리 사전 생성 (FileHandler 초기화 전에 필요)
 os.makedirs('logs', exist_ok=True)
@@ -102,7 +105,10 @@ class TransactionCollector:
             os.environ['SUPABASE_URL'],
             os.environ['SUPABASE_SERVICE_KEY']
         )
-        self.api_key = os.environ['DATA_GO_KR_API_KEY']
+        self.api_key = os.environ.get('DATA_GO_KR_API_KEY') or os.environ.get('MOLIT_API_KEY')
+        if not self.api_key:
+            logger.error("API 키 없음: DATA_GO_KR_API_KEY 또는 MOLIT_API_KEY 설정 필요")
+            sys.exit(1)
         self.base_url = "https://apis.data.go.kr/1613000/RTMSDataSvcAptTrade"
 
     async def collect_apartment_trades(
@@ -204,19 +210,30 @@ class TransactionCollector:
         return child.text.strip() if child is not None and child.text else default
 
     async def save_to_supabase(self, transactions: List[Dict[str, Any]]) -> int:
-        """Supabase에 저장"""
+        """Supabase에 저장 (배치 단위, 중복 시 skip)"""
         if not transactions:
             return 0
 
-        try:
-            result = self.supabase.table('transactions').upsert(
-                transactions,
-                on_conflict="id"
-            ).execute()
-            return len(result.data) if result.data else 0
-        except Exception as e:
-            logger.error(f"저장 실패: {e}")
-            return 0
+        saved = 0
+        batch_size = 200
+        for i in range(0, len(transactions), batch_size):
+            batch = transactions[i:i + batch_size]
+            try:
+                result = self.supabase.table('transactions').insert(batch).execute()
+                saved += len(result.data) if result.data else 0
+            except Exception as e:
+                err_msg = str(e)
+                if 'duplicate' in err_msg.lower() or '23505' in err_msg:
+                    # 중복 → 개별 삽입으로 폴백
+                    for tx in batch:
+                        try:
+                            r = self.supabase.table('transactions').insert(tx).execute()
+                            saved += 1
+                        except Exception:
+                            pass  # 중복 건 skip
+                else:
+                    logger.error(f"저장 실패: {e}")
+        return saved
 
     async def collect_region(
         self,
@@ -248,36 +265,59 @@ class TransactionCollector:
 
 async def main():
     parser = argparse.ArgumentParser(description='전국 실거래가 수집')
-    parser.add_argument('--group', type=int, required=True, help='지역 그룹 번호 (1-5)')
+    parser.add_argument('--group', type=int, default=0, help='지역 그룹 번호 (1-5, 0=전체)')
     parser.add_argument('--mode', type=str, default='all', choices=['all', 'seoul', 'sample'])
     parser.add_argument('--months', type=int, default=36, help='수집 기간 (개월)')
+    parser.add_argument('--clean', action='store_true', help='기존 불량 데이터 삭제 후 수집')
     args = parser.parse_args()
 
     # 로그 디렉토리 생성
     os.makedirs('logs', exist_ok=True)
 
-    # 수집 대상 결정
-    if args.mode == 'sample':
-        regions = SAMPLE_REGIONS if args.group == 1 else []
-    elif args.mode == 'seoul':
-        regions = SEOUL_REGIONS if args.group == 1 else []
-    else:
-        regions = ALL_REGIONS.get(args.group, [])
-
-    if not regions:
-        logger.info(f"그룹 {args.group}에 수집할 지역 없음")
-        return
-
     collector = TransactionCollector()
+
+    # --clean: 불량 데이터 삭제
+    if args.clean:
+        logger.info("불량 데이터 삭제 중 (apt_name IS NULL)...")
+        try:
+            result = collector.supabase.table('transactions') \
+                .delete() \
+                .is_('apt_name', 'null') \
+                .execute()
+            deleted = len(result.data) if result.data else 0
+            logger.info(f"삭제 완료: {deleted}건")
+        except Exception as e:
+            logger.error(f"삭제 실패: {e}")
+
+    # 수집 대상 결정
+    if args.group == 0:
+        # 전체 그룹 순서대로
+        groups = [1, 2, 3, 4, 5]
+    else:
+        groups = [args.group]
+
     total_collected = 0
+    for group_num in groups:
+        if args.mode == 'sample':
+            regions = SAMPLE_REGIONS if group_num == 1 else []
+        elif args.mode == 'seoul':
+            regions = SEOUL_REGIONS if group_num == 1 else []
+        else:
+            regions = ALL_REGIONS.get(group_num, [])
 
-    for region_code, region_name in regions:
-        logger.info(f"수집 시작: {region_name} ({region_code})")
-        count = await collector.collect_region(region_code, region_name, args.months)
-        total_collected += count
-        logger.info(f"수집 완료: {region_name} - 총 {count}건")
+        if not regions:
+            continue
 
-    logger.info(f"=== 그룹 {args.group} 전체 수집 완료: {total_collected}건 ===")
+        logger.info(f"=== 그룹 {group_num} 수집 시작 ({len(regions)}개 지역) ===")
+        for region_code, region_name in regions:
+            logger.info(f"수집 시작: {region_name} ({region_code})")
+            count = await collector.collect_region(region_code, region_name, args.months)
+            total_collected += count
+            logger.info(f"수집 완료: {region_name} - 총 {count}건")
+
+        logger.info(f"=== 그룹 {group_num} 완료 ===")
+
+    logger.info(f"=== 전체 수집 완료: {total_collected}건 ===")
 
 
 if __name__ == '__main__':

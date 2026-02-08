@@ -4,8 +4,10 @@
 학습된 XGBoost Classifier 모델을 사용하여
 창업 성공 확률을 예측합니다.
 """
+import math
 import pickle
 from pathlib import Path
+from datetime import datetime
 from typing import Optional, List
 
 import numpy as np
@@ -14,26 +16,28 @@ import pandas as pd
 from app.core.database import get_supabase_client
 
 
-# train_business_model.py의 피처 정의와 동일하게 유지
+# train_business_model.py / BusinessFeatureEngineer.FEATURE_COLUMNS와 동기화 (v2 - 32개)
 FEATURE_COLUMNS = [
-    "survival_rate",
-    "survival_rate_normalized",
-    "monthly_avg_sales",
-    "monthly_avg_sales_log",
-    "sales_growth_rate",
-    "sales_per_store",
-    "sales_volatility",
-    "store_count",
-    "store_count_log",
-    "density_level",
-    "franchise_ratio",
-    "competition_ratio",
-    "market_saturation",
-    "viability_index",
-    "growth_potential",
-    "foot_traffic_score",
-    "peak_hour_ratio",
-    "weekend_ratio",
+    # 기존 18개
+    "survival_rate", "survival_rate_normalized",
+    "monthly_avg_sales", "monthly_avg_sales_log",
+    "sales_growth_rate", "sales_per_store", "sales_volatility",
+    "store_count", "store_count_log", "density_level",
+    "franchise_ratio", "competition_ratio", "market_saturation",
+    "viability_index", "growth_potential",
+    "foot_traffic_score", "peak_hour_ratio", "weekend_ratio",
+    # 시간 lag (6개)
+    "sales_lag_1m", "sales_lag_3m",
+    "sales_rolling_6m_mean", "sales_rolling_6m_std",
+    "store_count_lag_1m", "survival_rate_lag_1m",
+    # 계절성 (2개)
+    "month_sin", "month_cos",
+    # 교차 (3개)
+    "region_avg_survival", "industry_avg_survival",
+    "region_industry_density_ratio",
+    # 유동인구 파생 (3개)
+    "foot_traffic_per_store", "evening_morning_ratio",
+    "age_concentration_index",
 ]
 
 
@@ -82,6 +86,8 @@ class BusinessModelService:
         foot_traffic_score: float = 60.0,
         peak_hour_ratio: float = 0.3,
         weekend_ratio: float = 35.0,
+        evening_traffic: float = 0.0,
+        morning_traffic: float = 0.0,
     ) -> dict:
         """
         창업 성공 확률 예측
@@ -110,6 +116,8 @@ class BusinessModelService:
             foot_traffic_score=foot_traffic_score,
             peak_hour_ratio=peak_hour_ratio,
             weekend_ratio=weekend_ratio,
+            evening_traffic=evening_traffic,
+            morning_traffic=morning_traffic,
         )
 
         # 예측
@@ -129,7 +137,7 @@ class BusinessModelService:
         }
 
     def _prepare_features(self, **kwargs) -> pd.DataFrame:
-        """학습 시와 동일한 피처 엔지니어링 (BusinessFeatureEngineer.create_features 일치)"""
+        """학습 시와 동일한 피처 엔지니어링 (BusinessFeatureEngineer.create_features 일치, v2 - 32개)"""
         survival_rate = kwargs["survival_rate"]
         monthly_avg_sales = kwargs["monthly_avg_sales"]
         sales_growth_rate = kwargs["sales_growth_rate"]
@@ -139,15 +147,16 @@ class BusinessModelService:
         foot_traffic_score = kwargs["foot_traffic_score"]
         peak_hour_ratio = kwargs["peak_hour_ratio"]
         weekend_ratio = kwargs["weekend_ratio"]
+        evening_traffic = kwargs.get("evening_traffic", 0.0)
+        morning_traffic = kwargs.get("morning_traffic", 0.0)
 
-        # 파생 피처 계산 (feature_engineering.py의 BusinessFeatureEngineer.create_features와 동일)
+        # ── 기존 18개 파생 피처 ──
         survival_rate_normalized = survival_rate / 100.0
         monthly_avg_sales_log = float(np.log1p(monthly_avg_sales))
         sales_per_store = monthly_avg_sales / max(store_count, 1)
-        sales_volatility = abs(sales_growth_rate)  # 학습과 동일: abs(growth_rate)
+        sales_volatility = abs(sales_growth_rate)
         store_count_log = float(np.log1p(store_count))
 
-        # 밀집도 레벨 (0=low, 1=medium, 2=high, 3=very_high) - 학습과 동일 4단계
         if store_count <= 50:
             density_level = 0.0
         elif store_count <= 100:
@@ -157,13 +166,11 @@ class BusinessModelService:
         else:
             density_level = 3.0
 
-        # 시장 포화도 - 학습과 동일: (store_count * competition_ratio) / (sales / 1e7)
         sales_safe = max(monthly_avg_sales, 1)
         market_saturation = min(max(
             (store_count * competition_ratio) / (sales_safe / 10_000_000), 0
         ), 100)
 
-        # 사업 가능성 지수 - 학습과 동일
         growth_clipped = max(-10, min(sales_growth_rate, 20))
         comp_clipped = max(0, min(competition_ratio, 2))
         viability_index = (
@@ -173,14 +180,38 @@ class BusinessModelService:
         ) * 100
         viability_index = max(0, min(viability_index, 100))
 
-        # 성장 잠재력 - 학습과 동일
         growth_potential = (
             growth_clipped / 20 * 50
             + (100 - market_saturation) / 100 * 50
         )
         growth_potential = max(0, min(growth_potential, 100))
 
+        # ── 시간 lag 피처 (6개) - inference 시 lag 없으므로 현재값 사용 ──
+        sales_lag_1m = monthly_avg_sales
+        sales_lag_3m = monthly_avg_sales
+        sales_rolling_6m_mean = monthly_avg_sales
+        sales_rolling_6m_std = 0.0  # 단일 시점이므로 변동 없음
+        store_count_lag_1m = float(store_count)
+        survival_rate_lag_1m = survival_rate
+
+        # ── 계절성 피처 (2개) - 현재 월 기준 sin/cos ──
+        current_month = datetime.now().month
+        month_sin = math.sin(2 * math.pi * current_month / 12)
+        month_cos = math.cos(2 * math.pi * current_month / 12)
+
+        # ── 교차 피처 (3개) - 단일 예측이므로 자체값 사용 ──
+        region_avg_survival = survival_rate  # 지역 평균 대신 자체값
+        industry_avg_survival = survival_rate  # 업종 평균 대신 자체값
+        region_industry_density_ratio = 1.0  # 비교 대상 없으므로 1.0
+
+        # ── 유동인구 파생 피처 (3개) ──
+        foot_traffic_per_store = foot_traffic_score / max(store_count, 1) * 1000
+        morning_safe = max(morning_traffic, 1)
+        evening_morning_ratio = evening_traffic / morning_safe if morning_safe > 0 else 1.0
+        age_concentration_index = 0.167  # 균등 분포 HHI (1/6)
+
         row = {
+            # 기존 18개
             "survival_rate": survival_rate,
             "survival_rate_normalized": survival_rate_normalized,
             "monthly_avg_sales": monthly_avg_sales,
@@ -199,6 +230,24 @@ class BusinessModelService:
             "foot_traffic_score": foot_traffic_score,
             "peak_hour_ratio": peak_hour_ratio,
             "weekend_ratio": weekend_ratio,
+            # 시간 lag (6개)
+            "sales_lag_1m": sales_lag_1m,
+            "sales_lag_3m": sales_lag_3m,
+            "sales_rolling_6m_mean": sales_rolling_6m_mean,
+            "sales_rolling_6m_std": sales_rolling_6m_std,
+            "store_count_lag_1m": store_count_lag_1m,
+            "survival_rate_lag_1m": survival_rate_lag_1m,
+            # 계절성 (2개)
+            "month_sin": month_sin,
+            "month_cos": month_cos,
+            # 교차 (3개)
+            "region_avg_survival": region_avg_survival,
+            "industry_avg_survival": industry_avg_survival,
+            "region_industry_density_ratio": region_industry_density_ratio,
+            # 유동인구 파생 (3개)
+            "foot_traffic_per_store": foot_traffic_per_store,
+            "evening_morning_ratio": evening_morning_ratio,
+            "age_concentration_index": age_concentration_index,
         }
 
         df = pd.DataFrame([row])

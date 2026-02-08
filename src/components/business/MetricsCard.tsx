@@ -15,14 +15,14 @@ import type {
 
 interface MetricsCardProps {
   statistics: DistrictStatistics
-  characteristics: DistrictCharacteristics
+  characteristics?: DistrictCharacteristics
 }
 
 export function MetricsCard({ statistics, characteristics }: MetricsCardProps) {
   const { survival_rate, monthly_avg_sales, competition_ratio, total_stores } =
     statistics
 
-  const { peak_time_traffic } = characteristics
+  const peak_time_traffic = characteristics?.peak_time_traffic ?? 0
 
   // 경쟁 강도 계산 (competition_ratio 기반)
   const getCompetitionLevel = (ratio: number) => {

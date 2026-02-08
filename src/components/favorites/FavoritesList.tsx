@@ -21,6 +21,7 @@ export function FavoritesList({
   const [favorites, setFavorites] = useState<Favorite[]>(initialData)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const [sortBy, setSortBy] = useState<'created_at' | 'price'>('created_at')
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(true)
@@ -85,9 +86,11 @@ export function FavoritesList({
 
       // UI에서 즉시 제거
       setFavorites((prev) => prev.filter((f) => f.id !== id))
+      setActionError(null)
     } catch (err) {
       console.error('Failed to delete favorite:', err)
-      alert('삭제에 실패했습니다.')
+      setActionError('삭제에 실패했습니다.')
+      setTimeout(() => setActionError(null), 3000)
       throw err
     }
   }
@@ -111,9 +114,11 @@ export function FavoritesList({
       setFavorites((prev) =>
         prev.map((f) => (f.id === id ? { ...f, notify_enabled: enabled } : f))
       )
+      setActionError(null)
     } catch (err) {
       console.error('Failed to toggle notify:', err)
-      alert('알림 설정에 실패했습니다.')
+      setActionError('알림 설정에 실패했습니다.')
+      setTimeout(() => setActionError(null), 3000)
       throw err
     }
   }
@@ -162,6 +167,13 @@ export function FavoritesList({
 
   return (
     <div>
+      {/* 에러 메시지 */}
+      {actionError && (
+        <div className="mb-6 rounded-xl border border-[#F04452]/20 bg-red-50 px-4 py-3">
+          <p className="text-sm text-[#F04452]">{actionError}</p>
+        </div>
+      )}
+
       {/* 정렬 옵션 */}
       <div className="mb-8 flex items-center justify-between">
         <div className="flex items-center gap-2">

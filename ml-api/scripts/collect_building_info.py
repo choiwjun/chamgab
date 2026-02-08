@@ -978,8 +978,8 @@ class BuildingInfoCollector:
         if parking_ratio is not None:
             update_data["parking_ratio"] = round(parking_ratio, 2)
 
-        # 확장 필드: total_buildings (동수)
-        tot_dong = _safe_int(matched.get("totDongTotCnt"))
+        # 확장 필드: total_buildings (동수) - mainBldCnt가 실제 주건축물(동) 수
+        tot_dong = _safe_int(matched.get("mainBldCnt"))
         if tot_dong > 0:
             update_data["total_buildings"] = tot_dong
 

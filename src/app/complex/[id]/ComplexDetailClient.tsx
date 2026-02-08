@@ -14,6 +14,11 @@ import {
   Home,
   Layers,
   Compass,
+  BarChart3,
+  DollarSign,
+  Activity,
+  CheckCircle2,
+  AlertCircle,
 } from 'lucide-react'
 import type { Complex } from '@/types/complex'
 import { formatPrice } from '@/lib/format'
@@ -76,15 +81,174 @@ interface AnalysisResult {
   modelVersion: string
 }
 
-// 평형 타입 옵션 (단지별로 다를 수 있음)
-const AREA_TYPES = [
-  { value: '59A', label: '59㎡ A타입', pyeong: 18 },
-  { value: '59B', label: '59㎡ B타입', pyeong: 18 },
-  { value: '84A', label: '84㎡ A타입', pyeong: 25 },
-  { value: '84B', label: '84㎡ B타입', pyeong: 25 },
-  { value: '112A', label: '112㎡ A타입', pyeong: 34 },
-  { value: '134A', label: '134㎡ A타입', pyeong: 40 },
+// 평형 타입 옵션
+interface AreaType {
+  value: string
+  label: string
+  pyeong: number
+}
+
+// 거래 데이터 없는 단지용 기본 fallback
+const DEFAULT_AREA_TYPES: AreaType[] = [
+  { value: '59', label: '59㎡', pyeong: 18 },
+  { value: '84', label: '84㎡', pyeong: 25 },
+  { value: '112', label: '112㎡', pyeong: 34 },
+  { value: '134', label: '134㎡', pyeong: 40 },
 ]
+
+/** 실거래 면적 목록 → 정수 그룹핑 → AreaType 배열 */
+function buildAreaTypes(areas: number[]): AreaType[] {
+  const groups = new Map<number, number[]>()
+  for (const a of areas) {
+    const key = Math.floor(a)
+    const arr = groups.get(key) || []
+    arr.push(a)
+    groups.set(key, arr)
+  }
+
+  return Array.from(groups.entries())
+    .sort(([a], [b]) => a - b)
+    .map(([key, vals]) => {
+      const representative = vals[0]
+      const pyeong = Math.round(representative / 3.3058)
+      return {
+        value: String(representative),
+        label: `${key}㎡`,
+        pyeong,
+      }
+    })
+}
+
+// 투자 분석 결과 타입
+interface InvestmentResult {
+  investmentScore: number
+  roi1Year: { percent: number; profit: number; rating: string }
+  roi3Year: { percent: number; profit: number; rating: string }
+  jeonseRatio: { current: number; trend: string; change: number }
+  liquidity: {
+    score: number
+    level: string
+    txCount3m: number
+    avgDays: number
+  }
+  recommendation: { recommended: boolean; reason: string; factors: string[] }
+  analyzedAt: string
+}
+
+/** 거래 내역 기반 투자 분석 계산 */
+function calculateInvestment(
+  txns: Transaction[],
+  complex: Complex
+): InvestmentResult {
+  const now = new Date()
+  const analyzedAt = now.toISOString()
+
+  // 가격 정렬 (최신 → 과거)
+  const sorted = [...txns].sort((a, b) =>
+    b.transaction_date.localeCompare(a.transaction_date)
+  )
+
+  const currentPrice = sorted.length > 0 ? sorted[0].price : 0
+  const oldestPrice =
+    sorted.length > 0 ? sorted[sorted.length - 1].price : currentPrice
+
+  // 1년 전 가격 (중간 거래)
+  const midIdx = Math.floor(sorted.length / 2)
+  const oneYearPrice = sorted.length >= 2 ? sorted[midIdx].price : currentPrice
+
+  // ROI 계산
+  const roi1Pct =
+    oneYearPrice > 0 ? ((currentPrice - oneYearPrice) / oneYearPrice) * 100 : 0
+  const roi3Pct =
+    oldestPrice > 0 ? ((currentPrice - oldestPrice) / oldestPrice) * 100 : 0
+
+  const getRating = (pct: number) =>
+    pct >= 10 ? 'excellent' : pct >= 5 ? 'good' : pct >= 0 ? 'fair' : 'poor'
+
+  // 유동성 (최근 3개월 거래 수)
+  const threeMonthsAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
+  const txCount3m = sorted.filter(
+    (t) => new Date(t.transaction_date) >= threeMonthsAgo
+  ).length
+
+  let avgDays = 60
+  if (sorted.length >= 2) {
+    const first = new Date(sorted[0].transaction_date)
+    const last = new Date(sorted[sorted.length - 1].transaction_date)
+    const totalDays =
+      Math.abs(first.getTime() - last.getTime()) / (1000 * 60 * 60 * 24)
+    if (totalDays > 0)
+      avgDays = Math.max(7, Math.round(totalDays / sorted.length))
+  }
+
+  const liquidityScore = Math.min(
+    100,
+    txCount3m * 15 + Math.max(0, 50 - avgDays)
+  )
+  const liquidityLevel =
+    liquidityScore >= 60 ? 'high' : liquidityScore >= 30 ? 'medium' : 'low'
+
+  // 전세가율 추정 (실제 전세 데이터 없으므로 시장 평균 기반 추정)
+  const jeonseRatio =
+    60 + (roi3Pct > 0 ? Math.min(roi3Pct, 10) : Math.max(roi3Pct, -10))
+
+  // 종합 점수
+  const annualRoi3y = roi3Pct / 3
+  const roiContrib = Math.min(annualRoi3y * 4, 40)
+  const jeonseContrib = jeonseRatio <= 60 ? 30 : jeonseRatio < 70 ? 20 : 10
+  const liqContrib = (liquidityScore / 100) * 30
+  const investmentScore = Math.max(
+    0,
+    Math.min(100, Math.round(roiContrib + jeonseContrib + liqContrib))
+  )
+
+  // 추천
+  const recommended = investmentScore >= 60
+  const factors: string[] = []
+  if (roi3Pct > 5) factors.push(`3년 수익률 ${roi3Pct.toFixed(1)}%로 양호`)
+  else if (roi3Pct < 0) factors.push(`3년 수익률 ${roi3Pct.toFixed(1)}%로 주의`)
+  if (txCount3m >= 3)
+    factors.push(`최근 3개월 ${txCount3m}건 거래로 유동성 양호`)
+  else factors.push(`최근 3개월 거래 ${txCount3m}건으로 유동성 부족`)
+  if (jeonseRatio <= 65) factors.push('전세가율이 낮아 갭투자 부담 적음')
+  else factors.push('전세가율이 높아 갭투자 주의')
+  const age = now.getFullYear() - (complex.built_year || now.getFullYear() - 15)
+  if (age <= 10) factors.push(`신축 ${age}년차로 감가상각 부담 적음`)
+  else if (age >= 25) factors.push(`${age}년차로 재건축 기대감 존재`)
+
+  return {
+    investmentScore,
+    roi1Year: {
+      percent: Math.round(roi1Pct * 10) / 10,
+      profit: Math.round(currentPrice - oneYearPrice),
+      rating: getRating(roi1Pct),
+    },
+    roi3Year: {
+      percent: Math.round(roi3Pct * 10) / 10,
+      profit: Math.round(currentPrice - oldestPrice),
+      rating: getRating(roi3Pct),
+    },
+    jeonseRatio: {
+      current: Math.round(jeonseRatio * 10) / 10,
+      trend: roi3Pct > 0 ? '상승' : '보합',
+      change: Math.round(roi3Pct * 10) / 10,
+    },
+    liquidity: {
+      score: liquidityScore,
+      level: liquidityLevel,
+      txCount3m,
+      avgDays,
+    },
+    recommendation: {
+      recommended,
+      reason: recommended
+        ? `종합 투자 점수 ${investmentScore}점으로 투자 매력이 있는 단지입니다.`
+        : `종합 투자 점수 ${investmentScore}점으로 신중한 검토가 필요합니다.`,
+      factors,
+    },
+    analyzedAt,
+  }
+}
 
 // 향 옵션
 const DIRECTIONS = [
@@ -669,6 +833,14 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(
     null
   )
+  const [areaTypes, setAreaTypes] = useState<AreaType[]>(DEFAULT_AREA_TYPES)
+  const [areasLoading, setAreasLoading] = useState(true)
+  const [investmentResult, setInvestmentResult] =
+    useState<InvestmentResult | null>(null)
+  const [isInvestmentRequesting, setIsInvestmentRequesting] = useState(false)
+  const [allTransactions, setAllTransactions] = useState<Transaction[]>([]) // 투자분석용 전체 거래
+  const [analysisError, setAnalysisError] = useState<string | null>(null)
+  const [investmentError, setInvestmentError] = useState<string | null>(null)
 
   // 매물 정보 입력 state
   const [propertyInput, setPropertyInput] = useState<PropertyInput>({
@@ -704,6 +876,7 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
     }
 
     setIsRequesting(true)
+    setAnalysisError(null)
     try {
       // 실제 ML API 연동
       const res = await fetch('/api/chamgab', {
@@ -727,10 +900,11 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
 
       // API 응답을 AnalysisResult 형식으로 변환
       const price = analysis.chamgab_price || analysis.predicted_price || 0
-      const areaInfo = AREA_TYPES.find(
-        (a) => a.value === propertyInput.areaType
-      )
-      const pyeong = areaInfo?.pyeong || 25
+      const areaInfo = areaTypes.find((a) => a.value === propertyInput.areaType)
+      const pyeong =
+        areaInfo?.pyeong ||
+        Math.round(parseFloat(propertyInput.areaType) / 3.3058) ||
+        25
       const pricePerPyeong = Math.round(price / pyeong / 10000)
       const confidence = analysis.confidence
         ? Math.round(
@@ -768,9 +942,45 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
       })
     } catch (error) {
       console.error('Analysis request failed:', error)
-      alert('분석 요청 중 오류가 발생했습니다.')
+      setAnalysisError(
+        '분석 요청 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'
+      )
     } finally {
       setIsRequesting(false)
+    }
+  }
+
+  // 투자 분석 요청
+  const handleRequestInvestment = async () => {
+    setIsInvestmentRequesting(true)
+    setInvestmentError(null)
+    try {
+      // 거래 데이터가 충분하지 않으면 더 많이 가져오기
+      let txns = allTransactions
+      if (txns.length < 5) {
+        const res = await fetch(
+          `/api/transactions?complex_id=${complex.id}&limit=100`
+        )
+        if (res.ok) {
+          const data = await res.json()
+          txns = data.items || []
+          setAllTransactions(txns)
+        }
+      }
+
+      if (txns.length === 0) {
+        return
+      }
+
+      const result = calculateInvestment(txns, complex)
+      setInvestmentResult(result)
+    } catch (error) {
+      console.error('Investment analysis failed:', error)
+      setInvestmentError(
+        '투자 분석 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'
+      )
+    } finally {
+      setIsInvestmentRequesting(false)
     }
   }
 
@@ -789,7 +999,9 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
         }
 
         const data = await res.json()
-        setTransactions(data.items || [])
+        const items = data.items || []
+        setTransactions(items)
+        setAllTransactions(items)
       } catch (error) {
         console.error('Failed to load transactions:', error)
         setTransactions([])
@@ -799,6 +1011,31 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
     }
 
     loadTransactions()
+  }, [complex.id])
+
+  // 단지별 실거래 평형 목록 로드
+  useEffect(() => {
+    async function loadAreaTypes() {
+      setAreasLoading(true)
+      try {
+        const res = await fetch(
+          `/api/transactions?complex_id=${complex.id}&distinct_areas=true`
+        )
+        if (res.ok) {
+          const data = await res.json()
+          const areas: number[] = data.areas || []
+          if (areas.length > 0) {
+            setAreaTypes(buildAreaTypes(areas))
+          }
+        }
+      } catch {
+        // fallback 유지
+      } finally {
+        setAreasLoading(false)
+      }
+    }
+
+    loadAreaTypes()
   }, [complex.id])
 
   return (
@@ -907,6 +1144,12 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
             </span>
           </div>
 
+          {analysisError && (
+            <div className="mb-4 rounded-xl border border-[#F04452]/20 bg-red-50 px-4 py-3">
+              <p className="text-sm text-[#F04452]">{analysisError}</p>
+            </div>
+          )}
+
           {analysisResult ? (
             // 분석 결과 표시
             <div className="space-y-6">
@@ -916,9 +1159,10 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
                   분석 대상
                 </p>
                 <p className="text-sm text-[#191F28]">
-                  {AREA_TYPES.find(
+                  {areaTypes.find(
                     (a) => a.value === analysisResult.propertyInput.areaType
-                  )?.label || analysisResult.propertyInput.areaType}{' '}
+                  )?.label ||
+                    `${Math.floor(parseFloat(analysisResult.propertyInput.areaType))}㎡`}{' '}
                   · {analysisResult.propertyInput.floor}층
                   {analysisResult.propertyInput.dong &&
                     ` · ${analysisResult.propertyInput.dong}동`}
@@ -1187,8 +1431,10 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
                           : 'border-gray-200'
                       }`}
                     >
-                      <option value="">평형을 선택하세요</option>
-                      {AREA_TYPES.map((area) => (
+                      <option value="">
+                        {areasLoading ? '불러오는 중...' : '평형을 선택하세요'}
+                      </option>
+                      {areaTypes.map((area) => (
                         <option key={area.value} value={area.value}>
                           {area.label} ({area.pyeong}평)
                         </option>
@@ -1316,6 +1562,312 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
         </div>
       </div>
 
+      {/* 투자 분석 */}
+      <div className="mt-px border-b border-gray-200 bg-white">
+        <div className="px-6 py-8">
+          <div className="mb-6 flex items-center gap-3">
+            <span className="h-px w-8 bg-blue-500" />
+            <span className="text-xs uppercase tracking-wide text-gray-500">
+              Investment Analysis
+            </span>
+          </div>
+
+          {investmentError && (
+            <div className="mb-4 rounded-xl border border-[#F04452]/20 bg-red-50 px-4 py-3">
+              <p className="text-sm text-[#F04452]">{investmentError}</p>
+            </div>
+          )}
+
+          {investmentResult ? (
+            <div className="space-y-6">
+              {/* 종합 투자 점수 */}
+              <div
+                className={`rounded-xl border p-6 ${
+                  investmentResult.investmentScore >= 70
+                    ? 'border-[#00C471]/20 bg-green-50'
+                    : investmentResult.investmentScore >= 50
+                      ? 'border-yellow-500/20 bg-yellow-50'
+                      : 'border-[#F04452]/20 bg-red-50'
+                }`}
+              >
+                <div className="mb-4 flex items-center justify-between">
+                  <h4
+                    className={`text-sm font-semibold ${
+                      investmentResult.investmentScore >= 70
+                        ? 'text-[#00C471]'
+                        : investmentResult.investmentScore >= 50
+                          ? 'text-yellow-700'
+                          : 'text-[#F04452]'
+                    }`}
+                  >
+                    종합 투자 점수
+                  </h4>
+                  <BarChart3
+                    className={`h-5 w-5 ${
+                      investmentResult.investmentScore >= 70
+                        ? 'text-[#00C471]'
+                        : investmentResult.investmentScore >= 50
+                          ? 'text-yellow-600'
+                          : 'text-[#F04452]'
+                    }`}
+                  />
+                </div>
+                <div className="flex items-end gap-2">
+                  <p
+                    className={`text-5xl font-bold ${
+                      investmentResult.investmentScore >= 70
+                        ? 'text-[#00C471]'
+                        : investmentResult.investmentScore >= 50
+                          ? 'text-yellow-700'
+                          : 'text-[#F04452]'
+                    }`}
+                  >
+                    {investmentResult.investmentScore}
+                  </p>
+                  <span className="mb-2 text-gray-600">/100</span>
+                </div>
+                <div className="mt-4 h-3 overflow-hidden rounded-full bg-gray-200">
+                  <div
+                    className={`h-3 rounded-full ${
+                      investmentResult.investmentScore >= 70
+                        ? 'bg-[#00C471]'
+                        : investmentResult.investmentScore >= 50
+                          ? 'bg-yellow-500'
+                          : 'bg-[#F04452]'
+                    }`}
+                    style={{ width: `${investmentResult.investmentScore}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* ROI */}
+              <div>
+                <h4 className="mb-4 font-semibold text-[#191F28]">
+                  <TrendingUp className="mr-2 inline h-4 w-4" />
+                  수익률 (ROI)
+                </h4>
+                <div className="grid grid-cols-2 gap-4">
+                  {[
+                    { label: '1년', data: investmentResult.roi1Year },
+                    { label: '3년', data: investmentResult.roi3Year },
+                  ].map(({ label, data }) => (
+                    <div
+                      key={label}
+                      className={`rounded-xl border p-4 ${
+                        data.rating === 'excellent'
+                          ? 'border-[#00C471]/20 bg-green-50'
+                          : data.rating === 'good'
+                            ? 'border-blue-500/20 bg-blue-50'
+                            : data.rating === 'fair'
+                              ? 'border-yellow-500/20 bg-yellow-50'
+                              : 'border-[#F04452]/20 bg-red-50'
+                      }`}
+                    >
+                      <div className="mb-2 flex items-center justify-between">
+                        <p className="text-sm font-semibold text-[#191F28]">
+                          {label}
+                        </p>
+                        <span className="rounded-lg bg-white/80 px-2 py-1 text-xs font-semibold">
+                          {data.rating === 'excellent'
+                            ? '우수'
+                            : data.rating === 'good'
+                              ? '양호'
+                              : data.rating === 'fair'
+                                ? '보통'
+                                : '부진'}
+                        </span>
+                      </div>
+                      <p className="text-2xl font-bold text-[#191F28]">
+                        {data.percent > 0 ? '+' : ''}
+                        {data.percent.toFixed(1)}%
+                      </p>
+                      <p className="mt-1 text-sm text-[#4E5968]">
+                        예상 수익: {formatPrice(data.profit)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 전세가율 & 유동성 */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="rounded-xl border border-gray-200 bg-[#F9FAFB] p-4">
+                  <div className="mb-3 flex items-center gap-2">
+                    <Home className="h-5 w-5 text-blue-500" />
+                    <h4 className="font-semibold text-[#191F28]">전세가율</h4>
+                  </div>
+                  <p className="text-2xl font-bold text-[#191F28]">
+                    {investmentResult.jeonseRatio.current.toFixed(1)}%
+                  </p>
+                  <div className="mt-2 flex items-center gap-2">
+                    {investmentResult.jeonseRatio.trend === '상승' ? (
+                      <TrendingUp className="h-4 w-4 text-[#F04452]" />
+                    ) : (
+                      <Activity className="h-4 w-4 text-gray-500" />
+                    )}
+                    <span className="text-sm text-[#4E5968]">
+                      {investmentResult.jeonseRatio.trend}
+                    </span>
+                  </div>
+                </div>
+                <div className="rounded-xl border border-gray-200 bg-[#F9FAFB] p-4">
+                  <div className="mb-3 flex items-center gap-2">
+                    <DollarSign className="h-5 w-5 text-blue-500" />
+                    <h4 className="font-semibold text-[#191F28]">유동성</h4>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <p className="text-2xl font-bold text-[#191F28]">
+                      {investmentResult.liquidity.score}
+                    </p>
+                    <span
+                      className={`rounded-lg px-2 py-1 text-xs font-semibold ${
+                        investmentResult.liquidity.level === 'high'
+                          ? 'border border-[#00C471]/20 bg-green-50 text-[#00C471]'
+                          : investmentResult.liquidity.level === 'medium'
+                            ? 'border border-yellow-500/20 bg-yellow-50 text-yellow-600'
+                            : 'border border-[#F04452]/20 bg-red-50 text-[#F04452]'
+                      }`}
+                    >
+                      {investmentResult.liquidity.level === 'high'
+                        ? '높음'
+                        : investmentResult.liquidity.level === 'medium'
+                          ? '보통'
+                          : '낮음'}
+                    </span>
+                  </div>
+                  <div className="mt-2 space-y-1 text-xs text-[#4E5968]">
+                    <p>
+                      최근 3개월 거래: {investmentResult.liquidity.txCount3m}건
+                    </p>
+                    <p>
+                      평균 거래 간격: {investmentResult.liquidity.avgDays}일
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* 투자 추천 */}
+              <div
+                className={`rounded-xl border p-4 ${
+                  investmentResult.recommendation.recommended
+                    ? 'border-[#00C471]/20 bg-green-50'
+                    : 'border-yellow-500/20 bg-yellow-50'
+                }`}
+              >
+                <div className="mb-3 flex items-center gap-2">
+                  {investmentResult.recommendation.recommended ? (
+                    <>
+                      <CheckCircle2 className="h-5 w-5 text-[#00C471]" />
+                      <h4 className="font-semibold text-[#00C471]">
+                        투자 추천
+                      </h4>
+                    </>
+                  ) : (
+                    <>
+                      <AlertCircle className="h-5 w-5 text-yellow-600" />
+                      <h4 className="font-semibold text-yellow-700">
+                        신중한 검토 필요
+                      </h4>
+                    </>
+                  )}
+                </div>
+                <p className="mb-3 text-sm text-[#191F28]">
+                  {investmentResult.recommendation.reason}
+                </p>
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-[#4E5968]">
+                    주요 고려 요인:
+                  </p>
+                  <ul className="space-y-1">
+                    {investmentResult.recommendation.factors.map(
+                      (factor, i) => (
+                        <li
+                          key={i}
+                          className="flex items-start gap-2 text-xs text-[#4E5968]"
+                        >
+                          <span className="mt-1 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-current" />
+                          <span>{factor}</span>
+                        </li>
+                      )
+                    )}
+                  </ul>
+                </div>
+              </div>
+
+              {/* 분석 메타 */}
+              <div className="flex items-center justify-between border-t border-gray-200 pt-4 text-xs text-gray-400">
+                <span>
+                  분석일:{' '}
+                  {new Date(investmentResult.analyzedAt).toLocaleDateString()}
+                </span>
+                <span>거래 데이터 {allTransactions.length}건 기반</span>
+              </div>
+
+              {/* 다시 분석 */}
+              <button
+                onClick={() => setInvestmentResult(null)}
+                className="w-full rounded-lg border-2 border-gray-300 bg-white py-3 text-sm font-semibold text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-800"
+              >
+                투자 분석 초기화
+              </button>
+            </div>
+          ) : !isLoading && allTransactions.length === 0 ? (
+            <div className="rounded-xl border border-[#E5E8EB] bg-[#F9FAFB] p-6 text-center">
+              <AlertCircle className="mx-auto mb-3 h-8 w-8 text-[#8B95A1]" />
+              <h4 className="mb-2 text-sm font-semibold text-[#191F28]">
+                투자 분석을 수행할 수 없습니다
+              </h4>
+              <p className="text-xs leading-relaxed text-[#4E5968]">
+                이 단지의 실거래 데이터가 아직 수집되지 않아
+                <br />
+                투자 분석이 불가합니다. 거래 데이터가 확보되면 분석이
+                가능해집니다.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="rounded-xl border-l-4 border-gray-300 bg-gray-50 px-4 py-3">
+                <p className="text-sm text-[#4E5968]">
+                  실거래 데이터를 기반으로 투자 가치를 종합 분석합니다.
+                </p>
+              </div>
+              <button
+                onClick={handleRequestInvestment}
+                disabled={isInvestmentRequesting}
+                className="w-full rounded-lg border-2 border-blue-500 bg-white py-4 text-sm font-semibold text-blue-500 transition-colors hover:bg-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isInvestmentRequesting ? (
+                  <span className="flex items-center justify-center gap-3">
+                    <svg
+                      className="h-4 w-4 animate-spin"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      />
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                      />
+                    </svg>
+                    투자 분석 중...
+                  </span>
+                ) : (
+                  '투자 분석 요청'
+                )}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* 최근 실거래 */}
       <div className="mt-px border-b border-gray-200 bg-white">
         <div className="px-6 py-8">
@@ -1349,7 +1901,8 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
                       {formatPrice(tx.price)}
                     </p>
                     <p className="mt-1 text-sm text-gray-500">
-                      {tx.area_exclusive}㎡ · {tx.floor}층
+                      {tx.area_exclusive}㎡
+                      {tx.floor != null ? ` · ${tx.floor}층` : ''}
                     </p>
                   </div>
                   <div className="text-right">

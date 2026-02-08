@@ -19,6 +19,7 @@ from sklearn.model_selection import (
     train_test_split,
     cross_val_score,
     StratifiedKFold,
+    TimeSeriesSplit,
     GridSearchCV
 )
 from sklearn.metrics import (
@@ -51,31 +52,28 @@ class BusinessSuccessTrainer:
         "n_jobs": -1,
     }
 
-    # 피처 컬럼 (success_score 제외 - 데이터 누수 방지)
+    # 피처 컬럼 (v2 - 32개, BusinessFeatureEngineer.FEATURE_COLUMNS와 동기화)
     FEATURE_COLUMNS = [
-        # 생존율 피처
-        "survival_rate",
-        "survival_rate_normalized",
-        # 매출 피처
-        "monthly_avg_sales",
-        "monthly_avg_sales_log",
-        "sales_growth_rate",
-        "sales_per_store",
-        "sales_volatility",
-        # 경쟁 피처
-        "store_count",
-        "store_count_log",
-        "density_level",
-        "franchise_ratio",
-        "competition_ratio",
-        "market_saturation",
-        # 복합 피처
-        "viability_index",
-        "growth_potential",
-        # 유동인구 피처
-        "foot_traffic_score",
-        "peak_hour_ratio",
-        "weekend_ratio",
+        # 기존 18개
+        "survival_rate", "survival_rate_normalized",
+        "monthly_avg_sales", "monthly_avg_sales_log",
+        "sales_growth_rate", "sales_per_store", "sales_volatility",
+        "store_count", "store_count_log", "density_level",
+        "franchise_ratio", "competition_ratio", "market_saturation",
+        "viability_index", "growth_potential",
+        "foot_traffic_score", "peak_hour_ratio", "weekend_ratio",
+        # 시간 lag (6개)
+        "sales_lag_1m", "sales_lag_3m",
+        "sales_rolling_6m_mean", "sales_rolling_6m_std",
+        "store_count_lag_1m", "survival_rate_lag_1m",
+        # 계절성 (2개)
+        "month_sin", "month_cos",
+        # 교차 (3개)
+        "region_avg_survival", "industry_avg_survival",
+        "region_industry_density_ratio",
+        # 유동인구 파생 (3개)
+        "foot_traffic_per_store", "evening_morning_ratio",
+        "age_concentration_index",
     ]
 
     def __init__(self):
@@ -84,14 +82,16 @@ class BusinessSuccessTrainer:
         self.feature_names: Optional[list] = None
 
     def prepare_data(
-        self, df: pd.DataFrame, target_col: str = "success"
+        self, df: pd.DataFrame, target_col: str = "success",
+        time_col: str = "base_year_month"
     ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
         """
-        학습 데이터 준비
+        학습 데이터 준비 (v2 - 시간 기반 분할 우선)
 
         Args:
             df: 전체 데이터프레임
             target_col: 타겟 컬럼명 (0: 실패, 1: 성공)
+            time_col: 시간 순서 컬럼명
 
         Returns:
             X_train, X_test, y_train, y_test
@@ -106,10 +106,27 @@ class BusinessSuccessTrainer:
         # 결측치 처리
         X = X.fillna(X.median())
 
-        # Train/Test 분할 (Stratified)
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42, stratify=y
-        )
+        # 시간 기반 분할 (미래 데이터 누수 방지)
+        if time_col in df.columns:
+            unique_months = sorted(df[time_col].unique())
+            split_idx = int(len(unique_months) * 0.8)
+            train_months = set(unique_months[:split_idx])
+            test_months = set(unique_months[split_idx:])
+
+            train_mask = df[time_col].isin(train_months)
+            test_mask = df[time_col].isin(test_months)
+
+            X_train, X_test = X[train_mask], X[test_mask]
+            y_train, y_test = y[train_mask], y[test_mask]
+
+            print(f"\n시간 기반 분할:")
+            print(f"  Train months: {sorted(train_months)[:3]}...{sorted(train_months)[-1:]}")
+            print(f"  Test months: {sorted(test_months)}")
+        else:
+            # Fallback: Stratified random split
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, random_state=42, stratify=y
+            )
 
         print(f"\n{'='*60}")
         print("데이터 준비")
@@ -143,9 +160,16 @@ class BusinessSuccessTrainer:
         if params is None:
             params = self.DEFAULT_PARAMS.copy()
 
+        # 자동 클래스 불균형 대응
+        neg_count = int((y_train == 0).sum())
+        pos_count = int((y_train == 1).sum())
+        if pos_count > 0 and 'scale_pos_weight' not in params:
+            params['scale_pos_weight'] = round(neg_count / pos_count, 2)
+
         print(f"\n{'='*60}")
         print("모델 학습")
         print(f"{'='*60}")
+        print(f"클래스 비율: 0={neg_count}, 1={pos_count} (scale_pos_weight={params.get('scale_pos_weight', 1.0)})")
         print(f"파라미터:")
         for key, value in params.items():
             print(f"  {key}: {value}")
@@ -341,11 +365,11 @@ class BusinessSuccessTrainer:
         print(f"{cv}-Fold 교차 검증")
         print(f"{'='*60}")
 
-        # Stratified K-Fold
-        skf = StratifiedKFold(n_splits=cv, shuffle=True, random_state=42)
+        # TimeSeriesSplit (시간 순서 보존)
+        tscv = TimeSeriesSplit(n_splits=cv)
 
         # Accuracy
-        scores = cross_val_score(self.model, X, y, cv=skf, scoring="accuracy")
+        scores = cross_val_score(self.model, X, y, cv=tscv, scoring="accuracy")
 
         print(f"\nAccuracy: {scores.mean():.4f} (+/- {scores.std() * 2:.4f})")
         print(f"Fold별 점수: {scores}")
@@ -495,37 +519,28 @@ def main():
         else:
             raise ValueError("지원하지 않는 파일 형식입니다")
     else:
-        # 데모용 샘플 데이터 생성 (BusinessFeatureEngineer 활용)
-        print("⚠ 데이터 경로가 지정되지 않아 샘플 데이터를 사용합니다\n")
+        print("⚠ 데이터 경로가 지정되지 않았습니다.")
+        print("  python -m scripts.train_business_model --data scripts/business_training_data.csv")
+        sys.exit(1)
 
-        import sys
-        from pathlib import Path as PathLib
-        sys.path.insert(0, str(PathLib(__file__).parent.parent))
-        from scripts.feature_engineering import BusinessFeatureEngineer
+    # BusinessFeatureEngineer로 피처 생성 + 라벨 생성
+    import sys as _sys
+    from pathlib import Path as PathLib
+    _sys.path.insert(0, str(PathLib(__file__).parent.parent))
+    from scripts.feature_engineering import BusinessFeatureEngineer
 
-        bfe = BusinessFeatureEngineer()
-        X_full, y_full, df = bfe.prepare_training_data(n_samples=2000)
-
-        # feature_engineering에서 생성한 피처를 사용
-        df_with_features = df.copy()
+    bfe = BusinessFeatureEngineer()
+    X_full, y_full, df_featured = bfe.prepare_training_data(df=df)
 
     # 트레이너 초기화
     trainer = BusinessSuccessTrainer()
 
-    # 데이터 준비
-    if args.data:
-        X_train, X_test, y_train, y_test = trainer.prepare_data(df)
+    # 시간 기반 데이터 분할
+    if 'base_year_month' in df_featured.columns:
+        X_train, X_test, y_train, y_test = trainer.prepare_data(
+            df_featured, target_col='success', time_col='base_year_month')
     else:
-        # BusinessFeatureEngineer에서 이미 준비된 데이터 사용
-        from sklearn.model_selection import train_test_split
-        X_train, X_test, y_train, y_test = train_test_split(
-            X_full, y_full, test_size=0.2, random_state=42, stratify=y_full
-        )
-        trainer.feature_names = list(X_full.columns)
-        print(f"\nTrain set: {len(X_train)}건")
-        print(f"Test set: {len(X_test)}건")
-        print(f"피처 수: {len(trainer.feature_names)}")
-        print(f"클래스 분포 (Train): {y_train.value_counts().to_dict()}")
+        X_train, X_test, y_train, y_test = trainer.prepare_data(df_featured)
 
     # 하이퍼파라미터 튜닝 (옵션)
     if args.tune:

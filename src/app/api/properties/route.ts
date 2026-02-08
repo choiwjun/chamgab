@@ -7,6 +7,8 @@ export const dynamic = 'force-dynamic'
 
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import { REGION_COORDS, expandCityToDistricts } from '@/lib/region-coords'
+import { sanitizeFilterInput } from '@/lib/sanitize'
 
 function getSupabase() {
   return createClient(
@@ -106,16 +108,38 @@ export async function GET(request: NextRequest) {
     // 기본 쿼리 구성
     let query = supabase.from('properties').select('*', { count: 'exact' })
 
-    // 텍스트 검색 (이름, 주소)
+    // 텍스트 검색 (이름, 주소, 시군구, 시도 + 시→구 확장)
     if (q) {
-      query = query.or(`name.ilike.%${q}%,address.ilike.%${q}%`)
+      // PostgREST filter injection 방지: 특수문자 제거
+      const sanitizedQ = sanitizeFilterInput(q)
+      if (sanitizedQ) {
+        // 기본: 이름, 주소, 시군구, 시도에서 검색
+        let searchFilters = `name.ilike.%${sanitizedQ}%,address.ilike.%${sanitizedQ}%,sigungu.ilike.%${sanitizedQ}%,sido.ilike.%${sanitizedQ}%`
+
+        // 시→구 확장: "안산" → 단원구, 상록구 등 하위 구 매물도 포함
+        // expandCityToDistricts returns internal data (safe), but sanitize for consistency
+        const expandedDistricts = expandCityToDistricts(sanitizedQ)
+        if (expandedDistricts.length > 0) {
+          const districtFilters = expandedDistricts
+            .map((d) => `sigungu.eq.${sanitizeFilterInput(d)}`)
+            .join(',')
+          searchFilters += `,${districtFilters}`
+        }
+
+        query = query.or(searchFilters)
+      }
     }
 
     // 필터 적용
     if (sido) query = query.eq('sido', sido)
     if (sigungu) {
       // sigungu 정확 매칭 또는 address에 지역명 포함 검색
-      query = query.or(`sigungu.eq.${sigungu},address.ilike.%${sigungu}%`)
+      const sanitizedSigungu = sanitizeFilterInput(sigungu)
+      if (sanitizedSigungu) {
+        query = query.or(
+          `sigungu.eq.${sanitizedSigungu},address.ilike.%${sanitizedSigungu}%`
+        )
+      }
     }
     if (property_type) query = query.eq('property_type', property_type)
     if (min_area !== undefined) query = query.gte('area_exclusive', min_area)
@@ -147,12 +171,24 @@ export async function GET(request: NextRequest) {
     }
 
     // location WKB hex → { lat, lng } 변환
+    // location이 NULL이면 시군구 기반 근사 좌표 부여 (±400m jitter)
     const items = (data || []).map((item) => {
       const parsed = parseWKBPoint(item.location)
-      return {
-        ...item,
-        location: parsed || item.location,
+      if (parsed) return { ...item, location: parsed }
+
+      // PostGIS 좌표가 없으면 시군구 중심 좌표 + jitter
+      const regionCenter = REGION_COORDS[item.sigungu || '']
+      if (regionCenter) {
+        return {
+          ...item,
+          location: {
+            lat: regionCenter.lat + (Math.random() - 0.5) * 0.008,
+            lng: regionCenter.lng + (Math.random() - 0.5) * 0.008,
+          },
+        }
       }
+
+      return { ...item, location: null }
     })
 
     return NextResponse.json({

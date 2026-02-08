@@ -72,7 +72,10 @@ export async function GET(request: NextRequest) {
     const { data: regions, count, error } = await query
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 })
+      return NextResponse.json(
+        { error: '지역 데이터 조회 중 오류가 발생했습니다.' },
+        { status: 400 }
+      )
     }
 
     // 최상위 레벨 조회 시 계층형 구조 반환
@@ -101,7 +104,7 @@ export async function GET(request: NextRequest) {
     })
   } catch {
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: '지역 데이터 조회 중 오류가 발생했습니다.' },
       { status: 500 }
     )
   }
@@ -110,8 +113,8 @@ export async function GET(request: NextRequest) {
 /**
  * 계층형 지역 구조 구성
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function buildHierarchy(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: ReturnType<typeof createClient<any>>,
   _regions: Record<string, unknown>[]
 ): Promise<RegionWithChildren[]> {

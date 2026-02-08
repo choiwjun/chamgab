@@ -76,10 +76,12 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
   )
   const [isLoading, setIsLoading] = useState(true)
   const [isRequesting, setIsRequesting] = useState(false)
+  const [analysisError, setAnalysisError] = useState<string | null>(null)
 
   // 분석 요청
   const handleRequestAnalysis = async () => {
     setIsRequesting(true)
+    setAnalysisError(null)
     try {
       const res = await fetch('/api/chamgab', {
         method: 'POST',
@@ -109,7 +111,9 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
       }
     } catch (error) {
       console.error('Analysis request failed:', error)
-      alert('분석 요청 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.')
+      setAnalysisError(
+        '분석 요청 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'
+      )
     } finally {
       setIsRequesting(false)
     }
@@ -285,6 +289,11 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
               AI 분석
             </span>
           </div>
+          {analysisError && (
+            <div className="mb-4 rounded-xl border border-[#F04452]/20 bg-red-50 px-4 py-3">
+              <p className="text-sm text-[#F04452]">{analysisError}</p>
+            </div>
+          )}
           <ChamgabCard
             analysis={analysis || undefined}
             isLoading={isLoading || isRequesting}

@@ -60,11 +60,13 @@ export function PlanSelector() {
     'monthly'
   )
   const [, setSelectedPlan] = useState<string | null>(null)
+  const [showComingSoon, setShowComingSoon] = useState(false)
 
   const handleSelectPlan = (planId: string) => {
     setSelectedPlan(planId)
     // TODO: Toss Payments 연동
-    alert(`${planId} 플랜을 선택했습니다. 결제 기능은 준비 중입니다.`)
+    setShowComingSoon(true)
+    setTimeout(() => setShowComingSoon(false), 3000)
   }
 
   const formatPrice = (price: number) => {
@@ -74,6 +76,13 @@ export function PlanSelector() {
 
   return (
     <div>
+      {/* 결제 준비 중 메시지 */}
+      {showComingSoon && (
+        <div className="mb-6 rounded-xl border border-[#8B95A1]/20 bg-[#F2F4F6] px-4 py-3 text-center">
+          <p className="text-sm text-[#8B95A1]">결제 기능은 준비 중입니다</p>
+        </div>
+      )}
+
       {/* 결제 주기 토글 */}
       <div className="mb-8 flex justify-center">
         <div className="inline-flex rounded-lg bg-gray-100 p-1">

@@ -3,9 +3,27 @@
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { MapPin, Maximize2, Calendar } from 'lucide-react'
-import type { Property } from '@/types/property'
+import type { Property, PropertyType } from '@/types/property'
 import { formatArea } from '@/lib/format'
 import { cn } from '@/lib/utils'
+
+const TYPE_LABEL: Record<PropertyType, string> = {
+  apt: '아파트',
+  officetel: '오피스텔',
+  villa: '빌라',
+  store: '상가',
+  land: '토지',
+  building: '단독주택',
+}
+
+const TYPE_COLOR: Record<PropertyType, string> = {
+  apt: 'bg-blue-50 text-blue-600',
+  officetel: 'bg-violet-50 text-violet-600',
+  villa: 'bg-emerald-50 text-emerald-600',
+  store: 'bg-amber-50 text-amber-600',
+  land: 'bg-stone-100 text-stone-600',
+  building: 'bg-orange-50 text-orange-600',
+}
 
 interface PropertyCardProps {
   property: Property
@@ -22,6 +40,7 @@ export function PropertyCard({
 }: PropertyCardProps) {
   const region = property.address?.split(' ')[0] || '서울'
   const subRegion = property.address?.split(' ')[1] || ''
+  const ptype = property.property_type || 'apt'
 
   return (
     <motion.div
@@ -37,14 +56,24 @@ export function PropertyCard({
         className="block h-full overflow-hidden rounded-xl border border-gray-200 bg-white transition-colors hover:border-gray-300"
       >
         <div className="p-5">
-          {/* 지역 */}
-          <div className="mb-1">
+          {/* 지역 + 매물유형 */}
+          <div className="mb-1 flex items-center gap-2">
             <span className="text-xs text-gray-500">
               {region} {subRegion}
             </span>
+            {ptype !== 'apt' && (
+              <span
+                className={cn(
+                  'rounded-full px-2 py-0.5 text-[10px] font-medium',
+                  TYPE_COLOR[ptype]
+                )}
+              >
+                {TYPE_LABEL[ptype]}
+              </span>
+            )}
           </div>
 
-          {/* 아파트명 */}
+          {/* 매물명 */}
           <h3 className="mb-1 line-clamp-2 text-base font-semibold leading-snug text-gray-900">
             {property.name}
           </h3>

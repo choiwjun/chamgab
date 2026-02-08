@@ -1,11 +1,21 @@
 // @TASK P2-R0-T1 - Complexes API - 목록 조회
 // @SPEC specs/domain/resources.yaml#complexes
 
+import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
 // 동적 렌더링 강제 (searchParams 사용)
 export const dynamic = 'force-dynamic'
 import { getComplexes, getComplexesByBrand } from '@/services/complexes'
+import { REGION_COORDS } from '@/lib/region-coords'
+import { sanitizeFilterInput } from '@/lib/sanitize'
+
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+  )
+}
 
 /**
  * GET /api/complexes
@@ -31,6 +41,12 @@ import { getComplexes, getComplexesByBrand } from '@/services/complexes'
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
+    const mapMode = searchParams.get('map') === 'true'
+
+    // 지도 모드: 경량 데이터 (id, name, sigungu, location) 최대 500건
+    if (mapMode) {
+      return handleMapMode(searchParams)
+    }
 
     // Query parameters 파싱
     const sido = searchParams.get('sido') || undefined
@@ -74,4 +90,87 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
+}
+
+/** 지도 모드: 경량 단지 데이터 반환 (최대 500건) */
+async function handleMapMode(searchParams: URLSearchParams) {
+  const supabase = getSupabase()
+  const keyword = searchParams.get('keyword') || undefined
+  const sigungu = searchParams.get('sigungu') || undefined
+  const sido = searchParams.get('sido') || undefined
+
+  let query = supabase
+    .from('complexes')
+    .select('id, name, address, sigungu, location, built_year, total_units', {
+      count: 'exact',
+    })
+
+  if (keyword) {
+    const sanitizedKeyword = sanitizeFilterInput(keyword)
+    if (sanitizedKeyword) {
+      query = query.or(
+        `name.ilike.%${sanitizedKeyword}%,sigungu.ilike.%${sanitizedKeyword}%,address.ilike.%${sanitizedKeyword}%`
+      )
+    }
+  }
+  if (sigungu) {
+    const sanitizedSigungu = sanitizeFilterInput(sigungu)
+    if (sanitizedSigungu) {
+      query = query.or(
+        `sigungu.eq.${sanitizedSigungu},address.ilike.%${sanitizedSigungu}%`
+      )
+    }
+  }
+  if (sido) {
+    query = query.eq('sido', sido)
+  }
+
+  query = query.limit(2000)
+
+  const { data, count, error } = await query
+
+  if (error) {
+    console.error('[Complexes API] Map mode error:', error.message)
+    return NextResponse.json({ items: [], total: 0 }, { status: 503 })
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const items = (data || [])
+    .map((r: any) => {
+      let location = null
+      if (
+        r.location &&
+        typeof r.location === 'object' &&
+        r.location.coordinates
+      ) {
+        location = {
+          lng: r.location.coordinates[0],
+          lat: r.location.coordinates[1],
+        }
+      }
+      if (!location) {
+        const center = REGION_COORDS[r.sigungu || '']
+        if (center) {
+          location = {
+            lat: center.lat + (Math.random() - 0.5) * 0.006,
+            lng: center.lng + (Math.random() - 0.5) * 0.006,
+          }
+        }
+      }
+      return {
+        id: r.id,
+        name: r.name,
+        address: r.address || '',
+        sigungu: r.sigungu,
+        location,
+        built_year: r.built_year,
+        total_units: r.total_units,
+      }
+    })
+    .filter((r: { location: unknown }) => r.location !== null)
+
+  return NextResponse.json(
+    { items, total: count || 0 },
+    { headers: { 'Cache-Control': 'public, max-age=60, s-maxage=60' } }
+  )
 }

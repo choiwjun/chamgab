@@ -139,7 +139,8 @@ export function SimilarTransactions({
               {tx.area_exclusive?.toFixed(1)}㎡
             </div>
             <div className="text-xs text-[#4E5968]">
-              {tx.floor}층 {tx.dong && `/ ${tx.dong}`}
+              {tx.floor != null ? `${tx.floor}층` : '-'}{' '}
+              {tx.dong && `/ ${tx.dong}`}
             </div>
             <div>
               {tx.similarity && (
