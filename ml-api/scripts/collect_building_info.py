@@ -82,13 +82,44 @@ def normalize_name(name: str) -> str:
     return name.strip().lower()
 
 
+# 아파트명에서 제거할 접미사 (긴 것부터)
+_SUFFIXES = [
+    "아파트", "주상복합", "타운하우스", "빌리지",
+    "타워", "팰리스", "파크", "맨션",
+    "빌라", "빌딩", "하우스", "단지",
+    "오피스텔", "레지던스",
+]
+
+
+def normalize_name_deep(name: str) -> str:
+    """
+    단지명 심층 정규화:
+    1. 괄호 내용 제거: "이안용산1동(103동)" → "이안용산1동"
+    2. 특수문자/공백 제거
+    3. 접미사 제거: "래미안아파트" → "래미안"
+    4. 영문 소문자화
+    """
+    if not name:
+        return ""
+    # 괄호 내용 제거
+    name = re.sub(r"\([^)]*\)", "", name)
+    # 특수문자/공백 제거, 소문자화
+    name = re.sub(r"[^\w가-힣]", "", name).strip().lower()
+    # 접미사 제거 (긴 것부터)
+    for sfx in _SUFFIXES:
+        if name.endswith(sfx) and len(name) > len(sfx):
+            name = name[: -len(sfx)]
+            break
+    return name
+
+
 def names_match(api_name: str, complex_name: str) -> Tuple[bool, str]:
     """
     건물명과 단지명을 비교합니다.
 
     Returns:
         (매치 여부, 매치 유형)
-        매치 유형: "exact" | "contains" | "partial" | "none"
+        매치 유형: "exact" | "contains" | "partial" | "fuzzy" | "none"
     """
     if not api_name or not complex_name:
         return False, "none"
@@ -101,12 +132,33 @@ def names_match(api_name: str, complex_name: str) -> Tuple[bool, str]:
         return True, "exact"
 
     # 2) API 건물명이 단지명을 포함 (예: "래미안강남아파트" contains "래미안강남")
-    if norm_cx in norm_api:
+    if len(norm_cx) >= 2 and norm_cx in norm_api:
         return True, "contains"
 
     # 3) 단지명이 API 건물명을 포함 (예: "래미안강남퍼스트하임" contains "래미안강남")
-    if norm_api in norm_cx:
+    if len(norm_api) >= 2 and norm_api in norm_cx:
         return True, "partial"
+
+    # 4) 접미사 제거 후 재비교 (deep normalize)
+    deep_api = normalize_name_deep(api_name)
+    deep_cx = normalize_name_deep(complex_name)
+
+    if deep_api and deep_cx:
+        if deep_api == deep_cx:
+            return True, "exact"
+        if len(deep_cx) >= 2 and deep_cx in deep_api:
+            return True, "contains"
+        if len(deep_api) >= 2 and deep_api in deep_cx:
+            return True, "partial"
+
+    # 5) SequenceMatcher 유사도 매칭 (0.75 이상)
+    from difflib import SequenceMatcher
+
+    # deep normalized 이름 기준으로 비교
+    if deep_api and deep_cx and len(deep_api) >= 2 and len(deep_cx) >= 2:
+        ratio = SequenceMatcher(None, deep_api, deep_cx).ratio()
+        if ratio >= 0.75:
+            return True, "fuzzy"
 
     return False, "none"
 
@@ -233,6 +285,7 @@ def find_matching_building(
     1. 정규화 후 완전 일치 (exact)
     2. API 건물명에 단지명 포함 (contains)
     3. 단지명에 API 건물명 포함 (partial)
+    4. 유사도 75% 이상 (fuzzy)
 
     동일 우선순위 내에서는 세대수(hhldCnt)가 큰 것을 우선합니다.
     """
@@ -240,7 +293,7 @@ def find_matching_building(
     best_priority = 99  # 낮을수록 우선
     best_units = 0
 
-    priority_map = {"exact": 1, "contains": 2, "partial": 3}
+    priority_map = {"exact": 1, "contains": 2, "partial": 3, "fuzzy": 4}
 
     for item in items:
         bld_nm = item.get("bldNm", "") or ""
@@ -259,6 +312,17 @@ def find_matching_building(
             best_match = item
             best_priority = priority
             best_units = hhld_cnt
+
+    # Fallback: 이름 매칭 실패 시 주용도가 "아파트"이고 세대수가 가장 큰 건물 선택
+    # (같은 법정동에 아파트가 1개만 있는 경우 유효)
+    if best_match is None:
+        apt_items = [
+            it for it in items
+            if "아파트" in (it.get("mainPurpsCdNm") or "")
+            and _safe_int(it.get("hhldCnt")) > 0
+        ]
+        if len(apt_items) == 1:
+            best_match = apt_items[0]
 
     return best_match
 
@@ -450,6 +514,46 @@ SIDO_SHORT: Dict[str, str] = {
     "울산광역시": "울산",
 }
 
+# ------------------------------------------------------------------ #
+# 행정동 → 법정동 매핑 (신도시 등 행정동≠법정동인 경우)
+# ------------------------------------------------------------------ #
+# key: sigungu_cd, value: {행정동: [시도할 법정동 이름 리스트]}
+ADMIN_TO_LEGAL_DONG: Dict[str, Dict[str, List[str]]] = {
+    "41610": {  # 경기도 광주시 - 오포지구 (행정동→리)
+        "고산동": ["고산리"],
+        "능평동": ["능평리"],
+        "신현동": ["신현리"],
+        "양벌동": ["양벌리"],
+        "추자동": ["추자리"],
+    },
+}
+
+# ------------------------------------------------------------------ #
+# 신도시 행정동 → 법정동코드 직접 매핑
+# (bjdong_codes.json에 누락된 신규 법정동 코드)
+# ------------------------------------------------------------------ #
+NEWTOWN_BJDONG: Dict[str, Dict[str, str]] = {
+    "41360": {  # 남양주시 - 다산신도시
+        "다산동": "11200",
+    },
+    "28260": {  # 인천 서구 - 청라국제도시
+        "청라동": "12200",
+    },
+    "36110": {  # 세종시 - 행정중심복합도시
+        "반곡동": "10100",   # 수루배마을
+        "보람동": "10300",   # 호려울마을
+        "대평동": "10400",   # 해들마을
+        "한솔동": "10600",   # 첫마을
+        "새롬동": "10800",   # 새뜸마을
+        "다정동": "10900",   # 가온마을
+        "종촌동": "11100",   # 가재마을
+        "고운동": "11200",   # 가락마을
+        "아름동": "11300",   # 범지기마을
+        "도담동": "11400",   # 도램마을
+        "집현동": "11800",   # 새나루마을
+    },
+}
+
 # 여러 시도에 동일한 이름이 존재하는 시군구 (sido로 구별 필요)
 AMBIGUOUS_SIGUNGU = {"동구", "서구", "남구", "북구", "중구"}
 
@@ -639,6 +743,49 @@ class BuildingInfoCollector:
                         if clean_parsed == clean_db:
                             bjdong_cd = code
                             break
+
+        # 5) 신도시 직접 코드 매핑 (bjdong_codes.json에 없는 코드)
+        if bjdong_cd == "00000" and emd_name and sigungu_cd:
+            newtown_map = NEWTOWN_BJDONG.get(sigungu_cd, {})
+            newtown_code = newtown_map.get(emd_name)
+            if newtown_code:
+                bjdong_cd = newtown_code
+
+        # 6) 행정동→법정동 매핑 시도 (기타 신도시)
+        if bjdong_cd == "00000" and emd_name and sigungu_cd:
+            emd_codes = bjdong_map.get(sigungu_cd, {})
+
+            # 6a) ADMIN_TO_LEGAL_DONG 매핑에서 검색
+            admin_map = ADMIN_TO_LEGAL_DONG.get(sigungu_cd, {})
+            legal_dongs = admin_map.get(emd_name)
+            if legal_dongs:
+                for ld in legal_dongs:
+                    if ld in emd_codes:
+                        bjdong_cd = emd_codes[ld]
+                        break
+
+            # 6b) "~동" → "~리" 변환 시도 (경기 광주시 등)
+            if bjdong_cd == "00000" and emd_name.endswith("동"):
+                ri_name = emd_name[:-1] + "리"
+                if ri_name in emd_codes:
+                    bjdong_cd = emd_codes[ri_name]
+
+            # 6c) 복합 읍면동 파싱: "퇴계원읍 퇴계원리" → "퇴계원읍" 시도
+            if bjdong_cd == "00000" and " " in emd_name:
+                parts = emd_name.split()
+                for part in parts:
+                    if part in emd_codes:
+                        bjdong_cd = emd_codes[part]
+                        break
+                    # 부분 매칭 (숫자 제거)
+                    for db_name, code in emd_codes.items():
+                        if re.sub(r"\d+", "", part) == re.sub(
+                            r"\d+", "", db_name
+                        ):
+                            bjdong_cd = code
+                            break
+                    if bjdong_cd != "00000":
+                        break
 
         return sigungu_cd, bjdong_cd
 
@@ -954,6 +1101,25 @@ class BuildingInfoCollector:
 
         # 3) 건물명 매칭
         matched = find_matching_building(items, cx_name)
+
+        # 3b) 매칭 실패 시 행정동→법정동 대체 후보로 재시도
+        if matched is None and sigungu_cd in ADMIN_TO_LEGAL_DONG:
+            admin_map = ADMIN_TO_LEGAL_DONG[sigungu_cd]
+            alt_dongs = admin_map.get(emd, [])
+            emd_codes = bjdong_map.get(sigungu_cd, {})
+
+            for alt_dong in alt_dongs:
+                alt_code = emd_codes.get(alt_dong)
+                if alt_code and alt_code != bjdong_cd:
+                    alt_items = self.get_building_items(
+                        sigungu_cd, alt_code
+                    )
+                    if alt_items:
+                        matched = find_matching_building(
+                            alt_items, cx_name
+                        )
+                        if matched:
+                            break
 
         if not matched:
             print(
