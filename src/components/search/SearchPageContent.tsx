@@ -6,7 +6,15 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { Building2, Home, Search, X, ChevronDown } from 'lucide-react'
+import {
+  Building2,
+  Home,
+  Search,
+  X,
+  ChevronDown,
+  MapPin,
+  TrendingUp,
+} from 'lucide-react'
 import { FilterBar } from './FilterBar'
 import { PropertyList } from './PropertyList'
 import { ComplexList } from './ComplexList'
@@ -167,10 +175,9 @@ export function SearchPageContent() {
 
   // 시군구 클릭
   const handleSigunguClick = (sigunguName: string) => {
+    const url = `/search?sido=${encodeURIComponent(selectedSido || '')}&sigungu=${encodeURIComponent(sigunguName)}`
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    router.push(
-      `/search?sido=${encodeURIComponent(selectedSido || '')}&sigungu=${encodeURIComponent(sigunguName)}` as any
-    )
+    router.push(url as any)
   }
 
   // 필터 초기화
@@ -242,10 +249,9 @@ export function SearchPageContent() {
                     if (val) {
                       handleSigunguClick(val)
                     } else {
+                      const url = `/search?sido=${encodeURIComponent(selectedSido || '')}`
                       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      router.push(
-                        `/search?sido=${encodeURIComponent(selectedSido || '')}` as any
-                      )
+                      router.push(url as any)
                     }
                   }}
                   disabled={isSigunguLoading}
@@ -267,11 +273,11 @@ export function SearchPageContent() {
             )}
           </div>
 
-          {/* 활성 필터 표시 + 제목 */}
-          <div className="mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              {hasActiveFilter ? (
-                <>
+          {/* 활성 필터 표시 + 제목 (필터 적용 시에만) */}
+          {hasActiveFilter && (
+            <>
+              <div className="mb-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
                   <h1 className="text-xl font-bold text-[#191F28]">
                     {searchTitle || '검색 결과'}
                   </h1>
@@ -282,72 +288,140 @@ export function SearchPageContent() {
                     <X className="h-3 w-3" />
                     초기화
                   </button>
-                </>
-              ) : (
-                <h1 className="text-xl font-bold text-[#191F28]">전체 단지</h1>
-              )}
-            </div>
-            <ViewToggle currentView="list" />
-          </div>
+                </div>
+                <ViewToggle currentView="list" />
+              </div>
 
-          {/* 탭 */}
-          <div className="flex gap-1 border-t border-[#E5E8EB] pt-3">
-            <button
-              onClick={() => setActiveTab('complexes')}
-              className={`relative flex items-center gap-2 px-5 py-2.5 text-sm font-medium transition-all ${
-                activeTab === 'complexes'
-                  ? 'text-[#191F28]'
-                  : 'text-[#8B95A1] hover:text-[#4E5968]'
-              }`}
-            >
-              {activeTab === 'complexes' && (
-                <motion.div
-                  layoutId="activeSearchTab"
-                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#3182F6]"
-                  transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                />
-              )}
-              <Building2 className="h-4 w-4" />
-              <span>단지</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('properties')}
-              className={`relative flex items-center gap-2 px-5 py-2.5 text-sm font-medium transition-all ${
-                activeTab === 'properties'
-                  ? 'text-[#191F28]'
-                  : 'text-[#8B95A1] hover:text-[#4E5968]'
-              }`}
-            >
+              {/* 탭 */}
+              <div className="flex gap-1 border-t border-[#E5E8EB] pt-3">
+                <button
+                  onClick={() => setActiveTab('complexes')}
+                  className={`relative flex items-center gap-2 px-5 py-2.5 text-sm font-medium transition-all ${
+                    activeTab === 'complexes'
+                      ? 'text-[#191F28]'
+                      : 'text-[#8B95A1] hover:text-[#4E5968]'
+                  }`}
+                >
+                  {activeTab === 'complexes' && (
+                    <motion.div
+                      layoutId="activeSearchTab"
+                      className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#3182F6]"
+                      transition={{
+                        type: 'spring',
+                        stiffness: 400,
+                        damping: 30,
+                      }}
+                    />
+                  )}
+                  <Building2 className="h-4 w-4" />
+                  <span>단지</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('properties')}
+                  className={`relative flex items-center gap-2 px-5 py-2.5 text-sm font-medium transition-all ${
+                    activeTab === 'properties'
+                      ? 'text-[#191F28]'
+                      : 'text-[#8B95A1] hover:text-[#4E5968]'
+                  }`}
+                >
+                  {activeTab === 'properties' && (
+                    <motion.div
+                      layoutId="activeSearchTab"
+                      className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#3182F6]"
+                      transition={{
+                        type: 'spring',
+                        stiffness: 400,
+                        damping: 30,
+                      }}
+                    />
+                  )}
+                  <Home className="h-4 w-4" />
+                  <span>매물</span>
+                </button>
+              </div>
+
+              {/* 필터바 (매물 탭에서만 표시) */}
               {activeTab === 'properties' && (
                 <motion.div
-                  layoutId="activeSearchTab"
-                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#3182F6]"
-                  transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                />
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className="pt-4"
+                >
+                  <FilterBar initialFilters={filters} />
+                </motion.div>
               )}
-              <Home className="h-4 w-4" />
-              <span>매물</span>
-            </button>
-          </div>
-
-          {/* 필터바 (매물 탭에서만 표시) */}
-          {activeTab === 'properties' && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.3 }}
-              className="pt-4"
-            >
-              <FilterBar initialFilters={filters} />
-            </motion.div>
+            </>
           )}
         </div>
       </div>
 
       {/* 검색 결과 */}
       <div className="px-6 py-8 md:px-8">
-        {activeTab === 'complexes' ? (
+        {!hasActiveFilter ? (
+          /* 필터 미적용 시 안내 화면 */
+          <div className="flex flex-col items-center py-16">
+            <div className="mb-8 flex h-20 w-20 items-center justify-center rounded-2xl bg-[#F2F4F6]">
+              <Search className="h-10 w-10 text-[#8B95A1]" />
+            </div>
+            <h2 className="mb-3 text-2xl font-bold text-[#191F28]">
+              아파트 단지를 검색해보세요
+            </h2>
+            <p className="mb-10 text-center text-sm leading-relaxed text-[#4E5968]">
+              지역을 선택하거나 아파트명을 검색하면
+              <br />
+              AI 기반 참값 분석 결과를 확인할 수 있습니다
+            </p>
+
+            {/* 인기 지역 바로가기 */}
+            <div className="w-full max-w-lg">
+              <h3 className="mb-4 text-sm font-semibold text-[#4E5968]">
+                인기 지역
+              </h3>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {[
+                  { name: '강남구', sido: '서울특별시' },
+                  { name: '서초구', sido: '서울특별시' },
+                  { name: '송파구', sido: '서울특별시' },
+                  { name: '용산구', sido: '서울특별시' },
+                  { name: '마포구', sido: '서울특별시' },
+                  { name: '성동구', sido: '서울특별시' },
+                  { name: '분당구', sido: '경기도' },
+                  { name: '수성구', sido: '대구광역시' },
+                ].map((region) => (
+                  <button
+                    key={region.name}
+                    onClick={() => {
+                      setSelectedSido(region.sido)
+                      const url = `/search?sido=${encodeURIComponent(region.sido)}&sigungu=${encodeURIComponent(region.name)}`
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      router.push(url as any)
+                    }}
+                    className="flex items-center gap-2 rounded-xl border border-[#E5E8EB] bg-white px-4 py-3 text-sm font-medium text-[#191F28] transition-all hover:border-[#3182F6] hover:bg-[#F8FAFF]"
+                  >
+                    <MapPin className="h-4 w-4 text-[#3182F6]" />
+                    {region.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 전체 단지 보기 링크 */}
+            <button
+              onClick={() => {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                router.push(
+                  `/search?sido=${encodeURIComponent('서울특별시')}` as any
+                )
+              }}
+              className="mt-8 flex items-center gap-2 text-sm font-medium text-[#3182F6] transition-colors hover:text-[#1B64DA]"
+            >
+              <TrendingUp className="h-4 w-4" />
+              서울 전체 단지 보기
+            </button>
+          </div>
+        ) : activeTab === 'complexes' ? (
           <ComplexList
             sido={filters.sido}
             sigungu={filters.sigungu}
