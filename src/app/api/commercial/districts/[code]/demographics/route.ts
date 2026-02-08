@@ -11,6 +11,7 @@ import {
   getSupabase,
   fetchFootTraffic,
   fetchBusinessStats,
+  latestByIndustry,
   num,
 } from '../../../_helpers'
 
@@ -70,9 +71,9 @@ export async function GET(
       '60s': { name: '60대 이상', age: '60세+', lifestyle: '여유, 건강' },
     }
 
-    // 업종 추천 - 해당 지역 업종별 생존율
+    // 업종 추천 - 해당 지역 업종별 생존율 (업종별 최신 월 데이터만)
     const bizAll = await fetchBusinessStats(supabase, code)
-    let suggested = bizAll
+    let suggested = latestByIndustry(bizAll)
       .filter((b) => b.industry_small_code && b.industry_name)
       .sort((a, b) => num(b.survival_rate) - num(a.survival_rate))
       .slice(0, 3)

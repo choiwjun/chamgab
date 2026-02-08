@@ -199,6 +199,39 @@ export function sum(rows: Record<string, unknown>[], field: string): number {
   return rows.reduce((s, r) => s + num(r[field]), 0)
 }
 
+/** 업종별 최신 월 데이터만 추출 (24개월 중복 제거) */
+export function latestByIndustry(
+  rows: Record<string, unknown>[]
+): Record<string, unknown>[] {
+  const map = new Map<string, Record<string, unknown>>()
+  for (const r of rows) {
+    const ic = String(r.industry_small_code || '')
+    if (!ic) continue
+    const existing = map.get(ic)
+    if (
+      !existing ||
+      String(r.base_year_month || '') > String(existing.base_year_month || '')
+    ) {
+      map.set(ic, r)
+    }
+  }
+  return Array.from(map.values())
+}
+
+/** 최신 월 데이터만 필터 (전체 행에서 최신 base_year_month만) */
+export function latestMonth(
+  rows: Record<string, unknown>[]
+): Record<string, unknown>[] {
+  if (!rows.length) return rows
+  const latest = rows.reduce((max, r) => {
+    const ym = String(r.base_year_month || '')
+    return ym > max ? ym : max
+  }, '')
+  return latest
+    ? rows.filter((r) => String(r.base_year_month) === latest)
+    : rows
+}
+
 // ============================================================================
 // 업종 카테고리 매핑
 // ============================================================================

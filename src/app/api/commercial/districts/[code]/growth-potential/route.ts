@@ -11,6 +11,7 @@ import {
   getSupabase,
   fetchSalesStats,
   fetchBusinessStats,
+  latestMonth,
   avg,
 } from '../../../_helpers'
 
@@ -21,8 +22,8 @@ export async function GET(
   try {
     const { code } = await params
     const supabase = getSupabase()
-    const salesData = await fetchSalesStats(supabase, code)
-    const bizData = await fetchBusinessStats(supabase, code)
+    const salesData = latestMonth(await fetchSalesStats(supabase, code))
+    const bizData = latestMonth(await fetchBusinessStats(supabase, code))
 
     const salesGrowthRate = avg(salesData, 'sales_growth_rate')
     const monthlyAvgSales = avg(salesData, 'monthly_avg_sales')

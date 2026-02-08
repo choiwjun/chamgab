@@ -14,6 +14,7 @@ import {
   fetchFootTraffic,
   fetchDistrictChar,
   fetchSalesStats,
+  latestByIndustry,
   num,
 } from '../../../_helpers'
 
@@ -30,7 +31,7 @@ export async function GET(
 
     const footData = await fetchFootTraffic(supabase, code)
     const charData = await fetchDistrictChar(supabase, code)
-    const salesStats = await fetchSalesStats(supabase, code)
+    const salesStats = latestByIndustry(await fetchSalesStats(supabase, code))
 
     // 시간대별 유동인구
     const timeSlots: Record<string, number> = {

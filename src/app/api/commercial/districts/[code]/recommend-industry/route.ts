@@ -14,6 +14,7 @@ import {
   fetchFootTraffic,
   fetchBusinessStats,
   fetchSalesStats,
+  latestByIndustry,
   num,
 } from '../../../_helpers'
 
@@ -63,11 +64,19 @@ export async function GET(
         ? Math.round((weekend / (weekday + weekend)) * 1000) / 10
         : 50
 
+    // 업종별 최신 월 데이터만 사용 (중복 제거)
+    const bizLatest = latestByIndustry(bizData)
+    const salesLatest = latestByIndustry(salesData)
+
     // 매출 매핑
     const salesMap: Record<string, number> = {}
-    for (const s of salesData) {
+    const growthMap: Record<string, number> = {}
+    for (const s of salesLatest) {
       const ic = s.industry_small_code as string
-      if (ic) salesMap[ic] = num(s.monthly_avg_sales)
+      if (ic) {
+        salesMap[ic] = num(s.monthly_avg_sales)
+        growthMap[ic] = num(s.sales_growth_rate)
+      }
     }
 
     // 연령-업종 매칭
@@ -80,22 +89,17 @@ export async function GET(
       '60s': ['Q01'],
     }
 
-    const recommendations = bizData
+    const recommendations = bizLatest
       .map((b) => {
         const ic = b.industry_small_code as string
         const iname = b.industry_name as string
         const survival = num(b.survival_rate)
         const monthlySales = salesMap[ic] || 0
+        const growth = growthMap[ic] || 0
 
         // 점수: 생존율(50%) + 매출성장(30%) + 연령매칭(20%)
         let score = Math.round(survival * 0.5)
-        for (const s of salesData) {
-          if ((s.industry_small_code as string) === ic) {
-            const growth = num(s.sales_growth_rate)
-            score += Math.round(Math.min(Math.max(growth + 10, 0), 30) * 0.3)
-            break
-          }
-        }
+        score += Math.round(Math.min(Math.max(growth + 10, 0), 30) * 0.3)
         if ((ageMatch[primaryAge] || []).includes(ic)) score += 20
 
         const reasons: string[] = []
