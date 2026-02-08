@@ -24,13 +24,6 @@ export async function GET(
     const salesData = await fetchSalesStats(supabase, code)
     const bizData = await fetchBusinessStats(supabase, code)
 
-    if (!salesData.length && !bizData.length) {
-      return NextResponse.json(
-        { detail: `상권 데이터가 없습니다: ${code}` },
-        { status: 404 }
-      )
-    }
-
     const salesGrowthRate = avg(salesData, 'sales_growth_rate')
     const monthlyAvgSales = avg(salesData, 'monthly_avg_sales')
     const survivalRate = bizData.length ? avg(bizData, 'survival_rate') : 70

@@ -26,13 +26,6 @@ export async function GET(
     const supabase = getSupabase()
     const storeData = await fetchStoreStats(supabase, code)
 
-    if (!storeData.length) {
-      return NextResponse.json(
-        { detail: `점포 통계 데이터가 없습니다: ${code}` },
-        { status: 404 }
-      )
-    }
-
     const totalStores = storeData.reduce((s, r) => s + num(r.store_count), 0)
     const totalFranchise = storeData.reduce(
       (s, r) => s + num(r.franchise_count),

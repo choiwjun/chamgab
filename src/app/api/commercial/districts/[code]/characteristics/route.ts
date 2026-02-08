@@ -32,13 +32,6 @@ export async function GET(
     const charData = await fetchDistrictChar(supabase, code)
     const salesStats = await fetchSalesStats(supabase, code)
 
-    if (!Object.keys(footData).length && !Object.keys(charData).length) {
-      return NextResponse.json(
-        { detail: `상권 특성 데이터가 없습니다: ${code}` },
-        { status: 404 }
-      )
-    }
-
     // 시간대별 유동인구
     const timeSlots: Record<string, number> = {
       '00-06': num(footData.time_00_06),

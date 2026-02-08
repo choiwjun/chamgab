@@ -18,13 +18,6 @@ export async function GET(
     const supabase = getSupabase()
     const data = await fetchFootTraffic(supabase, code)
 
-    if (!Object.keys(data).length) {
-      return NextResponse.json(
-        { detail: `유동인구 데이터가 없습니다: ${code}` },
-        { status: 404 }
-      )
-    }
-
     const weekdayAvg = num(data.weekday_avg)
     const weekendAvg = num(data.weekend_avg)
     const totalAvg = weekdayAvg + weekendAvg

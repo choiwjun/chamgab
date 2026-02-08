@@ -23,13 +23,6 @@ export async function GET(
     const supabase = getSupabase()
     const data = await fetchFootTraffic(supabase, code)
 
-    if (!Object.keys(data).length) {
-      return NextResponse.json(
-        { detail: `유동인구 데이터가 없습니다: ${code}` },
-        { status: 404 }
-      )
-    }
-
     const ages: Record<string, number> = {
       '10s': num(data.age_10s),
       '20s': num(data.age_20s),

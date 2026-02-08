@@ -32,13 +32,6 @@ export async function GET(
     const bizData = await fetchBusinessStats(supabase, code)
     const salesData = await fetchSalesStats(supabase, code)
 
-    if (!bizData.length) {
-      return NextResponse.json(
-        { detail: `추천 데이터가 부족합니다: ${code}` },
-        { status: 404 }
-      )
-    }
-
     // 유동인구 분석
     const ages: Record<string, number> = {
       '10s': num(footData.age_10s),
