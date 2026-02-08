@@ -53,9 +53,9 @@ export function MetricsCard({ statistics, characteristics }: MetricsCardProps) {
   const competitionLevel = getCompetitionLevel(competition_ratio)
   const riskScore = calculateRisk()
 
-  // 접근성과 임대료는 샘플 데이터 (실제로는 POI 데이터나 부동산 데이터 필요)
-  const accessibility = '지하철역 200m'
-  const monthlyRent = '월 380만원 (추정)'
+  // 접근성과 임대료는 별도 데이터 소스 필요
+  const accessibility = '데이터 수집 예정'
+  const monthlyRent = '데이터 수집 예정'
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-8">
@@ -98,7 +98,7 @@ export function MetricsCard({ statistics, characteristics }: MetricsCardProps) {
               경쟁지수 {competition_ratio.toFixed(1)}
             </span>
             <span className="text-xs text-gray-500">
-              (반경 500m 내 {total_stores}개 점포)
+              (해당 상권 내 {total_stores.toLocaleString()}개 점포)
             </span>
           </div>
         </div>

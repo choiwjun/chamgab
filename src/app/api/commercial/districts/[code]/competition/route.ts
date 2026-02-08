@@ -26,8 +26,17 @@ export async function GET(
     const supabase = getSupabase()
     const storeData = await fetchStoreStats(supabase, code)
 
-    const totalStores = storeData.reduce((s, r) => s + num(r.store_count), 0)
-    const totalFranchise = storeData.reduce(
+    // 최신 월 데이터만 사용 (24개월 전체 합산 방지)
+    const latestMonth = storeData.reduce((max, r) => {
+      const ym = String(r.base_year_month || '')
+      return ym > max ? ym : max
+    }, '')
+    const latestData = latestMonth
+      ? storeData.filter((r) => String(r.base_year_month) === latestMonth)
+      : storeData
+
+    const totalStores = latestData.reduce((s, r) => s + num(r.store_count), 0)
+    const totalFranchise = latestData.reduce(
       (s, r) => s + num(r.franchise_count),
       0
     )
@@ -64,8 +73,9 @@ export async function GET(
       const sidoPrefix = code.slice(0, 2)
       const { data: altResult } = await supabase
         .from('store_statistics')
-        .select('sigungu_code, store_count')
+        .select('sigungu_code, store_count, base_year_month')
         .like('sigungu_code', `${sidoPrefix}%`)
+        .eq('base_year_month', latestMonth || '202601')
 
       const altStores: Record<string, number> = {}
       for (const row of altResult || []) {
