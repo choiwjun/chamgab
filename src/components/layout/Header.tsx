@@ -18,7 +18,6 @@ import {
   Store,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
-import { ThemeToggle } from '@/components/ui/ThemeToggle'
 
 interface NavLink {
   href: string
@@ -216,9 +215,6 @@ export function Header() {
                 <Search className="h-5 w-5 text-[#191F28]" aria-hidden="true" />
               </button>
             </div>
-
-            {/* 다크모드 토글 */}
-            <ThemeToggle />
 
             {isAuthenticated ? (
               <>
