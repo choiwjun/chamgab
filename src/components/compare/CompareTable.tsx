@@ -41,7 +41,6 @@ export function CompareTable() {
 
     const newQuery = `?ids=${propertyIds.join(',')}`
     if (searchParams.toString() !== `ids=${propertyIds.join(',')}`) {
-      // @ts-expect-error - TypedRoutes는 동적 쿼리 파라미터를 지원하지 않음
       router.replace(`/compare${newQuery}`, { scroll: false })
     }
   }, [propertyIds, router, searchParams])
