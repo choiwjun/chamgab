@@ -12,7 +12,7 @@ import {
   fetchFootTraffic,
   fetchBusinessStats,
   latestByIndustry,
-  EXCLUDED_INDUSTRY_CODES,
+  isExcludedIndustry,
   num,
 } from '../../../_helpers'
 
@@ -92,7 +92,10 @@ export async function GET(
         (b) =>
           b.industry_small_code &&
           b.industry_name &&
-          !EXCLUDED_INDUSTRY_CODES.includes(String(b.industry_small_code))
+          !isExcludedIndustry(
+            String(b.industry_small_code),
+            String(b.industry_name || '')
+          )
       )
       .map((b) => {
         const ic = b.industry_small_code as string

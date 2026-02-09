@@ -361,6 +361,27 @@ export const EXCLUDED_INDUSTRY_CODES = [
   'I06', // 부동산중개
 ]
 
+/** 이름 기반 백업 필터 (코드 매칭 실패 시 방어) */
+export const EXCLUDED_INDUSTRY_NAMES = [
+  '장례식장',
+  '주유소',
+  '병원',
+  '의원',
+  '치과',
+  '한의원',
+  '어린이집',
+  '유치원',
+  '인테리어',
+  '부동산중개',
+  '건축',
+]
+
+/** 업종이 창업 추천에서 제외 대상인지 확인 (코드 + 이름 이중 필터) */
+export function isExcludedIndustry(code: string, name: string): boolean {
+  if (EXCLUDED_INDUSTRY_CODES.includes(code)) return true
+  return EXCLUDED_INDUSTRY_NAMES.some((n) => name.includes(n))
+}
+
 /** 피처 이름 → 한글 매핑 */
 export const FACTOR_NAME_MAP: Record<string, string> = {
   survival_rate: '생존율',

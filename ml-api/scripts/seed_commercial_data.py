@@ -167,12 +167,12 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, Any]] = {
     'S05': {'name': '반려동물/펫샵', 'cat': '서비스', 'base_stores': 25, 'survival': 55, 'monthly_sales': 2500, 'growth': 8.0, 'franchise_pct': 30},
     'S06': {'name': '코인세탁/빨래방', 'cat': '서비스', 'base_stores': 20, 'survival': 70, 'monthly_sales': 800, 'growth': 10.0, 'franchise_pct': 60},
     # 생활
-    'L01': {'name': '병원/의원', 'cat': '생활', 'base_stores': 120, 'survival': 82, 'monthly_sales': 8000, 'growth': 2.0, 'franchise_pct': 5},
-    'L02': {'name': '치과', 'cat': '생활', 'base_stores': 50, 'survival': 80, 'monthly_sales': 7000, 'growth': 1.5, 'franchise_pct': 10},
-    'L03': {'name': '한의원', 'cat': '생활', 'base_stores': 35, 'survival': 78, 'monthly_sales': 4500, 'growth': -1.0, 'franchise_pct': 5},
-    'L04': {'name': '어린이집/유치원', 'cat': '생활', 'base_stores': 40, 'survival': 75, 'monthly_sales': 3000, 'growth': -2.0, 'franchise_pct': 10},
-    'L05': {'name': '장례식장', 'cat': '생활', 'base_stores': 5, 'survival': 90, 'monthly_sales': 15000, 'growth': 0.5, 'franchise_pct': 20},
-    'L06': {'name': '주유소', 'cat': '생활', 'base_stores': 15, 'survival': 85, 'monthly_sales': 25000, 'growth': -1.0, 'franchise_pct': 40},
+    'L01': {'name': '병원/의원', 'cat': '생활', 'base_stores': 120, 'survival': 82, 'monthly_sales': 4000, 'growth': 2.0, 'franchise_pct': 5},
+    'L02': {'name': '치과', 'cat': '생활', 'base_stores': 50, 'survival': 80, 'monthly_sales': 3500, 'growth': 1.5, 'franchise_pct': 10},
+    'L03': {'name': '한의원', 'cat': '생활', 'base_stores': 35, 'survival': 78, 'monthly_sales': 3000, 'growth': -1.0, 'franchise_pct': 5},
+    'L04': {'name': '어린이집/유치원', 'cat': '생활', 'base_stores': 40, 'survival': 75, 'monthly_sales': 2000, 'growth': -2.0, 'franchise_pct': 10},
+    'L05': {'name': '장례식장', 'cat': '생활', 'base_stores': 5, 'survival': 70, 'monthly_sales': 1500, 'growth': 0.5, 'franchise_pct': 20},
+    'L06': {'name': '주유소', 'cat': '생활', 'base_stores': 15, 'survival': 85, 'monthly_sales': 18000, 'growth': -1.0, 'franchise_pct': 40},
 }
 
 # ──────────────────────────────────────────────────────

@@ -15,7 +15,7 @@ import {
   fetchBusinessStats,
   fetchSalesStats,
   latestByIndustry,
-  EXCLUDED_INDUSTRY_CODES,
+  isExcludedIndustry,
   num,
 } from '../../../_helpers'
 
@@ -93,13 +93,18 @@ export async function GET(
     const recommendations = bizLatest
       .filter(
         (b) =>
-          !EXCLUDED_INDUSTRY_CODES.includes(String(b.industry_small_code || ''))
+          !isExcludedIndustry(
+            String(b.industry_small_code || ''),
+            String(b.industry_name || '')
+          )
       )
       .map((b) => {
         const ic = b.industry_small_code as string
         const iname = b.industry_name as string
         const survival = num(b.survival_rate)
-        const monthlySales = salesMap[ic] || 0
+        // 매출 이상치 캡: 소규모 창업 업종 월매출 상한 1억원
+        const rawSales = salesMap[ic] || 0
+        const monthlySales = Math.min(rawSales, 100_000_000)
         const growth = growthMap[ic] || 0
 
         // 점수: 생존율(50%) + 매출성장(30%) + 연령매칭(20%)
