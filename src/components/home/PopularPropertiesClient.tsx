@@ -42,13 +42,15 @@ export function PopularPropertiesClient({
 
   if (properties.length === 0) {
     return (
-      <section className="bg-white py-20">
+      <section className="bg-[#F9FAFB] py-20">
         <div className="mx-auto max-w-7xl px-6 md:px-8">
           <div className="mb-8 flex items-end justify-between">
-            <h2 className="text-2xl font-bold text-gray-900">주목받는 매물</h2>
+            <h2 className="text-2xl font-bold tracking-[-0.01em] text-[#191F28]">
+              주목받는 매물
+            </h2>
           </div>
-          <div className="rounded-xl border border-gray-200 bg-white p-12 text-center">
-            <p className="text-gray-500">
+          <div className="rounded-2xl border border-[#E5E8EB] bg-white p-12 text-center">
+            <p className="text-[#8B95A1]">
               인기 매물 데이터를 불러올 수 없습니다.
             </p>
           </div>
@@ -60,7 +62,7 @@ export function PopularPropertiesClient({
   return (
     <section
       ref={sectionRef}
-      className="overflow-hidden bg-white py-20 md:py-24"
+      className="overflow-hidden bg-[#F9FAFB] py-20 md:py-24"
     >
       <div className="mx-auto max-w-7xl px-6 md:px-8">
         {/* 섹션 헤더 */}
@@ -70,7 +72,14 @@ export function PopularPropertiesClient({
           transition={{ duration: 0.3 }}
           className="mb-8 flex items-end justify-between"
         >
-          <h2 className="text-2xl font-bold text-gray-900">주목받는 매물</h2>
+          <div>
+            <h2 className="text-2xl font-bold tracking-[-0.01em] text-[#191F28]">
+              주목받는 매물
+            </h2>
+            <p className="mt-2 text-sm text-[#8B95A1]">
+              최근 등록된 매물을 확인해보세요
+            </p>
+          </div>
 
           <div className="flex items-center gap-4">
             {/* 스크롤 네비게이션 */}
@@ -78,10 +87,10 @@ export function PopularPropertiesClient({
               <button
                 onClick={() => scroll('left')}
                 disabled={!canScrollLeft}
-                className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-colors ${
+                className={`flex h-9 w-9 items-center justify-center rounded-full border transition-all ${
                   canScrollLeft
-                    ? 'border-gray-200 text-gray-900 hover:bg-gray-100'
-                    : 'cursor-not-allowed border-gray-200 text-gray-400'
+                    ? 'border-[#E5E8EB] text-[#191F28] hover:bg-[#F2F4F6]'
+                    : 'cursor-not-allowed border-[#E5E8EB] opacity-40'
                 } `}
               >
                 <svg
@@ -101,10 +110,10 @@ export function PopularPropertiesClient({
               <button
                 onClick={() => scroll('right')}
                 disabled={!canScrollRight}
-                className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-colors ${
+                className={`flex h-9 w-9 items-center justify-center rounded-full border transition-all ${
                   canScrollRight
-                    ? 'border-gray-200 text-gray-900 hover:bg-gray-100'
-                    : 'cursor-not-allowed border-gray-200 text-gray-400'
+                    ? 'border-[#E5E8EB] text-[#191F28] hover:bg-[#F2F4F6]'
+                    : 'cursor-not-allowed border-[#E5E8EB] opacity-40'
                 } `}
               >
                 <svg
@@ -125,7 +134,7 @@ export function PopularPropertiesClient({
 
             <Link
               href="/search"
-              className="text-sm text-gray-500 transition-colors hover:text-gray-900"
+              className="text-sm text-[#8B95A1] transition-colors hover:text-[#191F28]"
             >
               전체 매물 →
             </Link>
@@ -133,16 +142,23 @@ export function PopularPropertiesClient({
         </motion.div>
 
         {/* 매물 카드 캐러셀 */}
-        <div
-          ref={scrollContainerRef}
-          onScroll={checkScrollPosition}
-          className="scrollbar-hide -mx-6 flex snap-x gap-4 overflow-x-auto px-6 pb-4 md:-mx-8 md:px-8"
-        >
-          {properties.map((property, index) => (
-            <div key={property.id} className="snap-start">
-              <PropertyCard property={property} index={index} />
-            </div>
-          ))}
+        <div className="relative">
+          {/* Left fade */}
+          <div className="pointer-events-none absolute left-0 top-0 z-10 hidden h-full w-8 bg-gradient-to-r from-[#F9FAFB] to-transparent md:block" />
+          {/* Right fade */}
+          <div className="pointer-events-none absolute right-0 top-0 z-10 hidden h-full w-8 bg-gradient-to-l from-[#F9FAFB] to-transparent md:block" />
+
+          <div
+            ref={scrollContainerRef}
+            onScroll={checkScrollPosition}
+            className="scrollbar-hide -mx-6 flex snap-x gap-4 overflow-x-auto px-6 pb-4 md:-mx-8 md:px-8"
+          >
+            {properties.map((property, index) => (
+              <div key={property.id} className="snap-start">
+                <PropertyCard property={property} index={index} />
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </section>

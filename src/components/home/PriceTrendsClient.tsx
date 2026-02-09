@@ -16,15 +16,15 @@ export function PriceTrendsClient({ trends }: PriceTrendsClientProps) {
 
   if (trends.length === 0) {
     return (
-      <section className="bg-gray-50 py-20">
+      <section className="bg-white py-20">
         <div className="mx-auto max-w-5xl px-6">
           <div className="mb-8 flex items-end justify-between">
-            <h2 className="text-2xl font-bold text-gray-900">
+            <h2 className="text-2xl font-bold tracking-[-0.01em] text-[#191F28]">
               지역별 시세 동향
             </h2>
           </div>
-          <div className="rounded-xl border border-gray-200 bg-white p-12 text-center">
-            <p className="text-gray-500">
+          <div className="rounded-2xl border border-[#E5E8EB] bg-[#F9FAFB] p-12 text-center">
+            <p className="text-[#8B95A1]">
               가격 트렌드 데이터를 불러올 수 없습니다.
             </p>
           </div>
@@ -34,14 +34,21 @@ export function PriceTrendsClient({ trends }: PriceTrendsClientProps) {
   }
 
   return (
-    <section className="bg-gray-50 py-20 md:py-24">
+    <section className="bg-white py-20 md:py-24">
       <div className="mx-auto max-w-5xl px-6">
         {/* 섹션 헤더 */}
         <div className="mb-8 flex items-end justify-between">
-          <h2 className="text-2xl font-bold text-gray-900">지역별 시세 동향</h2>
+          <div>
+            <h2 className="text-2xl font-bold tracking-[-0.01em] text-[#191F28]">
+              지역별 시세 동향
+            </h2>
+            <p className="mt-2 text-sm text-[#8B95A1]">
+              주요 지역의 최근 가격 변동을 확인하세요
+            </p>
+          </div>
           <Link
             href={'/search' as const}
-            className="text-sm text-gray-500 transition-colors hover:text-gray-900"
+            className="text-sm text-[#8B95A1] transition-colors hover:text-[#191F28]"
           >
             전체 지역 →
           </Link>

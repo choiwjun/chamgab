@@ -89,7 +89,7 @@ export function SearchBar() {
   return (
     <div ref={containerRef} className="relative w-full">
       <form onSubmit={handleSubmit}>
-        <div className="flex items-center gap-3 rounded-xl border border-[#E5E8EB] bg-white px-4 py-3 transition-all focus-within:border-[#3182F6] focus-within:ring-1 focus-within:ring-[#3182F6]">
+        <div className="flex items-center gap-3 rounded-2xl border border-[#D1D6DB] bg-[#F9FAFB] px-5 py-3.5 transition-all focus-within:border-[#3182F6] focus-within:bg-white focus-within:ring-2 focus-within:ring-[#3182F6]/10">
           {/* Left: Search icon */}
           <Search className="h-5 w-5 flex-shrink-0 text-[#8B95A1]" />
 
@@ -110,7 +110,7 @@ export function SearchBar() {
           {/* Right: Submit button */}
           <button
             type="submit"
-            className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#3182F6] text-white transition-colors hover:bg-[#1B64DA]"
+            className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#3182F6] text-white transition-colors hover:bg-[#1B64DA]"
             aria-label="검색"
           >
             <ArrowRight className="h-4 w-4" />
@@ -122,7 +122,7 @@ export function SearchBar() {
           <div
             id="search-suggestions"
             role="listbox"
-            className="absolute z-50 mt-2 w-full overflow-hidden rounded-lg border border-[#E5E8EB] bg-white shadow-lg"
+            className="absolute z-50 mt-2 w-full overflow-hidden rounded-xl border border-[#E5E8EB] bg-white shadow-lg"
           >
             {isLoading && (
               <div className="px-4 py-3 text-sm text-[#8B95A1]">검색 중...</div>
