@@ -16,6 +16,7 @@ import {
   ChevronDown,
   Building2,
   Store,
+  MapPin,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 
@@ -50,6 +51,15 @@ const navCategories: NavCategory[] = [
     links: [
       { href: '/business-analysis', label: '상권 분석' },
       { href: '/business-analysis/compare', label: '지역 비교' },
+    ],
+  },
+  {
+    id: 'land',
+    label: '토지분석',
+    icon: MapPin,
+    links: [
+      { href: '/land', label: '토지 분석' },
+      { href: '/land/search', label: '토지 검색' },
     ],
   },
 ]
@@ -151,6 +161,7 @@ export function Header() {
     pathname.startsWith('/favorites') ||
     pathname.startsWith('/property')
   const isBusinessActive = pathname.startsWith('/business-analysis')
+  const isLandActive = pathname.startsWith('/land')
 
   return (
     <header className="sticky top-0 z-50 border-b border-[#E5E8EB] bg-white">
@@ -192,6 +203,7 @@ export function Header() {
               category={navCategories[1]}
               isActive={isBusinessActive}
             />
+            <NavDropdown category={navCategories[2]} isActive={isLandActive} />
           </nav>
 
           {/* 우측 메뉴 */}
@@ -339,6 +351,28 @@ export function Header() {
                 </div>
                 <div className="space-y-1">
                   {navCategories[1].links.map((link) => (
+                    <Link
+                      key={link.href}
+                      href={link.href as never}
+                      className="block px-4 py-2 text-[#4E5968] transition-colors hover:bg-[#F9FAFB] hover:text-[#191F28]"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                    >
+                      {link.label}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+
+              {/* 토지분석 섹션 */}
+              <div className="border-t border-[#E5E8EB] pt-4">
+                <div className="mb-2 flex items-center gap-2 px-4">
+                  <MapPin className="h-4 w-4 text-[#8B95A1]" />
+                  <span className="text-xs font-semibold uppercase tracking-wider text-[#8B95A1]">
+                    토지분석
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  {navCategories[2].links.map((link) => (
                     <Link
                       key={link.href}
                       href={link.href as never}
