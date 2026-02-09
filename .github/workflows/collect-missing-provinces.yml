@@ -1,0 +1,210 @@
+name: Collect Missing Provinces (강원/전북/전남/경북/경남)
+
+on:
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: '실행 단계'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all         # 전체 파이프라인 (시딩→수집→단지생성→분석)
+          - seed-only   # regions 테이블 시딩만
+          - collect-6   # 그룹6 수집 (강원+전북)
+          - collect-7   # 그룹7 수집 (전남+경북+경남)
+          - post-process # 수집 후 후처리 (단지생성→분석→가격)
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  seed-regions:
+    name: 1. Regions 테이블 시딩
+    runs-on: ubuntu-latest
+    if: inputs.phase == 'all' || inputs.phase == 'seed-only'
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: ml-api/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          cd ml-api
+          pip install -r requirements.txt
+
+      - name: Seed missing regions
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd ml-api
+          python -m scripts.seed_missing_regions
+
+  collect-group-6:
+    name: 2a. 실거래가 수집 (강원+전북)
+    runs-on: ubuntu-latest
+    needs: seed-regions
+    if: always() && (inputs.phase == 'all' || inputs.phase == 'collect-6')
+    timeout-minutes: 300  # 5시간
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: ml-api/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          cd ml-api
+          pip install -r requirements.txt
+
+      - name: Create logs directory
+        run: mkdir -p ml-api/logs
+
+      - name: Collect transactions (Group 6 - 강원+전북)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          DATA_GO_KR_API_KEY: ${{ secrets.DATA_GO_KR_API_KEY }}
+          MOLIT_API_KEY: ${{ secrets.DATA_GO_KR_API_KEY }}
+        run: |
+          cd ml-api
+          python scripts/collect_all_transactions.py --group 6
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-group-6
+          path: ml-api/logs/
+          retention-days: 7
+
+  collect-group-7:
+    name: 2b. 실거래가 수집 (전남+경북+경남)
+    runs-on: ubuntu-latest
+    needs: seed-regions
+    if: always() && (inputs.phase == 'all' || inputs.phase == 'collect-7')
+    timeout-minutes: 300  # 5시간
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: ml-api/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          cd ml-api
+          pip install -r requirements.txt
+
+      - name: Create logs directory
+        run: mkdir -p ml-api/logs
+
+      - name: Collect transactions (Group 7 - 전남+경북+경남)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          DATA_GO_KR_API_KEY: ${{ secrets.DATA_GO_KR_API_KEY }}
+          MOLIT_API_KEY: ${{ secrets.DATA_GO_KR_API_KEY }}
+        run: |
+          cd ml-api
+          python scripts/collect_all_transactions.py --group 7
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-group-7
+          path: ml-api/logs/
+          retention-days: 7
+
+  post-process:
+    name: 3. 후처리 (단지생성→분석→가격)
+    runs-on: ubuntu-latest
+    needs: [collect-group-6, collect-group-7]
+    if: always() && (inputs.phase == 'all' || inputs.phase == 'post-process')
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: ml-api/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          cd ml-api
+          pip install -r requirements.txt
+
+      - name: Create complexes from transactions
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd ml-api
+          python -m scripts.create_complexes_from_transactions
+
+      - name: Generate analyses (chamgab_analyses + price_factors)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          ML_API_URL: ${{ secrets.ML_API_URL }}
+        run: |
+          cd ml-api
+          python -m scripts.batch_generate_analyses
+
+      - name: Update region average prices
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd ml-api
+          python -m scripts.update_region_prices
+
+      - name: Seed commercial data for new regions
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd ml-api
+          python -m scripts.seed_commercial_data --months 24
+
+  summary:
+    name: 완료 요약
+    runs-on: ubuntu-latest
+    needs: [seed-regions, collect-group-6, collect-group-7, post-process]
+    if: always()
+
+    steps:
+      - name: Summary
+        run: |
+          echo "## 누락 지역 데이터 수집 결과" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| 단계 | 결과 |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Regions 시딩 | ${{ needs.seed-regions.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 강원+전북 수집 | ${{ needs.collect-group-6.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 전남+경북+경남 수집 | ${{ needs.collect-group-7.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 후처리 | ${{ needs.post-process.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "완료: $(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M KST')" >> $GITHUB_STEP_SUMMARY
