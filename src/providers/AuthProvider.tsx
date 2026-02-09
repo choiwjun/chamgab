@@ -132,36 +132,29 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   // OAuth 로그인 (Google, Kakao만 지원)
   // Note: Supabase는 Naver OAuth를 공식 지원하지 않음
-  const signInWithOAuth = useCallback(
-    async (provider: 'google' | 'kakao') => {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-        },
-      })
+  const signInWithOAuth = useCallback(async (provider: 'google' | 'kakao') => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+      },
+    })
 
-      if (error) {
-        throw error
-      }
-    },
-    []
-  )
+    if (error) {
+      throw error
+    }
+  }, [])
 
   // 로그아웃
   const signOut = useCallback(async () => {
-    setIsLoading(true)
     try {
-      const { error } = await supabase.auth.signOut()
-
-      if (error) {
-        throw error
-      }
-
+      await supabase.auth.signOut()
+    } catch (error) {
+      console.error('Sign out error:', error)
+    } finally {
+      // 에러 여부와 관계없이 항상 클라이언트 상태 초기화
       setUser(null)
       setProfile(null)
-    } finally {
-      setIsLoading(false)
     }
   }, [])
 
