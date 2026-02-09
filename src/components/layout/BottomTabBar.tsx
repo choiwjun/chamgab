@@ -5,7 +5,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Home, Search, Heart, TrendingUp, User } from 'lucide-react'
+import { Home, Heart, TrendingUp, User } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { useAuth } from '@/hooks/useAuth'
 
@@ -20,7 +20,6 @@ interface TabItem {
 
 const tabs: TabItem[] = [
   { id: 'home', icon: Home, label: '홈', route: '/' },
-  { id: 'search', icon: Search, label: '검색', route: '/search' },
   {
     id: 'business',
     icon: TrendingUp,
