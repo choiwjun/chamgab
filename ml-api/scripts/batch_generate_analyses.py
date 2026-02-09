@@ -121,6 +121,38 @@ def get_sigungu_key(sido, sigungu, target_mapping):
 # Fix #2: 실제 거래 데이터 기반 시세 lag 피처
 # ─────────────────────────────────────────────
 
+def fetch_area_by_complex(sb):
+    """complex_id별 대표 전용면적 (중앙값) pre-fetch from transactions."""
+    print("\n[Step 0.5] 단지별 전용면적 조회")
+    complex_areas = defaultdict(list)
+    offset = 0
+    while True:
+        result = sb.table("transactions").select(
+            "complex_id, area_exclusive"
+        ).not_.is_(
+            "complex_id", "null"
+        ).gt(
+            "area_exclusive", 0
+        ).range(offset, offset + 999).execute()
+        if not result.data:
+            break
+        for tx in result.data:
+            cid = tx.get("complex_id")
+            area = tx.get("area_exclusive")
+            if cid and area and area > 0:
+                complex_areas[cid].append(area)
+        if len(result.data) < 1000:
+            break
+        offset += 1000
+
+    area_map = {}
+    for cid, areas in complex_areas.items():
+        area_map[cid] = round(float(np.median(areas)), 2)
+
+    print(f"  {len(area_map)}개 단지 면적 매핑 완료")
+    return area_map
+
+
 def fetch_price_history(sb):
     """complex_id별 + sigungu별 최근 거래 가격 통계 pre-fetch.
 
@@ -224,9 +256,10 @@ def fetch_price_history(sb):
 # Step 1: complexes → properties 동기화
 # ─────────────────────────────────────────────
 
-def sync_complexes_to_properties(sb):
+def sync_complexes_to_properties(sb, area_map=None):
     """complexes 중 properties에 없는 것 생성"""
     print("\n[Step 1] Complexes → Properties 동기화")
+    area_map = area_map or {}
 
     # 모든 complexes 가져오기
     all_complexes = []
@@ -277,7 +310,7 @@ def sync_complexes_to_properties(sb):
         batch = missing[i:i + batch_size]
         records = []
         for cx in batch:
-            records.append({
+            rec = {
                 "property_type": "apt",
                 "name": cx["name"],
                 "address": cx.get("address") or cx["name"],
@@ -286,7 +319,11 @@ def sync_complexes_to_properties(sb):
                 "eupmyeondong": cx.get("eupmyeondong") or "",
                 "built_year": cx.get("built_year"),
                 "complex_id": cx["id"],
-            })
+            }
+            # 거래 데이터에서 대표 면적 설정
+            if cx["id"] in area_map:
+                rec["area_exclusive"] = area_map[cx["id"]]
+            records.append(rec)
 
         try:
             result = sb.table("properties").insert(records).execute()
@@ -318,11 +355,12 @@ def sync_complexes_to_properties(sb):
 # ─────────────────────────────────────────────
 
 def generate_analyses(sb, model, artifacts, shap_explainer, residual_info, skip_existing=True, limit=0,
-                       complex_price_stats=None, sigungu_price_stats=None):
+                       complex_price_stats=None, sigungu_price_stats=None, area_map=None):
     """모든 properties에 대해 chamgab_analyses + price_factors 생성"""
     print("\n[Step 2+3] Chamgab Analyses + Price Factors 생성")
     complex_price_stats = complex_price_stats or {}
     sigungu_price_stats = sigungu_price_stats or {}
+    area_map = area_map or {}
 
     label_encoders = artifacts.get("label_encoders", {})
     target_encoders = artifacts.get("target_encoders", {})
@@ -479,7 +517,13 @@ def generate_analyses(sb, model, artifacts, shap_explainer, residual_info, skip_
         sido = prop.get("sido") or "서울특별시"
         sigungu = prop.get("sigungu") or "강남구"
         dong = prop.get("eupmyeondong") or "unknown"
-        area = prop.get("area_exclusive") or 84
+        # 면적: area_map(거래 중앙값) > property > 84m² fallback
+        complex_id_for_area = (complex_data.get("id") if complex_data else None) or prop.get("complex_id")
+        area = (
+            area_map.get(complex_id_for_area)
+            or prop.get("area_exclusive")
+            or 84
+        )
 
         # Fix #1: sido-prefixed 시군구 키로 인코딩 (중구/서구 등 충돌 방지)
         sigungu_key = get_sigungu_key(sido, sigungu, sigungu_target_mapping)
@@ -722,6 +766,54 @@ def delete_existing_analyses(sb):
     return deleted_analyses, deleted_factors
 
 
+def backfill_property_areas(sb, area_map):
+    """기존 properties 중 area_exclusive가 0 또는 NULL인 것을 거래 데이터에서 보정"""
+    print("\n[Step 1.1] 기존 properties 면적 보정")
+
+    # area_exclusive가 NULL이거나 0인 properties 조회
+    needs_fix = []
+    offset = 0
+    while True:
+        result = sb.table("properties").select(
+            "id, complex_id, area_exclusive"
+        ).not_.is_("complex_id", "null").range(offset, offset + 999).execute()
+        if not result.data:
+            break
+        for row in result.data:
+            area = row.get("area_exclusive") or 0
+            cid = row.get("complex_id")
+            if (not area or area == 0) and cid and cid in area_map:
+                needs_fix.append({"id": row["id"], "area": area_map[cid]})
+        if len(result.data) < 1000:
+            break
+        offset += 1000
+
+    if not needs_fix:
+        print("  → 보정 필요 없음")
+        return
+
+    print(f"  {len(needs_fix)}건 면적 보정 필요")
+
+    # 배치 업데이트
+    updated = 0
+    for i in range(0, len(needs_fix), 50):
+        batch = needs_fix[i:i + 50]
+        for item in batch:
+            try:
+                sb.table("properties").update(
+                    {"area_exclusive": item["area"]}
+                ).eq("id", item["id"]).execute()
+                updated += 1
+            except Exception as e:
+                if updated < 3:
+                    print(f"  업데이트 오류: {e}")
+        if (i // 50 + 1) % 20 == 0:
+            print(f"  진행: {updated}/{len(needs_fix)}")
+            time.sleep(0.3)
+
+    print(f"  → {updated}건 면적 보정 완료")
+
+
 def main():
     parser = argparse.ArgumentParser(description="배치 분석 생성기")
     parser.add_argument("--skip-sync", action="store_true", help="properties 동기화 스킵")
@@ -753,9 +845,16 @@ def main():
     if args.regenerate:
         delete_existing_analyses(sb)
 
+    # Step 0.5: 단지별 대표 면적 pre-fetch
+    area_map = fetch_area_by_complex(sb)
+
     # Step 1: Properties 동기화
     if not args.skip_sync:
-        sync_complexes_to_properties(sb)
+        sync_complexes_to_properties(sb, area_map=area_map)
+
+    # Step 1.1: 기존 properties area_exclusive 보정 (0 또는 NULL인 것)
+    if area_map:
+        backfill_property_areas(sb, area_map)
 
     # 모델 로드
     print("\n[모델 로드]")
@@ -791,6 +890,7 @@ def main():
         limit=args.limit,
         complex_price_stats=complex_price_stats,
         sigungu_price_stats=sigungu_price_stats,
+        area_map=area_map,
     )
 
     print("\n" + "=" * 60)
