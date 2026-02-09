@@ -31,30 +31,6 @@ export function HeroSection() {
         <div className="mx-auto mt-10 max-w-xl">
           <SearchBar />
         </div>
-
-        {/* Trust indicators */}
-        <div className="mt-12 flex flex-wrap items-center justify-center gap-8">
-          <div className="flex flex-col items-center">
-            <span className="text-lg font-bold tabular-nums text-[#191F28]">
-              8,900+
-            </span>
-            <span className="mt-0.5 text-xs text-[#8B95A1]">단지 분석</span>
-          </div>
-          <div className="h-8 w-px bg-[#E5E8EB]" />
-          <div className="flex flex-col items-center">
-            <span className="text-lg font-bold tabular-nums text-[#191F28]">
-              126
-            </span>
-            <span className="mt-0.5 text-xs text-[#8B95A1]">전국 시군구</span>
-          </div>
-          <div className="h-8 w-px bg-[#E5E8EB]" />
-          <div className="flex flex-col items-center">
-            <span className="text-lg font-bold tabular-nums text-[#191F28]">
-              AI
-            </span>
-            <span className="mt-0.5 text-xs text-[#8B95A1]">가격 분석</span>
-          </div>
-        </div>
       </div>
     </section>
   )
