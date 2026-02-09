@@ -32,6 +32,7 @@ export function MyPageContent() {
   const handleLogout = async () => {
     await signOut()
     router.push('/')
+    router.refresh()
   }
 
   const dailyAnalysisCount = profile?.daily_analysis_count || 0
