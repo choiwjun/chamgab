@@ -142,23 +142,16 @@ export function PopularPropertiesClient({
         </motion.div>
 
         {/* 매물 카드 캐러셀 */}
-        <div className="relative">
-          {/* Left fade */}
-          <div className="pointer-events-none absolute left-0 top-0 z-10 hidden h-full w-8 bg-gradient-to-r from-[#F9FAFB] to-transparent md:block" />
-          {/* Right fade */}
-          <div className="pointer-events-none absolute right-0 top-0 z-10 hidden h-full w-8 bg-gradient-to-l from-[#F9FAFB] to-transparent md:block" />
-
-          <div
-            ref={scrollContainerRef}
-            onScroll={checkScrollPosition}
-            className="scrollbar-hide -mx-6 flex snap-x gap-4 overflow-x-auto px-6 pb-4 md:-mx-8 md:px-8"
-          >
-            {properties.map((property, index) => (
-              <div key={property.id} className="snap-start">
-                <PropertyCard property={property} index={index} />
-              </div>
-            ))}
-          </div>
+        <div
+          ref={scrollContainerRef}
+          onScroll={checkScrollPosition}
+          className="scrollbar-hide flex snap-x gap-4 overflow-x-auto pb-4"
+        >
+          {properties.map((property, index) => (
+            <div key={property.id} className="snap-start">
+              <PropertyCard property={property} index={index} />
+            </div>
+          ))}
         </div>
       </div>
     </section>
