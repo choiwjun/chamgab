@@ -60,22 +60,44 @@ export function fullName(name: string, sido: string): string {
 // 테이블별 데이터 조회
 // ============================================================================
 
+async function paginatedSelect(
+  supabase: SupabaseClient,
+  table: string,
+  filters: Record<string, string>,
+  orderBy = 'base_year_month',
+  maxRows = 3000
+): Promise<Record<string, unknown>[]> {
+  try {
+    const all: Record<string, unknown>[] = []
+    let offset = 0
+    while (offset < maxRows) {
+      let query = supabase.from(table).select('*')
+      for (const [col, val] of Object.entries(filters)) {
+        query = query.eq(col, val)
+      }
+      query = query
+        .order(orderBy, { ascending: false })
+        .range(offset, offset + 999)
+      const { data } = await query
+      if (!data || data.length === 0) break
+      all.push(...data)
+      if (data.length < 1000) break
+      offset += 1000
+    }
+    return all
+  } catch {
+    return []
+  }
+}
+
 export async function fetchBusinessStats(
   supabase: SupabaseClient,
   sigunguCode: string,
   industryCode?: string
 ): Promise<Record<string, unknown>[]> {
-  try {
-    let query = supabase
-      .from('business_statistics')
-      .select('*')
-      .eq('sigungu_code', sigunguCode)
-    if (industryCode) query = query.eq('industry_small_code', industryCode)
-    const { data } = await query
-    return data || []
-  } catch {
-    return []
-  }
+  const filters: Record<string, string> = { sigungu_code: sigunguCode }
+  if (industryCode) filters.industry_small_code = industryCode
+  return paginatedSelect(supabase, 'business_statistics', filters)
 }
 
 export async function fetchSalesStats(
@@ -83,17 +105,9 @@ export async function fetchSalesStats(
   sigunguCode: string,
   industryCode?: string
 ): Promise<Record<string, unknown>[]> {
-  try {
-    let query = supabase
-      .from('sales_statistics')
-      .select('*')
-      .eq('sigungu_code', sigunguCode)
-    if (industryCode) query = query.eq('industry_small_code', industryCode)
-    const { data } = await query
-    return data || []
-  } catch {
-    return []
-  }
+  const filters: Record<string, string> = { sigungu_code: sigunguCode }
+  if (industryCode) filters.industry_small_code = industryCode
+  return paginatedSelect(supabase, 'sales_statistics', filters)
 }
 
 export async function fetchStoreStats(
@@ -101,17 +115,9 @@ export async function fetchStoreStats(
   sigunguCode: string,
   industryCode?: string
 ): Promise<Record<string, unknown>[]> {
-  try {
-    let query = supabase
-      .from('store_statistics')
-      .select('*')
-      .eq('sigungu_code', sigunguCode)
-    if (industryCode) query = query.eq('industry_small_code', industryCode)
-    const { data } = await query
-    return data || []
-  } catch {
-    return []
-  }
+  const filters: Record<string, string> = { sigungu_code: sigunguCode }
+  if (industryCode) filters.industry_small_code = industryCode
+  return paginatedSelect(supabase, 'store_statistics', filters)
 }
 
 export async function fetchFootTraffic(
@@ -123,6 +129,7 @@ export async function fetchFootTraffic(
       .from('foot_traffic_statistics')
       .select('*')
       .eq('sigungu_code', sigunguCode)
+      .order('base_year_quarter', { ascending: false })
 
     if (!data || data.length === 0) return {}
     if (data.length === 1) return data[0]
@@ -165,7 +172,8 @@ export async function fetchDistrictChar(
     const { data } = await supabase
       .from('district_characteristics')
       .select('*')
-      .eq('sigungu_code', sigunguCode)
+      .like('commercial_district_code', `${sigunguCode}%`)
+      .order('base_year_quarter', { ascending: false })
       .limit(1)
     return data?.[0] || {}
   } catch {

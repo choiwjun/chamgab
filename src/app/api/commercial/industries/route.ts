@@ -72,19 +72,26 @@ export async function GET(request: NextRequest) {
     const supabase = getSupabase()
     const category = request.nextUrl.searchParams.get('category')
 
-    // DB에서 실제 데이터가 있는 업종 코드 수집
-    const { data } = await supabase
-      .from('business_statistics')
-      .select('industry_small_code, industry_name')
-
+    // DB에서 실제 데이터가 있는 업종 코드 수집 (페이지네이션)
     const dbCodes = new Set<string>()
     const dbNames: Record<string, string> = {}
-    for (const row of data || []) {
-      const code = row.industry_small_code || ''
-      if (code) {
-        dbCodes.add(code)
-        if (!dbNames[code]) dbNames[code] = row.industry_name || ''
+    let indOffset = 0
+    while (true) {
+      const { data } = await supabase
+        .from('business_statistics')
+        .select('industry_small_code, industry_name')
+        .range(indOffset, indOffset + 999)
+      if (!data || data.length === 0) break
+      for (const row of data) {
+        const code = row.industry_small_code || ''
+        if (code) {
+          dbCodes.add(code)
+          if (!dbNames[code]) dbNames[code] = row.industry_name || ''
+        }
       }
+      if (data.length < 1000) break
+      indOffset += 1000
+      if (indOffset > 200000) break
     }
 
     // 전체 목록 + DB 데이터 병합
