@@ -410,8 +410,8 @@ export function SearchPageContent() {
             {/* 전체 단지 보기 링크 */}
             <button
               onClick={() => {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 router.push(
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   `/search?sido=${encodeURIComponent('서울특별시')}` as any
                 )
               }}

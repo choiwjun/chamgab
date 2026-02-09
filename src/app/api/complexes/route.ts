@@ -134,8 +134,8 @@ async function handleMapMode(searchParams: URLSearchParams) {
     return NextResponse.json({ items: [], total: 0 }, { status: 503 })
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const items = (data || [])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .map((r: any) => {
       let location = null
       if (
