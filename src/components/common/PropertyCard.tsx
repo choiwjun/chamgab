@@ -53,12 +53,12 @@ export function PropertyCard({
     >
       <Link
         href={`/property/${property.id}`}
-        className="block h-full overflow-hidden rounded-xl border border-gray-200 bg-white transition-colors hover:border-gray-300"
+        className="block h-full overflow-hidden rounded-2xl border border-[#E5E8EB] bg-white transition-all duration-200 hover:-translate-y-0.5 hover:border-[#D1D6DB]"
       >
         <div className="p-5">
           {/* 지역 + 매물유형 */}
           <div className="mb-1 flex items-center gap-2">
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-[#8B95A1]">
               {region} {subRegion}
             </span>
             {ptype !== 'apt' && (
@@ -74,32 +74,32 @@ export function PropertyCard({
           </div>
 
           {/* 매물명 */}
-          <h3 className="mb-1 line-clamp-2 text-base font-semibold leading-snug text-gray-900">
+          <h3 className="mb-1 line-clamp-2 text-base font-semibold leading-snug text-[#191F28]">
             {property.name}
           </h3>
 
           {/* 주소 */}
           <div className="mb-3 flex items-start gap-1.5">
-            <MapPin className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-gray-500" />
-            <p className="line-clamp-1 text-sm text-gray-500">
+            <MapPin className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-[#8B95A1]" />
+            <p className="line-clamp-1 text-sm text-[#8B95A1]">
               {property.address}
             </p>
           </div>
 
           {/* 구분선 */}
-          <div className="my-3 border-t border-gray-100" />
+          <div className="my-3 border-t border-[#F2F4F6]" />
 
           {/* 상세 정보 */}
-          <div className="flex items-center gap-4 text-sm text-gray-500">
+          <div className="flex items-center gap-4 text-sm text-[#4E5968]">
             {property.area_exclusive && (
               <div className="flex items-center gap-1.5">
-                <Maximize2 className="h-3.5 w-3.5 text-gray-500" />
+                <Maximize2 className="h-3.5 w-3.5 text-[#8B95A1]" />
                 {formatArea(property.area_exclusive)}
               </div>
             )}
             {property.built_year && (
               <div className="flex items-center gap-1.5">
-                <Calendar className="h-3.5 w-3.5 text-gray-500" />
+                <Calendar className="h-3.5 w-3.5 text-[#8B95A1]" />
                 {property.built_year}년
               </div>
             )}
