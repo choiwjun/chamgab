@@ -14,6 +14,8 @@ import {
   fetchFootTraffic,
   fetchBusinessStats,
   fetchSalesStats,
+  latestByIndustry,
+  EXCLUDED_INDUSTRY_CODES,
   num,
 } from '../../../_helpers'
 
@@ -31,13 +33,6 @@ export async function GET(
     const footData = await fetchFootTraffic(supabase, code)
     const bizData = await fetchBusinessStats(supabase, code)
     const salesData = await fetchSalesStats(supabase, code)
-
-    if (!bizData.length) {
-      return NextResponse.json(
-        { detail: `추천 데이터가 부족합니다: ${code}` },
-        { status: 404 }
-      )
-    }
 
     // 유동인구 분석
     const ages: Record<string, number> = {
@@ -70,39 +65,46 @@ export async function GET(
         ? Math.round((weekend / (weekday + weekend)) * 1000) / 10
         : 50
 
+    // 업종별 최신 월 데이터만 사용 (중복 제거)
+    const bizLatest = latestByIndustry(bizData)
+    const salesLatest = latestByIndustry(salesData)
+
     // 매출 매핑
     const salesMap: Record<string, number> = {}
-    for (const s of salesData) {
+    const growthMap: Record<string, number> = {}
+    for (const s of salesLatest) {
       const ic = s.industry_small_code as string
-      if (ic) salesMap[ic] = num(s.monthly_avg_sales)
+      if (ic) {
+        salesMap[ic] = num(s.monthly_avg_sales)
+        growthMap[ic] = num(s.sales_growth_rate)
+      }
     }
 
-    // 연령-업종 매칭
+    // 연령-업종 매칭 (실제 소비 패턴 기반)
     const ageMatch: Record<string, string[]> = {
-      '10s': ['Q06'],
-      '20s': ['Q12', 'Q06'],
-      '30s': ['Q01', 'Q12'],
-      '40s': ['Q01', 'Q04'],
-      '50s': ['Q01', 'D01'],
-      '60s': ['Q01'],
+      '10s': ['Q06', 'Q07', 'Q08', 'Q14', 'Q11', 'S03'],
+      '20s': ['Q12', 'Q13', 'Q06', 'R01', 'R03', 'I02', 'Q11', 'S02'],
+      '30s': ['Q01', 'Q12', 'Q04', 'S02', 'I01', 'S01', 'Q13'],
+      '40s': ['Q01', 'Q04', 'D01', 'S01', 'N01', 'S04', 'I01'],
+      '50s': ['Q01', 'D01', 'N01', 'N03', 'D03', 'D05'],
+      '60s': ['Q01', 'D01', 'N01', 'N03', 'D05', 'D04'],
     }
 
-    const recommendations = bizData
+    const recommendations = bizLatest
+      .filter(
+        (b) =>
+          !EXCLUDED_INDUSTRY_CODES.includes(String(b.industry_small_code || ''))
+      )
       .map((b) => {
         const ic = b.industry_small_code as string
         const iname = b.industry_name as string
         const survival = num(b.survival_rate)
         const monthlySales = salesMap[ic] || 0
+        const growth = growthMap[ic] || 0
 
         // 점수: 생존율(50%) + 매출성장(30%) + 연령매칭(20%)
         let score = Math.round(survival * 0.5)
-        for (const s of salesData) {
-          if ((s.industry_small_code as string) === ic) {
-            const growth = num(s.sales_growth_rate)
-            score += Math.round(Math.min(Math.max(growth + 10, 0), 30) * 0.3)
-            break
-          }
-        }
+        score += Math.round(Math.min(Math.max(growth + 10, 0), 30) * 0.3)
         if ((ageMatch[primaryAge] || []).includes(ic)) score += 20
 
         const reasons: string[] = []

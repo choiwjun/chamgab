@@ -36,13 +36,39 @@ export async function GET(
     const hasData =
       bizStats.length > 0 || salesStats.length > 0 || storeStats.length > 0
 
-    const avgSurvival = avg(bizStats, 'survival_rate')
-    const avgMonthlySales = avg(salesStats, 'monthly_avg_sales')
-    const avgGrowth = avg(salesStats, 'sales_growth_rate')
-    const totalStores = sum(storeStats, 'store_count')
-    const numIndustries = Math.max(storeStats.length, 1)
-    const competitionRatio = storeStats.length
-      ? Math.round((totalStores / numIndustries / 30) * 10) / 10
+    // 최신 월 데이터만 사용 (24개월 전체 합산 방지)
+    const latestMonth = storeStats.reduce((max, r) => {
+      const ym = String(r.base_year_month || '')
+      return ym > max ? ym : max
+    }, '')
+    const latestStoreStats = latestMonth
+      ? storeStats.filter((r) => String(r.base_year_month) === latestMonth)
+      : storeStats
+
+    const latestBizMonth = bizStats.reduce((max, r) => {
+      const ym = String(r.base_year_month || '')
+      return ym > max ? ym : max
+    }, '')
+    const latestBizStats = latestBizMonth
+      ? bizStats.filter((r) => String(r.base_year_month) === latestBizMonth)
+      : bizStats
+
+    const latestSalesMonth = salesStats.reduce((max, r) => {
+      const ym = String(r.base_year_month || '')
+      return ym > max ? ym : max
+    }, '')
+    const latestSalesStats = latestSalesMonth
+      ? salesStats.filter((r) => String(r.base_year_month) === latestSalesMonth)
+      : salesStats
+
+    const avgSurvival = avg(latestBizStats, 'survival_rate')
+    const avgMonthlySales = avg(latestSalesStats, 'monthly_avg_sales')
+    const avgGrowth = avg(latestSalesStats, 'sales_growth_rate')
+    const totalStores = sum(latestStoreStats, 'store_count')
+    const numIndustries = Math.max(latestStoreStats.length, 1)
+    const avgStoresPerIndustry = totalStores / numIndustries
+    const competitionRatio = latestStoreStats.length
+      ? Math.round(Math.min(avgStoresPerIndustry / 300, 5.0) * 10) / 10
       : 0
 
     const statistics = {
@@ -54,7 +80,7 @@ export async function GET(
     }
 
     const desc = hasData
-      ? `${dname} 상권 분석 (${bizStats.length}개 업종 데이터)`
+      ? `${dname} 상권 분석 (${latestBizStats.length}개 업종 데이터)`
       : `${dname} (상세 데이터 수집 예정)`
 
     return NextResponse.json({

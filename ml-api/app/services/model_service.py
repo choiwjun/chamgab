@@ -172,11 +172,13 @@ class ModelService:
         sigungu = property_data.get("prop_sigungu") or "강남구"
         dong = property_data.get("prop_eupmyeondong") or "unknown"
 
+        # Fix #1: sido-prefixed 시군구 키로 인코딩 (중구/서구 등 충돌 방지)
+        sigungu_key = self._get_sigungu_key(sido, sigungu)
         sido_encoded = self._encode_label("sido", sido)
-        sigungu_encoded = self._encode_label("sigungu", sigungu)
+        sigungu_encoded = self._encode_label("sigungu", sigungu_key)
 
         # Target encoding (v2 신규)
-        sigungu_target_enc = self._target_encode_label("sigungu", sigungu)
+        sigungu_target_enc = self._target_encode_label("sigungu", sigungu_key)
         dong_target_enc = self._target_encode_label("dong", dong)
 
         # POI 피처
@@ -256,14 +258,16 @@ class ModelService:
     def _get_temporal_features(self, sigungu: str, apt_name: str, area: float) -> dict:
         """
         추론 시 Supabase에서 최근 거래를 조회하여 temporal 피처 계산.
-        조회 실패 시 fill_values 기본값 사용.
+        조회 실패 시 글로벌 중앙값 fallback (0이 아님).
         """
+        # Fix #2: fill_values가 0이므로 글로벌 중앙값 사용
+        global_mean = self.fill_values.get("sigungu_target_enc", 500000000)
         defaults = {
-            "price_lag_1m": self.fill_values.get("price_lag_1m", 0),
-            "price_lag_3m": self.fill_values.get("price_lag_3m", 0),
-            "price_rolling_6m_mean": self.fill_values.get("price_rolling_6m_mean", 0),
-            "price_rolling_6m_std": self.fill_values.get("price_rolling_6m_std", 0),
-            "price_yoy_change": self.fill_values.get("price_yoy_change", 0),
+            "price_lag_1m": global_mean,
+            "price_lag_3m": global_mean,
+            "price_rolling_6m_mean": global_mean,
+            "price_rolling_6m_std": 0,
+            "price_yoy_change": 0,
             "volume_lag_1m": self.fill_values.get("volume_lag_1m", 0),
         }
 
@@ -331,8 +335,8 @@ class ModelService:
                     else:
                         defaults["price_lag_3m"] = float(apt_past["price"].mean())
 
-            # sigungu 레벨 fallback
-            if defaults["price_lag_1m"] == self.fill_values.get("price_lag_1m", 0):
+            # sigungu 레벨 fallback (아파트 레벨에서 업데이트 안 됐으면)
+            if defaults["price_lag_1m"] == global_mean:
                 defaults["price_lag_1m"] = float(past.iloc[-1]["mean"])
                 if len(past) >= 3:
                     defaults["price_lag_3m"] = float(past.iloc[-3:]["mean"].mean())
@@ -511,6 +515,61 @@ class ModelService:
         if value in encoder.classes_:
             return encoder.transform([value])[0]
         return 0
+
+    # ─────────────────────────────────────────────
+    # Fix #1: 시군구 target encoding 키 변환
+    # ─────────────────────────────────────────────
+
+    _SIDO_SHORT = {
+        "부산광역시": "부산", "대구광역시": "대구",
+        "인천광역시": "인천", "광주광역시": "광주",
+        "대전광역시": "대전", "울산광역시": "울산",
+        "세종특별자치시": "세종",
+    }
+
+    _COMPOUND_CITIES = {
+        "수지구": "용인시", "기흥구": "용인시", "처인구": "용인시",
+        "영통구": "수원시", "장안구": "수원시", "권선구": "수원시", "팔달구": "수원시",
+        "단원구": "안산시", "상록구": "안산시",
+        "일산서구": "고양시", "일산동구": "고양시", "덕양구": "고양시",
+        "분당구": "성남시", "수정구": "성남시", "중원구": "성남시",
+        "만안구": "안양시", "동안구": "안양시",
+        "원미구": "부천시", "소사구": "부천시", "오정구": "부천시",
+        "상당구": "청주시", "서원구": "청주시", "청원구": "청주시", "흥덕구": "청주시",
+        "동남구": "천안시", "서북구": "천안시",
+    }
+
+    def _get_sigungu_key(self, sido: str, sigungu: str) -> str:
+        """(sido, sigungu) → target encoder 키 변환
+
+        비서울 지역의 '중구', '서구' 등이 서울 것과 충돌하지 않도록
+        서울 이외는 접두어 버전을 먼저 시도.
+        """
+        mapping = (self.target_encoders.get("sigungu") or {}).get("mapping", {})
+
+        # 서울은 plain name 직접 사용
+        if sido in ("서울특별시", "서울시"):
+            return sigungu
+
+        # 비서울: 접두어 버전 우선
+        sido_short = self._SIDO_SHORT.get(sido, "")
+        if sido_short:
+            key = sido_short + sigungu
+            if key in mapping:
+                return key
+
+        if sigungu in self._COMPOUND_CITIES:
+            key = self._COMPOUND_CITIES[sigungu] + sigungu
+            if key in mapping:
+                return key
+
+        matches = [k for k in mapping if k.endswith(sigungu)]
+        if len(matches) == 1:
+            return matches[0]
+
+        # 비서울인데 plain name이 서울 것과 충돌할 수 있으므로
+        # 의도적으로 매핑에 없는 키 반환 → global_mean fallback
+        return sido_short + sigungu if sido_short else sigungu
 
     # ─────────────────────────────────────────────
     # v2: 잔차 기반 신뢰구간

@@ -32,14 +32,22 @@ export async function GET(request: NextRequest) {
     const sidoCode = searchParams.get('sido_code')
     const sigunguCode = searchParams.get('sigungu_code')
 
-    // 1. 상권 데이터가 있는 시군구 코드 수집
-    const { data: bizData } = await supabase
-      .from('business_statistics')
-      .select('sigungu_code')
-
-    const dataCodes = new Set(
-      (bizData || []).map((r) => r.sigungu_code).filter(Boolean)
-    )
+    // 1. 상권 데이터가 있는 시군구 코드 수집 (페이지네이션)
+    const dataCodes = new Set<string>()
+    let bizOffset = 0
+    while (true) {
+      const { data: bizData } = await supabase
+        .from('business_statistics')
+        .select('sigungu_code')
+        .range(bizOffset, bizOffset + 999)
+      if (!bizData || bizData.length === 0) break
+      for (const r of bizData) {
+        if (r.sigungu_code) dataCodes.add(r.sigungu_code)
+      }
+      if (bizData.length < 1000) break
+      bizOffset += 1000
+      if (bizOffset > 200000) break
+    }
 
     // 2. 전국 시군구 (level=2) 조회
     let query = supabase

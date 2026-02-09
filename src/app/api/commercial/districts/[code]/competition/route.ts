@@ -13,6 +13,7 @@ import {
   fullName,
   fetchStoreStats,
   fetchBusinessStats,
+  latestByIndustry,
   num,
   avg,
 } from '../../../_helpers'
@@ -26,15 +27,17 @@ export async function GET(
     const supabase = getSupabase()
     const storeData = await fetchStoreStats(supabase, code)
 
-    if (!storeData.length) {
-      return NextResponse.json(
-        { detail: `점포 통계 데이터가 없습니다: ${code}` },
-        { status: 404 }
-      )
-    }
+    // 최신 월 데이터만 사용 (24개월 전체 합산 방지)
+    const latestMonth = storeData.reduce((max, r) => {
+      const ym = String(r.base_year_month || '')
+      return ym > max ? ym : max
+    }, '')
+    const latestData = latestMonth
+      ? storeData.filter((r) => String(r.base_year_month) === latestMonth)
+      : storeData
 
-    const totalStores = storeData.reduce((s, r) => s + num(r.store_count), 0)
-    const totalFranchise = storeData.reduce(
+    const totalStores = latestData.reduce((s, r) => s + num(r.store_count), 0)
+    const totalFranchise = latestData.reduce(
       (s, r) => s + num(r.franchise_count),
       0
     )
@@ -43,17 +46,18 @@ export async function GET(
         ? Math.round((totalFranchise / totalStores) * 1000) / 10
         : 0
 
+    // 밀집도 (시군구 전체 업종 합산 기준 - 수백~수만 범위)
     let densityScore: number
     let competitionLevel: string
-    if (totalStores < 50) {
-      densityScore = Math.round((totalStores / 50) * 3)
+    if (totalStores < 2000) {
+      densityScore = Math.round((totalStores / 2000) * 3)
       competitionLevel = '낮음'
-    } else if (totalStores < 300) {
-      densityScore = 3 + Math.round(((totalStores - 50) / 250) * 4)
+    } else if (totalStores < 10000) {
+      densityScore = 3 + Math.round(((totalStores - 2000) / 8000) * 4)
       competitionLevel = '중간'
     } else {
       densityScore =
-        7 + Math.min(Math.round(((totalStores - 300) / 200) * 3), 3)
+        7 + Math.min(Math.round(((totalStores - 10000) / 30000) * 3), 3)
       competitionLevel = '높음'
     }
 
@@ -71,8 +75,9 @@ export async function GET(
       const sidoPrefix = code.slice(0, 2)
       const { data: altResult } = await supabase
         .from('store_statistics')
-        .select('sigungu_code, store_count')
+        .select('sigungu_code, store_count, base_year_month')
         .like('sigungu_code', `${sidoPrefix}%`)
+        .eq('base_year_month', latestMonth || '202601')
 
       const altStores: Record<string, number> = {}
       for (const row of altResult || []) {
@@ -89,7 +94,7 @@ export async function GET(
 
       for (const [sgc, sc] of sortedAlts) {
         const { name, sido } = await getDistrictName(supabase, sgc)
-        const biz = await fetchBusinessStats(supabase, sgc)
+        const biz = latestByIndustry(await fetchBusinessStats(supabase, sgc))
         const avgSurv = biz.length ? avg(biz, 'survival_rate', 70) : 70
         alternatives.push({
           code: sgc,

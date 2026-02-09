@@ -11,6 +11,7 @@ import {
   getSupabase,
   fetchSalesStats,
   fetchBusinessStats,
+  latestMonth,
   avg,
 } from '../../../_helpers'
 
@@ -21,15 +22,8 @@ export async function GET(
   try {
     const { code } = await params
     const supabase = getSupabase()
-    const salesData = await fetchSalesStats(supabase, code)
-    const bizData = await fetchBusinessStats(supabase, code)
-
-    if (!salesData.length && !bizData.length) {
-      return NextResponse.json(
-        { detail: `상권 데이터가 없습니다: ${code}` },
-        { status: 404 }
-      )
-    }
+    const salesData = latestMonth(await fetchSalesStats(supabase, code))
+    const bizData = latestMonth(await fetchBusinessStats(supabase, code))
 
     const salesGrowthRate = avg(salesData, 'sales_growth_rate')
     const monthlyAvgSales = avg(salesData, 'monthly_avg_sales')
@@ -57,10 +51,20 @@ export async function GET(
         type: 'positive',
         message: `매출 지속 증가 중 (+${salesGrowthRate.toFixed(1)}%)`,
       })
+    } else if (salesGrowthRate > 3) {
+      signals.push({
+        type: 'positive',
+        message: `매출 소폭 증가세 (+${salesGrowthRate.toFixed(1)}%)`,
+      })
     } else if (salesGrowthRate < -5) {
       signals.push({
         type: 'negative',
         message: `매출 감소 추세 (${salesGrowthRate.toFixed(1)}%)`,
+      })
+    } else if (salesGrowthRate < -3) {
+      signals.push({
+        type: 'negative',
+        message: `매출 소폭 감소세 (${salesGrowthRate.toFixed(1)}%)`,
       })
     } else {
       signals.push({ type: 'neutral', message: '매출 안정세 유지' })

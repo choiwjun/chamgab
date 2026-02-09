@@ -12,6 +12,8 @@ import {
   fetchDistrictChar,
   fetchFootTraffic,
   fetchBusinessStats,
+  latestByIndustry,
+  EXCLUDED_INDUSTRY_CODES,
   num,
 } from '../../../_helpers'
 
@@ -37,12 +39,15 @@ export async function GET(
           '40대': num(footData.age_40s),
         }
         const total = Object.values(ages).reduce((a, b) => a + b, 0) || 1
-        if (ages['20대'] / total > 0.35) {
+        if (ages['20대'] / total > 0.25) {
           districtType = '대학상권'
           primaryAge = '20대'
-        } else if (ages['30대'] / total > 0.3) {
+        } else if (ages['30대'] / total > 0.28) {
           districtType = '오피스상권'
           primaryAge = '30-40대'
+        } else if (ages['40대'] / total > 0.25) {
+          districtType = '주거상권'
+          primaryAge = '40-50대'
         } else {
           districtType = '복합상권'
           primaryAge = '30대'
@@ -103,13 +108,23 @@ export async function GET(
       ],
     }
 
-    // 실데이터 기반 추천 업종
-    const bizAll = await fetchBusinessStats(supabase, code)
-    let bestIndustries = bizAll
-      .filter((b) => b.industry_name)
-      .sort((a, b) => num(b.survival_rate) - num(a.survival_rate))
-      .slice(0, 4)
-      .map((b) => b.industry_name as string)
+    // 실데이터 기반 추천 업종 (업종별 최신 월만, 중복 제거, 비상업 업종 제외)
+    const bizAll = latestByIndustry(await fetchBusinessStats(supabase, code))
+    let bestIndustries = Array.from(
+      new Set(
+        bizAll
+          .filter(
+            (b) =>
+              b.industry_name &&
+              !EXCLUDED_INDUSTRY_CODES.includes(
+                String(b.industry_small_code || '')
+              )
+          )
+          .sort((a, b) => num(b.survival_rate) - num(a.survival_rate))
+          .slice(0, 4)
+          .map((b) => b.industry_name as string)
+      )
+    )
 
     if (!bestIndustries.length) {
       const fallbackMap: Record<string, string[]> = {

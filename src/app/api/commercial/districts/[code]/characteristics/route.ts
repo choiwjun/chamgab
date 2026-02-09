@@ -14,6 +14,7 @@ import {
   fetchFootTraffic,
   fetchDistrictChar,
   fetchSalesStats,
+  latestByIndustry,
   num,
 } from '../../../_helpers'
 
@@ -30,14 +31,7 @@ export async function GET(
 
     const footData = await fetchFootTraffic(supabase, code)
     const charData = await fetchDistrictChar(supabase, code)
-    const salesStats = await fetchSalesStats(supabase, code)
-
-    if (!Object.keys(footData).length && !Object.keys(charData).length) {
-      return NextResponse.json(
-        { detail: `상권 특성 데이터가 없습니다: ${code}` },
-        { status: 404 }
-      )
-    }
+    const salesStats = latestByIndustry(await fetchSalesStats(supabase, code))
 
     // 시간대별 유동인구
     const timeSlots: Record<string, number> = {
@@ -48,8 +42,9 @@ export async function GET(
       '17-21': num(footData.time_17_21),
       '21-24': num(footData.time_21_24),
     }
-    const totalTraffic =
-      Object.values(timeSlots).reduce((a, b) => a + b, 0) || 1
+    const rawTraffic = Object.values(timeSlots).reduce((a, b) => a + b, 0)
+    const hasFootTraffic = rawTraffic > 0
+    const totalTraffic = rawTraffic || 1
     const timeDistribution = Object.entries(timeSlots).map(([slot, count]) => ({
       time_slot: slot,
       traffic_count: count,
@@ -80,15 +75,19 @@ export async function GET(
       const r20 = ageGroups['20대'] / totalAge
       const r30 = ageGroups['30대'] / totalAge
       const r40 = ageGroups['40대'] / totalAge
-      if (r20 > 0.3) districtType = '대학상권'
-      else if (r30 > 0.3) districtType = '오피스상권'
+      if (r20 > 0.25) districtType = '대학상권'
+      else if (r30 > 0.28) districtType = '오피스상권'
       else if (r40 > 0.25) districtType = '주거상권'
       else districtType = '복합상권'
     }
     if (!primaryAgeGroup) {
-      primaryAgeGroup = Object.entries(ageGroups).sort(
-        (a, b) => b[1] - a[1]
-      )[0][0]
+      if (hasFootTraffic) {
+        primaryAgeGroup = Object.entries(ageGroups).sort(
+          (a, b) => b[1] - a[1]
+        )[0][0]
+      } else {
+        primaryAgeGroup = '30대'
+      }
     }
 
     // 인구 비율
@@ -113,18 +112,23 @@ export async function GET(
     let peakTimeStart = (charData.peak_time_start as string) || ''
     let peakTimeEnd = (charData.peak_time_end as string) || ''
     if (!peakTimeStart) {
-      const peakSlot = Object.entries(timeSlots).sort(
-        (a, b) => b[1] - a[1]
-      )[0][0]
-      const slotMap: Record<string, [string, string]> = {
-        '06-11': ['06:00', '11:00'],
-        '11-14': ['11:00', '14:00'],
-        '14-17': ['14:00', '17:00'],
-        '17-21': ['17:00', '21:00'],
-        '21-24': ['21:00', '24:00'],
-        '00-06': ['00:00', '06:00'],
+      if (hasFootTraffic) {
+        const peakSlot = Object.entries(timeSlots).sort(
+          (a, b) => b[1] - a[1]
+        )[0][0]
+        const slotMap: Record<string, [string, string]> = {
+          '06-11': ['06:00', '11:00'],
+          '11-14': ['11:00', '14:00'],
+          '14-17': ['14:00', '17:00'],
+          '17-21': ['17:00', '21:00'],
+          '21-24': ['21:00', '24:00'],
+          '00-06': ['00:00', '06:00'],
+        }
+        ;[peakTimeStart, peakTimeEnd] = slotMap[peakSlot] || ['11:00', '21:00']
+      } else {
+        peakTimeStart = '11:00'
+        peakTimeEnd = '14:00'
       }
-      ;[peakTimeStart, peakTimeEnd] = slotMap[peakSlot] || ['11:00', '21:00']
     }
     const peakTraffic =
       num(charData.peak_time_traffic) || Math.max(...Object.values(timeSlots))

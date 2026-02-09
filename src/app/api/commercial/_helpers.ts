@@ -60,22 +60,44 @@ export function fullName(name: string, sido: string): string {
 // 테이블별 데이터 조회
 // ============================================================================
 
+async function paginatedSelect(
+  supabase: SupabaseClient,
+  table: string,
+  filters: Record<string, string>,
+  orderBy = 'base_year_month',
+  maxRows = 3000
+): Promise<Record<string, unknown>[]> {
+  try {
+    const all: Record<string, unknown>[] = []
+    let offset = 0
+    while (offset < maxRows) {
+      let query = supabase.from(table).select('*')
+      for (const [col, val] of Object.entries(filters)) {
+        query = query.eq(col, val)
+      }
+      query = query
+        .order(orderBy, { ascending: false })
+        .range(offset, offset + 999)
+      const { data } = await query
+      if (!data || data.length === 0) break
+      all.push(...data)
+      if (data.length < 1000) break
+      offset += 1000
+    }
+    return all
+  } catch {
+    return []
+  }
+}
+
 export async function fetchBusinessStats(
   supabase: SupabaseClient,
   sigunguCode: string,
   industryCode?: string
 ): Promise<Record<string, unknown>[]> {
-  try {
-    let query = supabase
-      .from('business_statistics')
-      .select('*')
-      .eq('sigungu_code', sigunguCode)
-    if (industryCode) query = query.eq('industry_small_code', industryCode)
-    const { data } = await query
-    return data || []
-  } catch {
-    return []
-  }
+  const filters: Record<string, string> = { sigungu_code: sigunguCode }
+  if (industryCode) filters.industry_small_code = industryCode
+  return paginatedSelect(supabase, 'business_statistics', filters)
 }
 
 export async function fetchSalesStats(
@@ -83,17 +105,9 @@ export async function fetchSalesStats(
   sigunguCode: string,
   industryCode?: string
 ): Promise<Record<string, unknown>[]> {
-  try {
-    let query = supabase
-      .from('sales_statistics')
-      .select('*')
-      .eq('sigungu_code', sigunguCode)
-    if (industryCode) query = query.eq('industry_small_code', industryCode)
-    const { data } = await query
-    return data || []
-  } catch {
-    return []
-  }
+  const filters: Record<string, string> = { sigungu_code: sigunguCode }
+  if (industryCode) filters.industry_small_code = industryCode
+  return paginatedSelect(supabase, 'sales_statistics', filters)
 }
 
 export async function fetchStoreStats(
@@ -101,17 +115,9 @@ export async function fetchStoreStats(
   sigunguCode: string,
   industryCode?: string
 ): Promise<Record<string, unknown>[]> {
-  try {
-    let query = supabase
-      .from('store_statistics')
-      .select('*')
-      .eq('sigungu_code', sigunguCode)
-    if (industryCode) query = query.eq('industry_small_code', industryCode)
-    const { data } = await query
-    return data || []
-  } catch {
-    return []
-  }
+  const filters: Record<string, string> = { sigungu_code: sigunguCode }
+  if (industryCode) filters.industry_small_code = industryCode
+  return paginatedSelect(supabase, 'store_statistics', filters)
 }
 
 export async function fetchFootTraffic(
@@ -123,6 +129,7 @@ export async function fetchFootTraffic(
       .from('foot_traffic_statistics')
       .select('*')
       .eq('sigungu_code', sigunguCode)
+      .order('base_year_quarter', { ascending: false })
 
     if (!data || data.length === 0) return {}
     if (data.length === 1) return data[0]
@@ -165,7 +172,8 @@ export async function fetchDistrictChar(
     const { data } = await supabase
       .from('district_characteristics')
       .select('*')
-      .eq('sigungu_code', sigunguCode)
+      .like('commercial_district_code', `${sigunguCode}%`)
+      .order('base_year_quarter', { ascending: false })
       .limit(1)
     return data?.[0] || {}
   } catch {
@@ -197,6 +205,39 @@ export function avg(
 /** 안전한 합계 */
 export function sum(rows: Record<string, unknown>[], field: string): number {
   return rows.reduce((s, r) => s + num(r[field]), 0)
+}
+
+/** 업종별 최신 월 데이터만 추출 (24개월 중복 제거) */
+export function latestByIndustry(
+  rows: Record<string, unknown>[]
+): Record<string, unknown>[] {
+  const map = new Map<string, Record<string, unknown>>()
+  for (const r of rows) {
+    const ic = String(r.industry_small_code || '')
+    if (!ic) continue
+    const existing = map.get(ic)
+    if (
+      !existing ||
+      String(r.base_year_month || '') > String(existing.base_year_month || '')
+    ) {
+      map.set(ic, r)
+    }
+  }
+  return Array.from(map.values())
+}
+
+/** 최신 월 데이터만 필터 (전체 행에서 최신 base_year_month만) */
+export function latestMonth(
+  rows: Record<string, unknown>[]
+): Record<string, unknown>[] {
+  if (!rows.length) return rows
+  const latest = rows.reduce((max, r) => {
+    const ym = String(r.base_year_month || '')
+    return ym > max ? ym : max
+  }, '')
+  return latest
+    ? rows.filter((r) => String(r.base_year_month) === latest)
+    : rows
 }
 
 // ============================================================================
@@ -307,6 +348,18 @@ export function fallbackPredict(features: {
     ],
   }
 }
+
+/** 창업 추천에서 제외할 업종 (비상업/시설 업종) */
+export const EXCLUDED_INDUSTRY_CODES = [
+  'L05', // 장례식장
+  'L06', // 주유소
+  'L01', // 병원/의원
+  'L02', // 치과
+  'L03', // 한의원
+  'L04', // 어린이집/유치원
+  'I05', // 인테리어/건축
+  'I06', // 부동산중개
+]
 
 /** 피처 이름 → 한글 매핑 */
 export const FACTOR_NAME_MAP: Record<string, string> = {
