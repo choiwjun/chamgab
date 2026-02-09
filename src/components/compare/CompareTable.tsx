@@ -41,7 +41,7 @@ export function CompareTable() {
 
     const newQuery = `?ids=${propertyIds.join(',')}`
     if (searchParams.toString() !== `ids=${propertyIds.join(',')}`) {
-      router.replace(`/compare${newQuery}`, { scroll: false })
+      router.replace(`/compare${newQuery}` as never, { scroll: false })
     }
   }, [propertyIds, router, searchParams])
 
