@@ -90,11 +90,11 @@ jobs:
           retention-days: 7
 
   post-process:
-    name: 2. 후처리 (단지생성→분석→가격)
+    name: 2. 후처리 (단지생성→가격업데이트)
     runs-on: ubuntu-latest
     needs: [collect-gyeongbuk, collect-gyeongnam]
     if: always() && (needs.collect-gyeongbuk.result == 'success' || needs.collect-gyeongnam.result == 'success')
-    timeout-minutes: 120
+    timeout-minutes: 60
 
     steps:
       - uses: actions/checkout@v4
@@ -119,15 +119,6 @@ jobs:
           cd ml-api
           python -m scripts.create_complexes_from_transactions
 
-      - name: Generate analyses (chamgab_analyses + price_factors)
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          ML_API_URL: ${{ secrets.ML_API_URL }}
-        run: |
-          cd ml-api
-          python -m scripts.batch_generate_analyses
-
       - name: Update region average prices
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -143,3 +134,110 @@ jobs:
         run: |
           cd ml-api
           python -m scripts.seed_commercial_data --months 24
+
+  retrain:
+    name: 3. ML 모델 재학습
+    runs-on: ubuntu-latest
+    needs: [post-process]
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: ml-api/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          cd ml-api
+          pip install -r requirements.txt
+
+      - name: Prepare training data (전국)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd ml-api
+          mkdir -p data
+          python scripts/prepare_training_data.py --full --output data/training_data.csv
+
+      - name: Train XGBoost model
+        run: |
+          cd ml-api
+          python -m scripts.train_model --csv data/training_data.csv
+
+      - name: Upload model to Supabase Storage
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd ml-api
+          python scripts/upload_model.py || echo "Model upload skipped"
+
+      - name: Upload model artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ml-models-retrained
+          path: |
+            ml-api/app/models/*.pkl
+          retention-days: 30
+
+  regenerate-analyses:
+    name: 4. 전체 분석 재생성 (새 모델)
+    runs-on: ubuntu-latest
+    needs: [retrain]
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: ml-api/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          cd ml-api
+          pip install -r requirements.txt
+
+      - name: Download retrained model
+        uses: actions/download-artifact@v4
+        with:
+          name: ml-models-retrained
+          path: ml-api/app/models/
+
+      - name: Regenerate all analyses with new model
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd ml-api
+          python -m scripts.batch_generate_analyses --regenerate
+
+  summary:
+    name: 완료 요약
+    runs-on: ubuntu-latest
+    needs: [collect-gyeongbuk, collect-gyeongnam, post-process, retrain, regenerate-analyses]
+    if: always()
+
+    steps:
+      - name: Summary
+        run: |
+          echo "## 경북/경남 수집 + 재학습 결과" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| 단계 | 결과 |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|------|" >> $GITHUB_STEP_SUMMARY
+          echo "| 경북 수집 | ${{ needs.collect-gyeongbuk.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 경남 수집 | ${{ needs.collect-gyeongnam.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 후처리 | ${{ needs.post-process.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ML 재학습 | ${{ needs.retrain.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 분석 재생성 | ${{ needs.regenerate-analyses.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "완료: $(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M KST')" >> $GITHUB_STEP_SUMMARY
