@@ -146,7 +146,7 @@ SEOUL_REGIONS = ALL_REGIONS[1]
 class TransactionCollector:
     """실거래가 수집기"""
 
-    def __init__(self):
+    def __init__(self, resume: bool = False):
         self.supabase = create_client(
             os.environ['SUPABASE_URL'],
             os.environ['SUPABASE_SERVICE_KEY']
@@ -156,6 +156,33 @@ class TransactionCollector:
             logger.error("API 키 없음: DATA_GO_KR_API_KEY 또는 MOLIT_API_KEY 설정 필요")
             sys.exit(1)
         self.base_url = "https://apis.data.go.kr/1613000/RTMSDataSvcAptTrade"
+        self.resume = resume
+
+    def is_month_collected(self, region_code: str, deal_ymd: str) -> bool:
+        """해당 지역+월에 이미 수집된 데이터가 있는지 확인"""
+        year = int(deal_ymd[:4])
+        month = int(deal_ymd[4:6])
+        start_date = f"{year:04d}-{month:02d}-01"
+        if month == 12:
+            end_date = f"{year + 1:04d}-01-01"
+        else:
+            end_date = f"{year:04d}-{month + 1:02d}-01"
+
+        try:
+            result = self.supabase.table('transactions').select(
+                'id', count='exact'
+            ).eq(
+                'region_code', region_code
+            ).gte(
+                'transaction_date', start_date
+            ).lt(
+                'transaction_date', end_date
+            ).limit(1).execute()
+            count = result.count if result.count else 0
+            return count > 0
+        except Exception as e:
+            logger.debug(f"Resume 확인 실패: {region_code} {deal_ymd} - {e}")
+            return False
 
     async def collect_apartment_trades(
         self,
@@ -289,11 +316,17 @@ class TransactionCollector:
     ) -> int:
         """특정 지역의 데이터 수집"""
         total = 0
+        skipped = 0
         now = datetime.now()
 
         for i in range(months):
             target_date = now - timedelta(days=30 * i)
             deal_ymd = target_date.strftime('%Y%m')
+
+            # --resume: 이미 수집된 월 스킵
+            if self.resume and self.is_month_collected(region_code, deal_ymd):
+                skipped += 1
+                continue
 
             transactions = await self.collect_apartment_trades(
                 region_code, region_name, deal_ymd
@@ -306,21 +339,27 @@ class TransactionCollector:
             # API 호출 제한 방지
             await asyncio.sleep(2.0)
 
+        if skipped > 0:
+            logger.info(f"  └ {region_name}: {skipped}개월 스킵 (이미 수집됨)")
         return total
 
 
 async def main():
     parser = argparse.ArgumentParser(description='전국 실거래가 수집')
-    parser.add_argument('--group', type=int, default=0, help='지역 그룹 번호 (1-5, 0=전체)')
+    parser.add_argument('--group', type=int, default=0, help='지역 그룹 번호 (1-9, 0=전체)')
     parser.add_argument('--mode', type=str, default='all', choices=['all', 'seoul', 'sample'])
     parser.add_argument('--months', type=int, default=36, help='수집 기간 (개월)')
     parser.add_argument('--clean', action='store_true', help='기존 불량 데이터 삭제 후 수집')
+    parser.add_argument('--resume', action='store_true', help='이미 수집된 region+month 스킵')
     args = parser.parse_args()
 
     # 로그 디렉토리 생성
     os.makedirs('logs', exist_ok=True)
 
-    collector = TransactionCollector()
+    collector = TransactionCollector(resume=args.resume)
+
+    if args.resume:
+        logger.info("Resume 모드: 이미 수집된 region+month 조합은 스킵합니다.")
 
     # --clean: 불량 데이터 삭제
     if args.clean:
@@ -337,8 +376,8 @@ async def main():
 
     # 수집 대상 결정
     if args.group == 0:
-        # 전체 그룹 순서대로
-        groups = [1, 2, 3, 4, 5]
+        # 전체 그룹 순서대로 (1-9)
+        groups = list(range(1, 10))
     else:
         groups = [args.group]
 

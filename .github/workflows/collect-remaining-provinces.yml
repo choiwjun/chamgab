@@ -38,7 +38,7 @@ jobs:
           MOLIT_API_KEY: ${{ secrets.DATA_GO_KR_API_KEY }}
         run: |
           cd ml-api
-          python scripts/collect_all_transactions.py --group 8
+          python scripts/collect_all_transactions.py --group 8 --resume
 
       - name: Upload logs
         if: always()
@@ -79,7 +79,7 @@ jobs:
           MOLIT_API_KEY: ${{ secrets.DATA_GO_KR_API_KEY }}
         run: |
           cd ml-api
-          python scripts/collect_all_transactions.py --group 9
+          python scripts/collect_all_transactions.py --group 9 --resume
 
       - name: Upload logs
         if: always()
