@@ -7,6 +7,10 @@ import { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 import { PropertyDetailClient } from './PropertyDetailClient'
+import {
+  BreadcrumbJsonLd,
+  RealEstateListingJsonLd,
+} from '@/components/seo/JsonLd'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || '',
@@ -38,18 +42,37 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   if (!property) {
     return {
-      title: '매물을 찾을 수 없음 | 참값',
+      title: '매물을 찾을 수 없음',
       description: 'AI 기반 부동산 가격 분석 서비스',
     }
   }
 
+  const area = property.area_exclusive
+    ? `전용 ${property.area_exclusive}㎡`
+    : ''
+  const desc = `${property.name} ${property.address} ${area} - AI 적정가격 분석. 실거래가 기반 가격 예측과 영향 요인을 확인하세요.`
+
   return {
-    title: `${property.name} | 참값`,
-    description: `${property.address} - AI 기반 부동산 가격 분석`,
+    title: `${property.name} ${area}`,
+    description: desc,
+    keywords: [
+      property.name,
+      `${property.name} 시세`,
+      `${property.name} 실거래가`,
+      '아파트 적정가격',
+    ],
     openGraph: {
-      title: `${property.name} - 참값 분석`,
-      description: `${property.address} | 전용 ${property.area_exclusive}㎡`,
+      title: `${property.name} ${area} | 참값`,
+      description: desc,
       images: property.thumbnail ? [property.thumbnail] : [],
+    },
+    twitter: {
+      card: 'summary',
+      title: `${property.name} ${area} | 참값`,
+      description: `${property.address} ${area}`,
+    },
+    alternates: {
+      canonical: `/property/${id}`,
     },
   }
 }
@@ -62,5 +85,24 @@ export default async function PropertyDetailPage({ params }: Props) {
     notFound()
   }
 
-  return <PropertyDetailClient property={property} />
+  return (
+    <>
+      <BreadcrumbJsonLd
+        items={[
+          { name: '홈', href: '/' },
+          { name: '검색', href: '/search' },
+          { name: property.name, href: `/property/${id}` },
+        ]}
+      />
+      <RealEstateListingJsonLd
+        name={property.name}
+        description={`${property.address} - AI 적정가격 분석`}
+        url={`/property/${id}`}
+        address={property.address}
+        area={property.area_exclusive}
+        image={property.thumbnail}
+      />
+      <PropertyDetailClient property={property} />
+    </>
+  )
 }

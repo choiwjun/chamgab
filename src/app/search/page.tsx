@@ -5,8 +5,19 @@ import { Suspense } from 'react'
 import { SearchPageContent } from '@/components/search/SearchPageContent'
 
 export const metadata = {
-  title: '매물 검색 - 참값',
-  description: 'AI 기반 부동산 가격 분석 서비스',
+  title: '아파트 시세 조회·검색',
+  description:
+    '전국 아파트 시세를 검색하고 AI 적정가격을 확인하세요. 지역별, 단지별 실거래가 조회와 가격 비교를 제공합니다.',
+  keywords: [
+    '아파트 시세 조회',
+    '아파트 검색',
+    '실거래가 조회',
+    '아파트 가격 비교',
+    'AI 부동산 분석',
+  ],
+  alternates: {
+    canonical: '/search',
+  },
 }
 
 export default function SearchPage() {
