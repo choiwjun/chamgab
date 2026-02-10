@@ -783,9 +783,14 @@ def generate_monthly_data(
 
     month_num = int(base_year_month[4:6])  # 1-12
 
+    # Regional income multiplier: high-activity areas have higher per-store sales
+    # This ensures 강남(5) always > 노원(3) in per-store revenue
+    INCOME_MULTIPLIER = {5: 1.8, 4: 1.3, 3: 1.0, 2: 0.8, 1: 0.6}
+
     for sigungu_code, activity_level in REGIONS.items():
         sido_code = sigungu_code[:2]
         activity_factor = 0.2 + activity_level * 0.32
+        income_multiplier = INCOME_MULTIPLIER.get(activity_level, 1.0)
         trend_factor = REGIONAL_TRENDS.get(sido_code, 1.0) ** (month_index / 12)
 
         real_stores = real_store_map.get(sigungu_code, {})
@@ -840,12 +845,12 @@ def generate_monthly_data(
                 seed + '_close', monthly_churn * (100 - survival_rate) / 100, 0.3, 0.05
             )))
 
-            # Monthly sales (activity + seasonal + trend)
+            # Monthly sales (income_multiplier ensures high-activity > low-activity)
             monthly_sales_man = profile['monthly_sales']
             monthly_sales = max(0, int(stochastic_variation(
                 seed + '_sales',
-                monthly_sales_man * activity_factor * seasonal_factor * trend_factor * 10000,
-                0.20, 0.05
+                monthly_sales_man * income_multiplier * seasonal_factor * trend_factor * 10000,
+                0.10, 0.03  # Reduced noise to preserve regional ordering
             )))
 
             # Sales growth rate
@@ -885,8 +890,10 @@ def generate_monthly_data(
             else:
                 density = '낮음'
 
-            # Commercial district code (VARCHAR(10): sigungu 5 + hash 5)
-            district_hash = hashlib.md5(seed.encode()).hexdigest()[:5]
+            # Commercial district code: deterministic per sigungu
+            # Use fixed hash from sigungu_code only (not month-dependent)
+            # to ensure one consistent district code per sigungu
+            district_hash = hashlib.md5(sigungu_code.encode()).hexdigest()[:5]
             commercial_district_code = f"{sigungu_code}{district_hash}"
 
             large_code = ind_code[0]
@@ -1223,6 +1230,7 @@ async def main():
     parser.add_argument('--skip-api', action='store_true', help='Skip API collection, use cached data')
     parser.add_argument('--dry-run', action='store_true', help='Generate data without saving to DB')
     parser.add_argument('--api-only', action='store_true', help='Only collect API data, do not generate/save')
+    parser.add_argument('--clean', action='store_true', help='Delete all existing commercial data before regenerating')
     args = parser.parse_args()
 
     logger.info("=" * 60)
@@ -1353,6 +1361,30 @@ async def main():
         sys.exit(1)
 
     supabase = create_client(supabase_url, supabase_key)
+
+    if args.clean:
+        logger.info("\n[Clean] Deleting all existing commercial data...")
+        for table in [
+            'district_characteristics',
+            'foot_traffic_statistics',
+            'store_statistics',
+            'sales_statistics',
+            'business_statistics',
+        ]:
+            try:
+                deleted_total = 0
+                while True:
+                    rows = supabase.table(table).select('id').limit(500).execute()
+                    if not rows.data:
+                        break
+                    ids = [r['id'] for r in rows.data]
+                    supabase.table(table).delete().in_('id', ids).execute()
+                    deleted_total += len(ids)
+                    if deleted_total % 5000 == 0:
+                        logger.info(f"  {table}: {deleted_total}건 삭제...")
+                logger.info(f"  {table}: {deleted_total}건 삭제 완료")
+            except Exception as e:
+                logger.warning(f"  {table}: delete failed at {deleted_total}건 - {e}")
 
     logger.info("\nPhase 4: Saving to Supabase...")
 
