@@ -1,0 +1,85 @@
+name: Collect Land Transactions (토지 실거래)
+
+on:
+  schedule:
+    # 매일 자정 KST (UTC 15:00) - API 일일 한도 리셋 직후
+    - cron: '0 15 * * *'
+  workflow_dispatch:
+    inputs:
+      group:
+        description: '수집 그룹 (0=전체, 1-9=특정 그룹)'
+        required: false
+        default: '0'
+        type: string
+      limit:
+        description: '일일 API 호출 제한'
+        required: false
+        default: '900'
+        type: string
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  collect-land:
+    name: 토지 실거래 수집
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: ml-api/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          cd ml-api
+          pip install -r requirements.txt
+
+      - name: Create logs directory
+        run: mkdir -p ml-api/logs
+
+      - name: Collect land transactions
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          DATA_GO_KR_API_KEY: ${{ secrets.DATA_GO_KR_API_KEY }}
+          MOLIT_API_KEY: ${{ secrets.DATA_GO_KR_API_KEY }}
+        run: |
+          cd ml-api
+          python scripts/collect_land_transactions.py \
+            --group ${{ inputs.group || '0' }} \
+            --resume \
+            --limit ${{ inputs.limit || '900' }}
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-land-${{ github.run_number }}
+          path: ml-api/logs/
+          retention-days: 7
+
+  summary:
+    name: 수집 요약
+    runs-on: ubuntu-latest
+    needs: [collect-land]
+    if: always()
+
+    steps:
+      - name: Summary
+        run: |
+          echo "## 토지 실거래 수집 결과" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| 항목 | 값 |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-----|" >> $GITHUB_STEP_SUMMARY
+          echo "| 수집 결과 | ${{ needs.collect-land.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 그룹 | ${{ inputs.group || '0 (전체)' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 일일 제한 | ${{ inputs.limit || '900' }} calls |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "완료: $(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M KST')" >> $GITHUB_STEP_SUMMARY

@@ -7,8 +7,10 @@
 
 Usage:
     python collect_land_transactions.py --group 1 --months 60
-    python collect_land_transactions.py --group 0 --months 60   # 전체 수집
-    python collect_land_transactions.py --group 1 --clean       # 기존 데이터 삭제 후 수집
+    python collect_land_transactions.py --group 0 --months 60       # 전체 수집
+    python collect_land_transactions.py --group 1 --clean           # 기존 삭제 후 수집
+    python collect_land_transactions.py --group 1 --resume          # 이미 수집된 지역 스킵
+    python collect_land_transactions.py --group 0 --resume --limit 900  # 일일 한도 900회
 """
 
 import os
@@ -169,7 +171,7 @@ class LandTransactionCollector:
 
     BASE_URL = "https://apis.data.go.kr/1613000/RTMSDataSvcLandTrade/getRTMSDataSvcLandTrade"
 
-    def __init__(self):
+    def __init__(self, daily_limit: int = 0):
         self.supabase = create_client(
             os.environ['SUPABASE_URL'],
             os.environ['SUPABASE_SERVICE_KEY']
@@ -181,6 +183,33 @@ class LandTransactionCollector:
         if not self.api_key:
             logger.error("API 키 없음: DATA_GO_KR_API_KEY 또는 MOLIT_API_KEY 설정 필요")
             sys.exit(1)
+
+        self.api_call_count = 0
+        self.daily_limit = daily_limit  # 0 = 무제한
+        self.limit_reached = False
+
+    def _check_limit(self) -> bool:
+        """일일 한도 도달 여부 확인"""
+        if self.daily_limit > 0 and self.api_call_count >= self.daily_limit:
+            if not self.limit_reached:
+                logger.warning(
+                    f"일일 API 호출 한도 도달: {self.api_call_count}/{self.daily_limit}"
+                )
+                self.limit_reached = True
+            return True
+        return False
+
+    def is_region_collected(self, region_code: str) -> bool:
+        """해당 region_code가 이미 수집되었는지 확인 (1건이라도 있으면 True)"""
+        try:
+            result = self.supabase.table('land_transactions').select(
+                'id', count='exact'
+            ).eq('region_code', region_code).limit(1).execute()
+            count = result.count if result.count else 0
+            return count > 0
+        except Exception as e:
+            logger.debug(f"region_code 확인 실패: {region_code} - {e}")
+            return False
 
     async def fetch_page(
         self,
@@ -203,9 +232,9 @@ class LandTransactionCollector:
 
         root = etree.fromstring(response.content)
 
-        # 에러 코드 확인
+        # 에러 코드 확인 (토지 API 성공코드: '000', 아파트 API: '00')
         result_code_el = root.find('.//resultCode')
-        if result_code_el is not None and result_code_el.text != '00':
+        if result_code_el is not None and result_code_el.text not in ('00', '000'):
             result_msg = root.findtext('.//resultMsg', default='')
             logger.warning(
                 f"API 에러 (code={result_code_el.text}): {result_msg} "
@@ -230,18 +259,28 @@ class LandTransactionCollector:
         all_transactions: List[Dict[str, Any]] = []
         page_no = 1
         num_of_rows = 1000
+        retry_count = 0
+        max_retries = 5
+        # 지수 백오프 대기 시간 (초)
+        backoff_delays = [3, 6, 12, 30, 60]
 
         sido = SIDO_MAP.get(region_code[:2], '')
         sigungu = region_name
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             while True:
-                try:
-                    await asyncio.sleep(0.5)  # Rate limiting
+                # 일일 한도 체크
+                if self._check_limit():
+                    break
 
+                try:
+                    await asyncio.sleep(2.0)  # Rate limiting (2초 간격)
+
+                    self.api_call_count += 1
                     items, total_count = await self.fetch_page(
                         client, region_code, deal_ymd, page_no
                     )
+                    retry_count = 0  # 성공 시 재시도 카운트 리셋
 
                     if not items and page_no == 1:
                         # 해당 월에 데이터 없음
@@ -259,11 +298,23 @@ class LandTransactionCollector:
                     page_no += 1
 
                 except httpx.HTTPStatusError as e:
-                    if e.response.status_code == 429:
+                    if e.response.status_code in (403, 429):
+                        retry_count += 1
+                        if retry_count > max_retries:
+                            logger.error(
+                                f"최대 재시도 초과: {region_name} {deal_ymd} page={page_no} "
+                                f"(API 호출 {self.api_call_count}회)"
+                            )
+                            # 429 연속이면 일일 한도 도달로 판단
+                            if retry_count > max_retries and e.response.status_code == 429:
+                                self.limit_reached = True
+                            break
+                        delay = backoff_delays[min(retry_count - 1, len(backoff_delays) - 1)]
                         logger.warning(
-                            f"API 호출 제한: {region_name} {deal_ymd} page={page_no} - 5초 대기 후 재시도"
+                            f"API 호출 제한 ({e.response.status_code}): {region_name} {deal_ymd} "
+                            f"page={page_no} - {delay}초 대기 후 재시도 ({retry_count}/{max_retries})"
                         )
-                        await asyncio.sleep(5.0)
+                        await asyncio.sleep(delay)
                         continue  # 같은 페이지 재시도
                     logger.error(f"HTTP 에러: {region_name} {deal_ymd} - {e}")
                     break
@@ -291,18 +342,20 @@ class LandTransactionCollector:
     ) -> List[Dict[str, Any]]:
         """XML item 목록을 딕셔너리 리스트로 변환
 
-        토지 API는 한글 태그를 사용:
-          시군구, 법정동, 지번, 지목, 거래면적, 거래금액, 년, 월, 일,
-          지분거래구분, 해제여부
+        토지 API XML 태그 (영문):
+          dealYear, dealMonth, dealDay, dealAmount, dealArea,
+          jimok, umdNm, jibun, sggCd, sggNm,
+          dealingGbn, shareDealingType, cdealDay, cdealType,
+          landUse, estateAgentSggNm
         """
         transactions: List[Dict[str, Any]] = []
 
         for item in items:
             try:
                 # 거래일자
-                year_str = self._get_text(item, '년')
-                month_str = self._get_text(item, '월')
-                day_str = self._get_text(item, '일')
+                year_str = self._get_text(item, 'dealYear')
+                month_str = self._get_text(item, 'dealMonth')
+                day_str = self._get_text(item, 'dealDay')
 
                 if not year_str or not month_str or not day_str:
                     continue
@@ -313,7 +366,7 @@ class LandTransactionCollector:
                 transaction_date = f"{year:04d}-{month:02d}-{day:02d}"
 
                 # 거래금액 (만원 단위, 콤마 제거)
-                price_str = self._get_text(item, '거래금액').replace(',', '').strip()
+                price_str = self._get_text(item, 'dealAmount').replace(',', '').strip()
                 if not price_str:
                     continue
                 price = int(price_str)  # 만원 단위 그대로 저장
@@ -321,23 +374,28 @@ class LandTransactionCollector:
                     continue
 
                 # 거래면적 (m2)
-                area_str = self._get_text(item, '거래면적').strip()
+                area_str = self._get_text(item, 'dealArea').strip()
                 area_m2 = float(area_str) if area_str else 0.0
 
                 # 지목
-                land_category = self._get_text(item, '지목').strip()
+                land_category = self._get_text(item, 'jimok').strip()
 
-                # 법정동
-                eupmyeondong = self._get_text(item, '법정동').strip()
+                # 법정동 (읍면동)
+                eupmyeondong = self._get_text(item, 'umdNm').strip()
 
                 # 지번
-                jibun = self._get_text(item, '지번').strip()
+                jibun = self._get_text(item, 'jibun').strip()
+
+                # 거래유형 (중개거래, 직거래 등)
+                transaction_type = self._get_text(item, 'dealingGbn').strip() or None
 
                 # 지분거래구분
-                is_partial_str = self._get_text(item, '지분거래구분').strip()
+                share_type = self._get_text(item, 'shareDealingType').strip()
+                is_partial = bool(share_type)
 
-                # 해제여부
-                is_cancelled_str = self._get_text(item, '해제여부').strip()
+                # 해제여부 (cdealDay가 있으면 해제된 거래)
+                cdeal_day = self._get_text(item, 'cdealDay').strip()
+                is_cancelled = bool(cdeal_day)
 
                 # price_per_m2 계산 (원/m2)
                 price_per_m2: Optional[int] = None
@@ -355,8 +413,9 @@ class LandTransactionCollector:
                     'price': price,  # 만원 단위
                     'price_per_m2': price_per_m2,  # 원/m2
                     'transaction_date': transaction_date,
-                    'is_partial_sale': is_partial_str == 'Y',
-                    'is_cancelled': is_cancelled_str == 'Y',
+                    'transaction_type': transaction_type,
+                    'is_partial_sale': is_partial,
+                    'is_cancelled': is_cancelled,
                 }
                 transactions.append(tx)
 
@@ -441,6 +500,10 @@ class LandTransactionCollector:
         now = datetime.now()
 
         for i in range(months):
+            # 일일 한도 도달 시 즉시 중단
+            if self.limit_reached:
+                break
+
             target_date = now - timedelta(days=30 * i)
             deal_ymd = target_date.strftime('%Y%m')
 
@@ -452,6 +515,7 @@ class LandTransactionCollector:
                 saved = await self.save_to_supabase(transactions)
                 total += saved
 
+        logger.info(f"수집 완료: {region_name} - {total}건 저장 (API 호출 {self.api_call_count}회)")
         return total
 
 
@@ -469,9 +533,17 @@ async def main():
         '--clean', action='store_true',
         help='기존 데이터 삭제 후 수집'
     )
+    parser.add_argument(
+        '--resume', action='store_true',
+        help='이미 수집된 지역 스킵 (region_code 기준)'
+    )
+    parser.add_argument(
+        '--limit', type=int, default=900,
+        help='일일 API 호출 한도 (기본값 900, 0=무제한)'
+    )
     args = parser.parse_args()
 
-    collector = LandTransactionCollector()
+    collector = LandTransactionCollector(daily_limit=args.limit)
 
     # --clean: 기존 데이터 삭제
     if args.clean:
@@ -487,9 +559,15 @@ async def main():
         groups = [args.group]
 
     total_collected = 0
+    skipped_regions = 0
     start_time = datetime.now()
 
     for group_num in groups:
+        # 일일 한도 도달 시 즉시 중단
+        if collector.limit_reached:
+            logger.info(f"일일 한도 도달로 그룹 {group_num} 이후 수집 중단")
+            break
+
         regions = REGION_GROUPS.get(group_num, [])
         if not regions:
             continue
@@ -499,19 +577,34 @@ async def main():
         )
 
         for region_code, region_name in regions:
+            # 일일 한도 도달 시 즉시 중단
+            if collector.limit_reached:
+                logger.info(f"일일 한도 도달로 수집 중단 (API 호출 {collector.api_call_count}회)")
+                break
+
+            # --resume: 이미 수집된 지역 스킵
+            if args.resume and collector.is_region_collected(region_code):
+                logger.info(f"스킵 (이미 수집됨): {region_name} ({region_code})")
+                skipped_regions += 1
+                continue
+
             logger.info(f"수집 시작: {region_name} ({region_code})")
             count = await collector.collect_region(
                 region_code, region_name, args.months
             )
             total_collected += count
-            logger.info(f"수집 완료: {region_name} - {count}건 저장")
 
         logger.info(f"=== 그룹 {group_num} 완료 ===")
 
     elapsed = datetime.now() - start_time
     logger.info(
-        f"=== 전체 수집 완료: {total_collected}건, "
-        f"소요시간: {elapsed.total_seconds():.0f}초 ==="
+        f"\n{'=' * 60}\n"
+        f"전체 수집 완료\n"
+        f"  저장: {total_collected:,}건\n"
+        f"  스킵: {skipped_regions}개 지역 (이미 수집됨)\n"
+        f"  API 호출: {collector.api_call_count:,}회\n"
+        f"  소요시간: {elapsed.total_seconds():.0f}초\n"
+        f"{'=' * 60}"
     )
 
 
