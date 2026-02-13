@@ -63,8 +63,21 @@ class XGBoostTrainer:
         self.residual_info = {}  # 잔차 기반 신뢰구간 정보
 
     def prepare_data(self) -> tuple:
-        """학습 데이터 준비 (시간 기반 70/15/15 분할)"""
+        """학습 데이터 준비 (시간 기반 70/15/15 분할 + 이상치 제거)"""
         X, y = self.fe.prepare_training_data(csv_path=self.csv_path)
+
+        # ★ 이상치 필터링 (IQR 1.5배)
+        Q1 = y.quantile(0.25)
+        Q3 = y.quantile(0.75)
+        IQR = Q3 - Q1
+        lower_bound = Q1 - 1.5 * IQR
+        upper_bound = Q3 + 1.5 * IQR
+
+        mask = (y >= lower_bound) & (y <= upper_bound)
+        X = X[mask]
+        y = y[mask]
+        removed = (~mask).sum()
+        print(f"이상치 제거: {removed}건 (IQR 1.5배 기준)")
 
         # ★ 시간 순서 분할 (데이터는 이미 정렬됨)
         n = len(X)
@@ -86,7 +99,7 @@ class XGBoostTrainer:
 
     def train(self, X_train, y_train, X_val=None, y_val=None,
               params: dict = None) -> xgb.XGBRegressor:
-        """모델 학습 (Early Stopping 포함)"""
+        """모델 학습 (Early Stopping + 최근 거래 가중치)"""
         if params is None:
             params = self.DEFAULT_PARAMS.copy()
 
@@ -101,8 +114,16 @@ class XGBoostTrainer:
         if X_val is not None:
             eval_set.append((X_val, y_val))
 
+        # ★ 최근 거래 가중치 (마지막 30% 데이터에 2배 가중)
+        import numpy as np
+        sample_weights = np.ones(len(X_train))
+        recent_start = int(len(X_train) * 0.7)
+        sample_weights[recent_start:] = 2.0
+        print(f"최근 거래 가중치 적용: {len(sample_weights) - recent_start}건 (2.0x)")
+
         self.model.fit(
             X_train, y_train,
+            sample_weight=sample_weights,
             eval_set=eval_set,
             verbose=100,
         )
@@ -422,8 +443,9 @@ def main():
                 trainer.train(X_train_s, y_train, X_val_s, y_val)
                 metrics = trainer.evaluate(X_test_s, y_test)
 
-        # 6. 교차 검증
-        X_full, y_full = fe.prepare_training_data(csv_path=args.csv)
+        # 6. 교차 검증 (데이터 재로딩 없이 기존 데이터 재사용)
+        X_full = pd.concat([X_train, X_val, X_test]).reset_index(drop=True)
+        y_full = pd.concat([y_train, y_val, y_test]).reset_index(drop=True)
         cv_result = trainer.cross_validate(X_full, y_full)
 
         # 7. Feature Importance

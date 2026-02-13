@@ -57,7 +57,7 @@ class BusinessSuccessTrainer:
         "n_jobs": -1,
     }
 
-    # 피처 컬럼 (v2 - 32개, BusinessFeatureEngineer.FEATURE_COLUMNS와 동기화)
+    # 피처 컬럼 (v4 - 39개, BusinessFeatureEngineer.FEATURE_COLUMNS와 동기화)
     FEATURE_COLUMNS = [
         # 기존 18개
         "survival_rate", "survival_rate_normalized",
@@ -79,6 +79,14 @@ class BusinessSuccessTrainer:
         # 유동인구 파생 (3개)
         "foot_traffic_per_store", "evening_morning_ratio",
         "age_concentration_index",
+        # v4 신규 피처 (7개)
+        "sales_survival_interaction",
+        "sales_per_store_log",
+        "competition_survival_ratio",
+        "industry_season_strength",
+        "region_sales_rank",
+        "survival_growth_momentum",
+        "market_efficiency",
     ]
 
     def __init__(self):
@@ -357,7 +365,8 @@ class BusinessSuccessTrainer:
         self,
         X: pd.DataFrame,
         y: pd.Series,
-        cv: int = 5
+        cv: int = 5,
+        time_values: Optional[pd.Series] = None,
     ) -> dict:
         """
         교차 검증
@@ -378,6 +387,12 @@ class BusinessSuccessTrainer:
         print(f"{'='*60}")
 
         # TimeSeriesSplit (시간 순서 보존)
+        if time_values is not None:
+            time_series = pd.to_datetime(time_values.astype(str), format="%Y%m", errors="coerce")
+            order = np.argsort(time_series.fillna(pd.Timestamp.min).values)
+            X = X.iloc[order]
+            y = y.iloc[order]
+
         tscv = TimeSeriesSplit(n_splits=cv)
 
         # Accuracy
@@ -516,6 +531,24 @@ def main():
     parser.add_argument("--data", type=str, help="학습 데이터 경로 (CSV/Parquet)")
     parser.add_argument("--tune", action="store_true", help="하이퍼파라미터 튜닝")
     parser.add_argument("--output", type=str, default="app/models/business_model.pkl", help="모델 저장 경로")
+    parser.add_argument(
+        "--label-mode",
+        type=str,
+        default="future_observed",
+        choices=["future_observed", "synthetic", "auto"],
+        help="success 라벨 생성 모드",
+    )
+    parser.add_argument(
+        "--horizon-months",
+        type=int,
+        default=3,
+        help="future_observed 라벨의 예측 horizon (개월)",
+    )
+    parser.add_argument(
+        "--allow-synthetic-labels",
+        action="store_true",
+        help="future_observed 실패 시 synthetic 라벨 fallback 허용",
+    )
     args = parser.parse_args()
 
     print(f"\n{'='*60}")
@@ -544,7 +577,12 @@ def main():
     from scripts.feature_engineering import BusinessFeatureEngineer
 
     bfe = BusinessFeatureEngineer()
-    X_full, y_full, df_featured = bfe.prepare_training_data(df=df)
+    X_full, y_full, df_featured = bfe.prepare_training_data(
+        df=df,
+        label_mode=args.label_mode,
+        horizon_months=args.horizon_months,
+        allow_synthetic_labels=args.allow_synthetic_labels,
+    )
 
     # 트레이너 초기화
     trainer = BusinessSuccessTrainer()
@@ -587,7 +625,11 @@ def main():
     metrics = trainer.evaluate(X_test, y_test)
 
     # 교차 검증
-    cv_result = trainer.cross_validate(pd.concat([X_train, X_test]), pd.concat([y_train, y_test]))
+    cv_result = trainer.cross_validate(
+        X_full,
+        y_full,
+        time_values=df_featured.get("base_year_month"),
+    )
     print(f"\n{'='*60}")
     print("피처 중요도")
     print(f"{'='*60}")
@@ -624,6 +666,11 @@ def main():
             "mean": float(cv_result["mean"]),
             "std": float(cv_result["std"]),
             "scores": [float(s) for s in cv_result["scores"]],
+        },
+        "label_strategy": {
+            "mode": args.label_mode,
+            "horizon_months": int(args.horizon_months),
+            "allow_synthetic_labels": bool(args.allow_synthetic_labels),
         },
         "feature_importance_top20": importance.head(20).to_dict("records"),
         "hyperparameters": {k: v for k, v in (params or trainer.DEFAULT_PARAMS).items() if not callable(v)},

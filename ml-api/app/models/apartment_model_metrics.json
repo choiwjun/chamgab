@@ -1,9 +1,11 @@
 {
   "model_type": "apartment_price_regressor",
-  "timestamp": "2026-02-08T22:49:04.687386",
+  "timestamp": "2026-02-12T13:21:22.779421",
   "data_summary": {
-    "test_samples": 2567,
-    "features": 56,
+    "train_samples": 603777,
+    "val_samples": 129381,
+    "test_samples": 129381,
+    "features": 68,
     "feature_names": [
       "area_exclusive",
       "floor",
@@ -60,89 +62,76 @@
       "remodel_premium",
       "footfall_score",
       "commercial_density",
-      "store_diversity_index"
+      "store_diversity_index",
+      "floor_area_ratio",
+      "building_coverage_ratio",
+      "total_parking",
+      "indoor_parking_ratio",
+      "ground_floors",
+      "underground_floors",
+      "dong_count",
+      "plat_area",
+      "total_area",
+      "area_per_unit",
+      "parking_per_unit",
+      "building_structure_encoded"
     ]
   },
   "metrics": {
-    "mape": 23.731930664348617
+    "mae": 45279112.0,
+    "rmse": 72363556.13722521,
+    "r2": 0.9338175654411316,
+    "mape": 12.880134426208798
   },
   "residual_info": {
-    "residual_std": 147020394.40471524,
+    "residual_std": 71436786.02660748,
     "residual_percentiles": {
-      "5": -220459948.79999995,
-      "10": -153392140.79999998,
-      "25": -71091440.0,
-      "75": 67165792.0,
-      "90": 154368160.00000003,
-      "95": 218733699.19999993
+      "5": -83425344.0,
+      "10": -48982144.0,
+      "25": -17569280.0,
+      "75": 36184976.0,
+      "90": 84224768.0,
+      "95": 128355200.0
     },
-    "mape": 23.731930664348617,
-    "test_count": 2567
+    "mape": 12.880134426208798,
+    "test_count": 129381
+  },
+  "cross_validation": {
+    "cv_mape_mean": 12.441219608846001,
+    "cv_mape_std": 1.2862945792236038,
+    "cv_mape_scores": [
+      14.878593685059391, 11.326703883398253, 12.06776235685726,
+      11.46667933975214, 12.466358779162965
+    ]
   },
   "feature_importance_top20": [
     {
-      "feature": "school_district_grade",
-      "importance": 0.21971498429775238
-    },
-    {
-      "feature": "dong_target_enc",
-      "importance": 0.15245196223258972
-    },
-    {
-      "feature": "transaction_volume",
-      "importance": 0.13506253063678741
-    },
-    {
-      "feature": "buying_power_index",
-      "importance": 0.11579446494579315
-    },
-    {
-      "feature": "jeonse_ratio",
-      "importance": 0.09402279555797577
-    },
-    {
-      "feature": "sigungu_target_enc",
-      "importance": 0.07545635849237442
-    },
-    {
-      "feature": "is_premium_school_district",
-      "importance": 0.05709104984998703
-    },
-    {
       "feature": "area_exclusive",
-      "importance": 0.0510023757815361
-    },
-    {
-      "feature": "price_change_rate",
-      "importance": 0.04536129906773567
-    },
-    {
-      "feature": "sigungu_encoded",
-      "importance": 0.020597904920578003
+      "importance": 0.023147262632846832
     },
     {
       "feature": "floor",
-      "importance": 0.017990797758102417
-    },
-    {
-      "feature": "floor_ratio",
-      "importance": 0.01545350905507803
+      "importance": 0.006646595895290375
     },
     {
       "feature": "transaction_year",
-      "importance": 0.0
+      "importance": 0.002565477741882205
     },
     {
       "feature": "transaction_month",
-      "importance": 0.0
+      "importance": 0.0017793726874515414
     },
     {
       "feature": "transaction_quarter",
-      "importance": 0.0
+      "importance": 0.002162942197173834
     },
     {
       "feature": "building_age",
-      "importance": 0.0
+      "importance": 0.007852005772292614
+    },
+    {
+      "feature": "floor_ratio",
+      "importance": 0.009108815342187881
     },
     {
       "feature": "total_floors",
@@ -150,21 +139,66 @@
     },
     {
       "feature": "total_units",
-      "importance": 0.0
+      "importance": 0.0037732995115220547
     },
     {
       "feature": "parking_ratio",
-      "importance": 0.0
+      "importance": 0.004896334372460842
     },
     {
       "feature": "brand_tier",
+      "importance": 0.004595731385052204
+    },
+    {
+      "feature": "sido_encoded",
       "importance": 0.0
+    },
+    {
+      "feature": "sigungu_encoded",
+      "importance": 0.0030162932816892862
+    },
+    {
+      "feature": "sigungu_target_enc",
+      "importance": 0.025287307798862457
+    },
+    {
+      "feature": "dong_target_enc",
+      "importance": 0.05303046107292175
+    },
+    {
+      "feature": "price_lag_1m",
+      "importance": 0.15704947710037231
+    },
+    {
+      "feature": "price_lag_3m",
+      "importance": 0.47036710381507874
+    },
+    {
+      "feature": "price_rolling_6m_mean",
+      "importance": 0.027221152558922768
+    },
+    {
+      "feature": "price_rolling_6m_std",
+      "importance": 0.0019990764558315277
+    },
+    {
+      "feature": "price_yoy_change",
+      "importance": 0.0014658370055258274
     }
   ],
   "hyperparameters": {
     "n_estimators": 1000,
     "max_depth": 7,
-    "learning_rate": 0.03
+    "learning_rate": 0.03,
+    "subsample": 0.8,
+    "colsample_bytree": 0.7,
+    "min_child_weight": 5,
+    "reg_alpha": 0.5,
+    "reg_lambda": 2.0,
+    "gamma": 0.1,
+    "early_stopping_rounds": 50,
+    "random_state": 42,
+    "n_jobs": -1
   },
-  "note": "Generated from existing model artifacts (training interrupted by Supabase 500 error)"
+  "training_duration_seconds": 10621.5
 }

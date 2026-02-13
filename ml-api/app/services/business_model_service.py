@@ -16,7 +16,7 @@ import pandas as pd
 from app.core.database import get_supabase_client
 
 
-# train_business_model.py / BusinessFeatureEngineer.FEATURE_COLUMNS와 동기화 (v2 - 32개)
+# train_business_model.py / BusinessFeatureEngineer.FEATURE_COLUMNS와 동기화 (v4 - 39개)
 FEATURE_COLUMNS = [
     # 기존 18개
     "survival_rate", "survival_rate_normalized",
@@ -38,6 +38,14 @@ FEATURE_COLUMNS = [
     # 유동인구 파생 (3개)
     "foot_traffic_per_store", "evening_morning_ratio",
     "age_concentration_index",
+    # v4 신규 피처 (7개)
+    "sales_survival_interaction",
+    "sales_per_store_log",
+    "competition_survival_ratio",
+    "industry_season_strength",
+    "region_sales_rank",
+    "survival_growth_momentum",
+    "market_efficiency",
 ]
 
 
@@ -172,7 +180,7 @@ class BusinessModelService:
             return None
 
     def _prepare_features(self, **kwargs) -> pd.DataFrame:
-        """학습 시와 동일한 피처 엔지니어링 (BusinessFeatureEngineer.create_features 일치, v2 - 32개)"""
+        """학습 시와 동일한 피처 엔지니어링 (BusinessFeatureEngineer.create_features 일치, v4 - 39개)"""
         survival_rate = kwargs["survival_rate"]
         monthly_avg_sales = kwargs["monthly_avg_sales"]
         sales_growth_rate = kwargs["sales_growth_rate"]
@@ -252,10 +260,28 @@ class BusinessModelService:
         region_industry_density_ratio = 1.0  # 비교 대상 없으므로 1.0
 
         # ── 유동인구 파생 피처 (3개) ──
-        foot_traffic_per_store = foot_traffic_score / max(store_count, 1) * 1000
-        morning_safe = max(morning_traffic, 1)
-        evening_morning_ratio = evening_traffic / morning_safe if morning_safe > 0 else 1.0
+        # 학습 파이프라인과 동일하게 스케일 보존 (x1000 미적용)
+        foot_traffic_per_store = foot_traffic_score / max(store_count, 1)
+        if evening_traffic > 0 or morning_traffic > 0:
+            morning_safe = max(morning_traffic, 1)
+            evening_morning_ratio = evening_traffic / morning_safe if morning_safe > 0 else 1.0
+        else:
+            # 학습 시 evening/morning 값이 없으면 1 + peak_hour_ratio를 사용
+            evening_morning_ratio = 1.0 + peak_hour_ratio
         age_concentration_index = 0.167  # 균등 분포 HHI (1/6)
+
+        # ── v4 신규 피처 (7개) ──
+        sales_survival_interaction = monthly_avg_sales_log * survival_rate_normalized
+        sales_per_store_log = float(np.log1p(sales_per_store))
+        sr_safe = max(survival_rate, 1)
+        competition_survival_ratio = competition_ratio / (sr_safe / 100)
+        competition_survival_ratio = min(max(competition_survival_ratio, 0), 10)
+        industry_season_strength = sales_volatility  # 단일 예측 fallback
+        region_sales_rank = 0.5  # 단일 예측 fallback
+        survival_growth_momentum = survival_rate_normalized * (growth_clipped + 10) / 30
+        sat_safe = max(market_saturation, 1)
+        market_efficiency = monthly_avg_sales_log / sat_safe
+        market_efficiency = min(max(market_efficiency, 0), 50)
 
         row = {
             # 기존 18개
@@ -295,6 +321,14 @@ class BusinessModelService:
             "foot_traffic_per_store": foot_traffic_per_store,
             "evening_morning_ratio": evening_morning_ratio,
             "age_concentration_index": age_concentration_index,
+            # v4 신규 피처 (7개)
+            "sales_survival_interaction": sales_survival_interaction,
+            "sales_per_store_log": sales_per_store_log,
+            "competition_survival_ratio": competition_survival_ratio,
+            "industry_season_strength": industry_season_strength,
+            "region_sales_rank": region_sales_rank,
+            "survival_growth_momentum": survival_growth_momentum,
+            "market_efficiency": market_efficiency,
         }
 
         df = pd.DataFrame([row])

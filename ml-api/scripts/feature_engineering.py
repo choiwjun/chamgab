@@ -97,13 +97,19 @@ class FeatureEngineer:
         self.scaler = StandardScaler()
         self.feature_names = []
         self.is_fitted = False
+        self._raw_df_cache: Optional[pd.DataFrame] = None  # 데이터 캐시
 
     def load_training_data(self, csv_path: str = None) -> pd.DataFrame:
-        """학습 데이터 로드"""
+        """학습 데이터 로드 (캐시 활용)"""
+        if self._raw_df_cache is not None:
+            print(f"캐시된 데이터 재사용: {len(self._raw_df_cache)}건")
+            return self._raw_df_cache.copy()
         if csv_path and Path(csv_path).exists():
-            return self._load_from_csv(csv_path)
+            df = self._load_from_csv(csv_path)
         else:
-            return self._load_from_database()
+            df = self._load_from_database()
+        self._raw_df_cache = df
+        return df
 
     def _load_from_csv(self, csv_path: str) -> pd.DataFrame:
         """CSV 파일에서 데이터 로드"""
@@ -124,37 +130,66 @@ class FeatureEngineer:
         return df
 
     def _load_from_database(self) -> pd.DataFrame:
-        """Supabase에서 학습 데이터 로드 (페이지네이션)"""
+        """Supabase에서 학습 데이터 로드 (페이지네이션 + 재시도)"""
+        import time
         client = get_supabase_client()
 
         all_data = []
-        page_size = 1000
+        page_size = 250  # 연결 안정성을 위해 250으로 축소
         offset = 0
+        max_retries = 3
+        max_records = 940000  # 940K건으로 제한 (98% 데이터로 충분)
 
-        while True:
-            result = client.table("transactions").select(
-                """
-                *,
-                properties:property_id (
-                    id, name, address, sido, sigungu, eupmyeondong,
-                    area_exclusive, built_year, floors, property_type
-                ),
-                complexes:complex_id (
-                    id, name, total_units, total_buildings,
-                    built_year, parking_ratio, brand
-                )
-                """
-            ).range(offset, offset + page_size - 1).execute()
+        while len(all_data) < max_records:
+            retry_count = 0
+            success = False
+
+            while retry_count < max_retries and not success:
+                try:
+                    result = client.table("transactions").select(
+                        """
+                        *,
+                        properties:property_id (
+                            id, name, address, sido, sigungu, eupmyeondong,
+                            area_exclusive, built_year, floors, property_type
+                        ),
+                        complexes:complex_id (
+                            id, name, total_units, total_buildings,
+                            built_year, parking_ratio, brand
+                        )
+                        """
+                    ).range(offset, offset + page_size - 1).execute()
+                    success = True
+                except Exception as e:
+                    retry_count += 1
+                    if retry_count < max_retries:
+                        wait_time = 2 ** retry_count  # Exponential backoff: 2, 4, 8초
+                        print(f"  에러 발생 (재시도 {retry_count}/{max_retries}): {str(e)[:100]}")
+                        print(f"  {wait_time}초 대기 후 재시도...")
+                        time.sleep(wait_time)
+                    else:
+                        print(f"  최대 재시도 횟수 초과. 현재까지 {len(all_data)}건으로 진행합니다.")
+                        # 에러 발생 시에도 현재까지 로드한 데이터로 진행
+                        break
 
             if not result.data:
                 break
 
             all_data.extend(result.data)
-            print(f"  페이지 로드: {len(all_data)}건...")
+            if len(all_data) % 10000 == 0:
+                print(f"  페이지 로드: {len(all_data)}건...")
+
+            # 940K건 도달 시 종료
+            if len(all_data) >= max_records:
+                print(f"  목표 {max_records:,}건 도달. 로딩 종료.")
+                break
 
             if len(result.data) < page_size:
                 break
             offset += page_size
+
+            # 연결 안정성을 위한 짧은 대기
+            time.sleep(0.1)
 
         if not all_data:
             print("데이터가 없습니다. 먼저 collect_transactions.py를 실행하세요.")
@@ -1225,6 +1260,14 @@ class BusinessFeatureEngineer:
         # 유동인구 파생 (3개)
         'foot_traffic_per_store', 'evening_morning_ratio',
         'age_concentration_index',
+        # v4 신규 피처 (7개)
+        'sales_survival_interaction',       # 매출×생존율 교차항
+        'sales_per_store_log',              # 점포당 매출 (로그)
+        'competition_survival_ratio',       # 경쟁강도/생존율
+        'industry_season_strength',         # 업종별 계절 편차
+        'region_sales_rank',                # 지역 내 매출 순위 (정규화)
+        'survival_growth_momentum',         # 생존율 × 성장률 모멘텀
+        'market_efficiency',                # 시장 효율성 (매출/포화도)
     ]
 
     def __init__(self):
@@ -1289,6 +1332,7 @@ class BusinessFeatureEngineer:
         df = self._create_seasonal_features(df)
         df = self._create_interaction_features(df)
         df = self._create_foot_traffic_derived(df)
+        df = self._create_v4_features(df)
 
         return df
 
@@ -1397,6 +1441,47 @@ class BusinessFeatureEngineer:
 
         return df
 
+    def _create_v4_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """v4 신규 피처 (교차항 + 순위 + 모멘텀)"""
+        # 매출 × 생존율 교차항
+        df['sales_survival_interaction'] = (
+            df['monthly_avg_sales_log'] * df['survival_rate_normalized']
+        )
+
+        # 점포당 매출 (로그)
+        sps = df['monthly_avg_sales'] / df['store_count'].replace(0, 1)
+        df['sales_per_store_log'] = np.log1p(sps)
+
+        # 경쟁강도 / 생존율
+        sr_safe = df['survival_rate'].replace(0, 1)
+        df['competition_survival_ratio'] = df['competition_ratio'] / (sr_safe / 100)
+        df['competition_survival_ratio'] = df['competition_survival_ratio'].clip(0, 10)
+
+        # 업종별 계절 편차 (매출 변동성의 업종 평균)
+        if 'industry_small_code' in df.columns and len(df) > 100:
+            df['industry_season_strength'] = df.groupby(
+                'industry_small_code')['sales_volatility'].transform('mean')
+        else:
+            df['industry_season_strength'] = df['sales_volatility']
+
+        # 지역 내 매출 순위 (정규화 0~1)
+        if 'sigungu_code' in df.columns and len(df) > 10:
+            df['region_sales_rank'] = df.groupby('sigungu_code')[
+                'monthly_avg_sales'].rank(pct=True)
+        else:
+            df['region_sales_rank'] = 0.5
+
+        # 생존율 × 성장률 모멘텀
+        growth_clip = df['sales_growth_rate'].clip(-10, 20)
+        df['survival_growth_momentum'] = df['survival_rate_normalized'] * (growth_clip + 10) / 30
+
+        # 시장 효율성 (매출 / 포화도)
+        sat_safe = df['market_saturation'].replace(0, 1)
+        df['market_efficiency'] = df['monthly_avg_sales_log'] / sat_safe
+        df['market_efficiency'] = df['market_efficiency'].clip(0, 50)
+
+        return df
+
     def normalize_features(self, df: pd.DataFrame, fit: bool = True) -> pd.DataFrame:
         """피처 정규화"""
         df = df.copy()
@@ -1412,8 +1497,134 @@ class BusinessFeatureEngineer:
 
         return df
 
-    def prepare_training_data(self, df: pd.DataFrame = None, n_samples: int = 2000) -> Tuple:
-        """학습용 X, y 데이터 준비 (v2 - 복합 시그널 라벨)"""
+    def _create_future_observed_labels(self, df: pd.DataFrame, horizon_months: int = 3) -> Optional[pd.DataFrame]:
+        """
+        미래 관측값 기반 success 라벨 생성.
+        t 시점 피처로 t+h 성과를 예측하도록 라벨을 정의해 자기설명 라벨 위험을 줄인다.
+        """
+        required = [
+            'base_year_month',
+            'sigungu_code',
+            'industry_small_code',
+            'survival_rate',
+            'monthly_avg_sales',
+            'store_count',
+        ]
+        missing = [c for c in required if c not in df.columns]
+        if missing:
+            print(f"Future label 생성 불가 (필수 컬럼 누락): {missing}")
+            return None
+
+        work = df.copy()
+        work['_dt'] = pd.to_datetime(work['base_year_month'].astype(str), format='%Y%m', errors='coerce')
+        work = work.dropna(subset=['_dt']).copy()
+        if work.empty:
+            print("Future label 생성 불가 (base_year_month 파싱 실패)")
+            return None
+
+        group_key = ['sigungu_code', 'industry_small_code']
+        work = work.sort_values(group_key + ['_dt'])
+
+        work['future_survival_rate'] = work.groupby(group_key)['survival_rate'].shift(-horizon_months)
+        work['future_monthly_avg_sales'] = work.groupby(group_key)['monthly_avg_sales'].shift(-horizon_months)
+        work['future_store_count'] = work.groupby(group_key)['store_count'].shift(-horizon_months)
+
+        valid = (
+            work['future_survival_rate'].notna()
+            & work['future_monthly_avg_sales'].notna()
+            & work['future_store_count'].notna()
+        )
+        if int(valid.sum()) == 0:
+            print("Future label 생성 불가 (미래 관측 구간 부족)")
+            return None
+
+        work = work.loc[valid].copy()
+        cur_sales = work['monthly_avg_sales'].replace(0, 1)
+        cur_stores = work['store_count'].replace(0, 1)
+
+        survival_future = (work['future_survival_rate'] / 100).clip(0, 1)
+        forward_sales_growth = ((work['future_monthly_avg_sales'] - cur_sales) / cur_sales).clip(-1, 1)
+        forward_store_retention = (work['future_store_count'] / cur_stores).clip(0, 2)
+
+        # 미래 성과 점수 (0~1)
+        forward_score = (
+            survival_future * 0.5 +
+            ((forward_sales_growth + 1) / 2) * 0.3 +
+            (forward_store_retention / 2) * 0.2
+        )
+        work['success'] = (forward_score >= 0.55).astype(int)
+
+        pos_rate = work['success'].mean()
+        print(f"Success label: {pos_rate:.1%} positive rate (future_observed, horizon={horizon_months}m)")
+
+        work = work.drop(
+            columns=[
+                '_dt',
+                'future_survival_rate',
+                'future_monthly_avg_sales',
+                'future_store_count',
+            ],
+            errors='ignore',
+        )
+        return work
+
+    def _create_synthetic_labels(self, df: pd.DataFrame) -> pd.DataFrame:
+        """복합 시그널 기반 합성 라벨 (실측 라벨 부재 시 fallback)."""
+        df = df.copy()
+
+        # 1. 생존율 시그널 (sigmoid, 0~1 연속값)
+        if 'industry_small_code' in df.columns and len(df) > 100:
+            ind_median_surv = df.groupby('industry_small_code')['survival_rate'].transform('median')
+            survival_diff = df['survival_rate'] - ind_median_surv
+        else:
+            survival_diff = df['survival_rate'] - df['survival_rate'].median()
+        survival_signal = 1 / (1 + np.exp(-survival_diff / 8.0))
+
+        # 2. 성장 시그널 (sigmoid)
+        if 'industry_small_code' in df.columns and len(df) > 100:
+            ind_median_growth = df.groupby('industry_small_code')['sales_growth_rate'].transform('median')
+            growth_diff = df['sales_growth_rate'] - ind_median_growth
+        else:
+            growth_diff = df['sales_growth_rate']
+        growth_signal = 1 / (1 + np.exp(-growth_diff / 5.0))
+
+        # 3. 시장 포지션 시그널 (sigmoid around 40th percentile)
+        viab_p40 = df['viability_index'].quantile(0.4)
+        market_signal = 1 / (1 + np.exp(-(df['viability_index'] - viab_p40) / 8.0))
+
+        # 4. 안정성 시그널 (sigmoid - 변동성 낮을수록 높음)
+        vol_p70 = df['sales_volatility'].quantile(0.7)
+        stability_signal = 1 / (1 + np.exp((df['sales_volatility'] - vol_p70) / 3.0))
+
+        # 5. 가중 합산
+        composite = (
+            survival_signal * 0.35 +
+            growth_signal * 0.25 +
+            market_signal * 0.20 +
+            stability_signal * 0.20
+        )
+
+        # 6. 운 요소 (5% 랜덤 노이즈)
+        np.random.seed(42)
+        luck = np.random.uniform(-0.05, 0.05, len(df))
+        composite_noisy = np.clip(composite + luck, 0, 1)
+
+        # 7. Threshold 라벨
+        df['success'] = (composite_noisy >= 0.50).astype(int)
+
+        pos_rate = df['success'].mean()
+        print(f"Success label: {pos_rate:.1%} positive rate (synthetic_fallback)")
+        return df
+
+    def prepare_training_data(
+        self,
+        df: pd.DataFrame = None,
+        n_samples: int = 2000,
+        label_mode: str = "future_observed",
+        horizon_months: int = 3,
+        allow_synthetic_labels: bool = False,
+    ) -> Tuple:
+        """학습용 X, y 데이터 준비"""
         if df is None or df.empty:
             raise ValueError(
                 "학습 데이터가 필요합니다. prepare_business_training_data.py를 먼저 실행하세요."
@@ -1422,65 +1633,40 @@ class BusinessFeatureEngineer:
         df = self.create_features(df)
 
         if 'success' not in df.columns:
-            # 확률적 복합 시그널 기반 성공 라벨 (v3 - sigmoid + luck + Bernoulli)
-
-            # 1. 생존율 시그널 (sigmoid, 0~1 연속값)
-            if 'industry_small_code' in df.columns and len(df) > 100:
-                ind_median_surv = df.groupby('industry_small_code')['survival_rate'].transform('median')
-                survival_diff = df['survival_rate'] - ind_median_surv
+            if label_mode == "future_observed":
+                labeled = self._create_future_observed_labels(df, horizon_months=horizon_months)
+                if labeled is None:
+                    if not allow_synthetic_labels:
+                        raise ValueError(
+                            "Future observed label 생성 실패. "
+                            "success 컬럼 포함 데이터를 제공하거나 allow_synthetic_labels=True로 실행하세요."
+                        )
+                    df = self._create_synthetic_labels(df)
+                else:
+                    df = labeled
+            elif label_mode == "synthetic":
+                df = self._create_synthetic_labels(df)
+            elif label_mode == "auto":
+                labeled = self._create_future_observed_labels(df, horizon_months=horizon_months)
+                if labeled is not None:
+                    df = labeled
+                elif allow_synthetic_labels:
+                    df = self._create_synthetic_labels(df)
+                else:
+                    raise ValueError(
+                        "Auto label 모드에서 future_observed 라벨 생성 실패. "
+                        "allow_synthetic_labels=True 또는 success 컬럼 포함 데이터가 필요합니다."
+                    )
             else:
-                survival_diff = df['survival_rate'] - df['survival_rate'].median()
-            survival_signal = 1 / (1 + np.exp(-survival_diff / 8.0))
-
-            # 2. 성장 시그널 (sigmoid)
-            if 'industry_small_code' in df.columns and len(df) > 100:
-                ind_median_growth = df.groupby('industry_small_code')['sales_growth_rate'].transform('median')
-                growth_diff = df['sales_growth_rate'] - ind_median_growth
-            else:
-                growth_diff = df['sales_growth_rate']
-            growth_signal = 1 / (1 + np.exp(-growth_diff / 5.0))
-
-            # 3. 시장 포지션 시그널 (sigmoid around 40th percentile)
-            viab_p40 = df['viability_index'].quantile(0.4)
-            market_signal = 1 / (1 + np.exp(-(df['viability_index'] - viab_p40) / 8.0))
-
-            # 4. 안정성 시그널 (sigmoid - 변동성 낮을수록 높음)
-            vol_p70 = df['sales_volatility'].quantile(0.7)
-            stability_signal = 1 / (1 + np.exp((df['sales_volatility'] - vol_p70) / 3.0))
-
-            # 5. 가중 합산
-            composite = (
-                survival_signal * 0.35 +
-                growth_signal * 0.25 +
-                market_signal * 0.20 +
-                stability_signal * 0.20
-            )
-
-            # 6. 운 요소 (15% 랜덤 노이즈)
-            np.random.seed(42)
-            luck = np.random.uniform(-0.15, 0.15, len(df))
-            composite_noisy = np.clip(composite + luck, 0, 1)
-
-            # 7. Bernoulli 샘플링 (확률적 라벨)
-            success_prob = 1 / (1 + np.exp(-(composite_noisy - 0.50) / 0.08))
-            df['success'] = np.random.binomial(1, success_prob)
-
-            pos_rate = df['success'].mean()
-            print(f"Success label: {pos_rate:.1%} positive rate (stochastic sigmoid)")
-
-            # 상관관계 검증
-            for feat_name in ['survival_rate', 'sales_growth_rate']:
-                if feat_name in df.columns:
-                    corr = np.corrcoef(df[feat_name].values, df['success'].values)[0, 1]
-                    print(f"  Label correlation with {feat_name}: {corr:.3f}")
-                    if abs(corr) > 0.75:
-                        print(f"  ⚠ WARNING: {feat_name} correlation too high ({corr:.3f})")
+                raise ValueError(f"지원하지 않는 label_mode: {label_mode}")
 
         available_features = [col for col in self.FEATURE_COLUMNS if col in df.columns]
         self.feature_names = available_features
 
         X = df[available_features].fillna(0)
         y = df['success']
+        if y.nunique() < 2:
+            raise ValueError("타겟 클래스가 1개뿐입니다. 라벨 생성 규칙 또는 학습 구간을 점검하세요.")
 
         print(f"BusinessFeatureEngineer: {len(X)}건, {len(available_features)}개 피처")
         print(f"성공/실패 분포: {y.value_counts().to_dict()}")
