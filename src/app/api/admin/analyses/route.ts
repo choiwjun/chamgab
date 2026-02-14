@@ -53,13 +53,13 @@ export async function GET(req: NextRequest) {
         .limit(Math.min(propertyIds.length * 5, 500))
 
       ;(txs || []).forEach((t: Record<string, unknown>) => {
-        if (t?.property_id && !txByProperty[t.property_id])
-          txByProperty[t.property_id] = t
+        const pid = t?.property_id as string | undefined
+        if (pid && !txByProperty[pid]) txByProperty[pid] = t
       })
     }
 
     const missing = rows
-      .filter((r) => r.property_id && !txByProperty[r.property_id])
+      .filter((r) => r.property_id && !txByProperty[r.property_id as string])
       .map((r) => ({
         property_id: r.property_id as string,
         complex_id: r.properties?.complex_id as string | null,
@@ -80,10 +80,11 @@ export async function GET(req: NextRequest) {
 
       const byComplex = new Map<string, Record<string, unknown>[]>()
       ;(txs2 || []).forEach((t: Record<string, unknown>) => {
-        if (!t?.complex_id) return
-        const arr = byComplex.get(t.complex_id) || []
+        const cid = t?.complex_id as string | undefined
+        if (!cid) return
+        const arr = byComplex.get(cid) || []
         arr.push(t)
-        byComplex.set(t.complex_id, arr)
+        byComplex.set(cid, arr)
       })
 
       missing.forEach((m) => {
@@ -114,7 +115,8 @@ export async function GET(req: NextRequest) {
         .order('created_at', { ascending: false })
         .limit(Math.min(propertyIds.length * 3, 500))
       ;(events || []).forEach((e: Record<string, unknown>) => {
-        if (!eventByProperty[e.property_id]) eventByProperty[e.property_id] = e
+        const pid = e.property_id as string | undefined
+        if (pid && !eventByProperty[pid]) eventByProperty[pid] = e
       })
     }
 
@@ -122,19 +124,22 @@ export async function GET(req: NextRequest) {
       page,
       limit,
       total: count ?? null,
-      rows: rows.map((r) => ({
-        ...r,
-        latest_tx: txByProperty[r.property_id] || null,
-        gap_pct: txByProperty[r.property_id]?.price
-          ? Math.round(
-              ((Number(r.chamgab_price) -
-                Number(txByProperty[r.property_id].price)) /
-                Number(txByProperty[r.property_id].price)) *
-                1000
-            ) / 10
-          : null,
-        last_event: eventByProperty[r.property_id] || null,
-      })),
+      rows: rows.map((r) => {
+        const pid = r.property_id as string
+        const tx = txByProperty[pid] || null
+        return {
+          ...r,
+          latest_tx: tx,
+          gap_pct: tx?.price
+            ? Math.round(
+                ((Number(r.chamgab_price) - Number(tx.price)) /
+                  Number(tx.price)) *
+                  1000
+              ) / 10
+            : null,
+          last_event: eventByProperty[pid] || null,
+        }
+      }),
     })
   } catch {
     return NextResponse.json(
