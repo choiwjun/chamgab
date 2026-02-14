@@ -47,7 +47,17 @@ export function AdminAnalysesClient() {
   const [running, setRunning] = useState<Record<string, boolean>>({})
 
   const [eventsFor, setEventsFor] = useState<string | null>(null)
-  const [events, setEvents] = useState<Record<string, unknown>[]>([])
+  const [events, setEvents] = useState<
+    {
+      id?: string
+      status?: string
+      http_status?: number
+      error_code?: string
+      error_message?: string
+      created_at?: string
+      [key: string]: unknown
+    }[]
+  >([])
   const [eventsLoading, setEventsLoading] = useState(false)
   const [eventsError, setEventsError] = useState<string | null>(null)
 
