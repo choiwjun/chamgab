@@ -17,6 +17,75 @@ function getSupabase() {
   )
 }
 
+interface RegionFilters {
+  sido?: string
+  sigungu?: string
+}
+
+function deterministicJitter(seed: string, scale: number): number {
+  let hash = 0
+  for (let i = 0; i < seed.length; i++) {
+    hash = (hash << 5) - hash + seed.charCodeAt(i)
+    hash |= 0
+  }
+  const normalized = (Math.abs(hash) % 10000) / 10000
+  return (normalized - 0.5) * scale
+}
+
+async function resolveRegionFilters(
+  supabase: ReturnType<typeof getSupabase>,
+  regionId?: string
+): Promise<RegionFilters> {
+  if (!regionId) return {}
+
+  const { data: region } = await supabase
+    .from('regions')
+    .select('name, level, parent_code')
+    .eq('id', regionId)
+    .maybeSingle()
+
+  if (!region) return {}
+
+  if (region.level === 1) {
+    return { sido: region.name }
+  }
+
+  if (region.level === 2) {
+    let sido: string | undefined
+    if (region.parent_code) {
+      const { data: parent } = await supabase
+        .from('regions')
+        .select('name')
+        .eq('code', region.parent_code)
+        .maybeSingle()
+      sido = parent?.name
+    }
+    return { sido, sigungu: region.name }
+  }
+
+  if (region.level === 3 && region.parent_code) {
+    const { data: sigunguRegion } = await supabase
+      .from('regions')
+      .select('name, parent_code')
+      .eq('code', region.parent_code)
+      .maybeSingle()
+
+    let sido: string | undefined
+    if (sigunguRegion?.parent_code) {
+      const { data: sidoRegion } = await supabase
+        .from('regions')
+        .select('name')
+        .eq('code', sigunguRegion.parent_code)
+        .maybeSingle()
+      sido = sidoRegion?.name
+    }
+
+    return { sido, sigungu: sigunguRegion?.name }
+  }
+
+  return {}
+}
+
 /**
  * GET /api/complexes
  *
@@ -40,17 +109,19 @@ function getSupabase() {
  */
 export async function GET(request: NextRequest) {
   try {
+    const supabase = getSupabase()
     const searchParams = request.nextUrl.searchParams
     const mapMode = searchParams.get('map') === 'true'
 
     // 지도 모드: 경량 데이터 (id, name, sigungu, location) 최대 500건
     if (mapMode) {
-      return handleMapMode(searchParams)
+      return handleMapMode(searchParams, supabase)
     }
 
     // Query parameters 파싱
-    const sido = searchParams.get('sido') || undefined
-    const sigungu = searchParams.get('sigungu') || undefined
+    let sido = searchParams.get('sido') || undefined
+    let sigungu = searchParams.get('sigungu') || undefined
+    const region = searchParams.get('region') || undefined
     const brand = searchParams.get('brand') || undefined
     const keyword = searchParams.get('keyword') || undefined
     const page = Math.max(1, parseInt(searchParams.get('page') || '1'))
@@ -59,8 +130,14 @@ export async function GET(request: NextRequest) {
       Math.max(1, parseInt(searchParams.get('limit') || '20'))
     )
 
+    if (region && (!sido || !sigungu)) {
+      const resolved = await resolveRegionFilters(supabase, region)
+      if (!sido && resolved.sido) sido = resolved.sido
+      if (!sigungu && resolved.sigungu) sigungu = resolved.sigungu
+    }
+
     // 브랜드 필터가 있으면 브랜드 전용 조회
-    if (brand && !sido && !sigungu && !keyword) {
+    if (brand && !sido && !sigungu && !keyword && !region) {
       const result = await getComplexesByBrand(brand, page, limit)
       return NextResponse.json(result, {
         headers: {
@@ -93,11 +170,20 @@ export async function GET(request: NextRequest) {
 }
 
 /** 지도 모드: 경량 단지 데이터 반환 (최대 500건) */
-async function handleMapMode(searchParams: URLSearchParams) {
-  const supabase = getSupabase()
+async function handleMapMode(
+  searchParams: URLSearchParams,
+  supabase: ReturnType<typeof getSupabase>
+) {
   const keyword = searchParams.get('keyword') || undefined
-  const sigungu = searchParams.get('sigungu') || undefined
-  const sido = searchParams.get('sido') || undefined
+  let sigungu = searchParams.get('sigungu') || undefined
+  let sido = searchParams.get('sido') || undefined
+  const region = searchParams.get('region') || undefined
+
+  if (region && (!sido || !sigungu)) {
+    const resolved = await resolveRegionFilters(supabase, region)
+    if (!sido && resolved.sido) sido = resolved.sido
+    if (!sigungu && resolved.sigungu) sigungu = resolved.sigungu
+  }
 
   let query = supabase
     .from('complexes')
@@ -116,16 +202,14 @@ async function handleMapMode(searchParams: URLSearchParams) {
   if (sigungu) {
     const sanitizedSigungu = sanitizeFilterInput(sigungu)
     if (sanitizedSigungu) {
-      query = query.or(
-        `sigungu.eq.${sanitizedSigungu},address.ilike.%${sanitizedSigungu}%`
-      )
+      query = query.eq('sigungu', sanitizedSigungu)
     }
   }
   if (sido) {
     query = query.eq('sido', sido)
   }
 
-  query = query.limit(2000)
+  query = query.order('name', { ascending: true }).limit(500)
 
   const { data, count, error } = await query
 
@@ -152,8 +236,8 @@ async function handleMapMode(searchParams: URLSearchParams) {
         const center = REGION_COORDS[r.sigungu || '']
         if (center) {
           location = {
-            lat: center.lat + (Math.random() - 0.5) * 0.006,
-            lng: center.lng + (Math.random() - 0.5) * 0.006,
+            lat: center.lat + deterministicJitter(`${r.id}:lat`, 0.006),
+            lng: center.lng + deterministicJitter(`${r.id}:lng`, 0.006),
           }
         }
       }
