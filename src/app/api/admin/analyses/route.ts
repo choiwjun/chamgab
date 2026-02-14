@@ -60,11 +60,14 @@ export async function GET(req: NextRequest) {
 
     const missing = rows
       .filter((r) => r.property_id && !txByProperty[r.property_id as string])
-      .map((r) => ({
-        property_id: r.property_id as string,
-        complex_id: r.properties?.complex_id as string | null,
-        area_exclusive: r.properties?.area_exclusive as number | null,
-      }))
+      .map((r) => {
+        const props = r.properties as Record<string, unknown> | null
+        return {
+          property_id: r.property_id as string,
+          complex_id: (props?.complex_id ?? null) as string | null,
+          area_exclusive: (props?.area_exclusive ?? null) as number | null,
+        }
+      })
       .filter((x) => !!x.complex_id && typeof x.area_exclusive === 'number')
 
     if (missing.length) {
