@@ -10,6 +10,7 @@ import {
   useEffect,
   useState,
   useCallback,
+  useMemo,
   type ReactNode,
 } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -18,9 +19,6 @@ import type { AuthContextType, UserProfile } from '@/types/auth'
 
 // Auth Context 생성
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
-
-// Supabase 클라이언트 (싱글톤)
-const supabase = createClient()
 
 interface AuthProviderProps {
   children: ReactNode
@@ -33,25 +31,32 @@ interface AuthProviderProps {
  * @see .claude/constitutions/supabase/auth-integration.md
  */
 export function AuthProvider({ children }: AuthProviderProps) {
+  // Create the Supabase browser client inside the component to avoid any
+  // module-eval side effects and allow preflight cookie repairs.
+  const supabase = useMemo(() => createClient(), [])
+
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
   // 프로필 조회
-  const fetchProfile = useCallback(async (userId: string) => {
-    const { data, error } = await supabase
-      .from('user_profiles')
-      .select('*')
-      .eq('id', userId)
-      .single()
+  const fetchProfile = useCallback(
+    async (userId: string) => {
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('id', userId)
+        .single()
 
-    if (error) {
-      console.error('Error fetching profile:', error)
-      return null
-    }
+      if (error) {
+        console.error('Error fetching profile:', error)
+        return null
+      }
 
-    return data as UserProfile
-  }, [])
+      return data as UserProfile
+    },
+    [supabase]
+  )
 
   const isSuspended = (profile: UserProfile | null) => {
     if (!profile?.is_suspended) return false
@@ -100,19 +105,22 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return lastMs < markerMs
   }
 
-  const enforceSuspension = useCallback(async (profile: UserProfile | null) => {
-    if (!isSuspended(profile)) return false
-    // If the account is suspended, drop the session client-side as a belt-and-suspenders.
-    try {
-      await supabase.auth.signOut()
-    } catch {
-      // ignore
-    } finally {
-      setUser(null)
-      setProfile(null)
-    }
-    return true
-  }, [])
+  const enforceSuspension = useCallback(
+    async (profile: UserProfile | null) => {
+      if (!isSuspended(profile)) return false
+      // If the account is suspended, drop the session client-side as a belt-and-suspenders.
+      try {
+        await supabase.auth.signOut()
+      } catch {
+        // ignore
+      } finally {
+        setUser(null)
+        setProfile(null)
+      }
+      return true
+    },
+    [supabase]
+  )
 
   const enforceForceLogout = useCallback(
     async (
@@ -131,7 +139,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
       return true
     },
-    []
+    [supabase]
   )
 
   // 사용자 정보 새로고침
@@ -170,7 +178,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } finally {
       setIsLoading(false)
     }
-  }, [fetchProfile])
+  }, [fetchProfile, supabase])
 
   // 회원가입
   const signUp = useCallback(
@@ -226,18 +234,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   // OAuth 로그인 (Google, Kakao만 지원)
   // Note: Supabase는 Naver OAuth를 공식 지원하지 않음
-  const signInWithOAuth = useCallback(async (provider: 'google' | 'kakao') => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider,
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-      },
-    })
+  const signInWithOAuth = useCallback(
+    async (provider: 'google' | 'kakao') => {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      })
 
-    if (error) {
-      throw error
-    }
-  }, [])
+      if (error) {
+        throw error
+      }
+    },
+    [supabase]
+  )
 
   // 로그아웃
   const signOut = useCallback(async () => {
@@ -250,7 +261,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setUser(null)
       setProfile(null)
     }
-  }, [])
+  }, [supabase])
 
   // 초기 세션 확인 및 Auth 상태 변화 구독
   useEffect(() => {
@@ -288,7 +299,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return () => {
       subscription.unsubscribe()
     }
-  }, [refreshUser, fetchProfile])
+  }, [refreshUser, fetchProfile, supabase])
 
   const value: AuthContextType = {
     user,
