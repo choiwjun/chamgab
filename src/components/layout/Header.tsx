@@ -148,6 +148,12 @@ export function Header() {
     e.preventDefault()
     const q = searchQuery.trim()
     if (q) {
+      fetch('/api/search/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: 'search_submit', query: q }),
+        keepalive: true,
+      }).catch(() => {})
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       router.push(`/search?q=${encodeURIComponent(q)}` as any)
       setIsSearchExpanded(false)

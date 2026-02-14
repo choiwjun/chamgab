@@ -33,12 +33,10 @@ export async function getComplexes(
     query = query.eq('sido', sido)
   }
   if (sigungu) {
-    // sigungu 정확 매칭 또는 address에 지역명 포함 검색
+    // 선택 필터는 정확 매칭으로 처리 (검색어 조건과 충돌 방지)
     const sanitizedSigungu = sanitizeFilterInput(sigungu)
     if (sanitizedSigungu) {
-      query = query.or(
-        `sigungu.eq.${sanitizedSigungu},address.ilike.%${sanitizedSigungu}%`
-      )
+      query = query.eq('sigungu', sanitizedSigungu)
     }
   }
   if (keyword) {

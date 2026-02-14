@@ -140,10 +140,12 @@ export function SearchPageContent() {
   }, [selectedSido, sidoRegions])
 
   // 검색어 표시
-  const hasActiveFilter = filters.q || filters.sido || filters.sigungu
+  const hasActiveFilter =
+    filters.q || filters.sido || filters.sigungu || filters.region
   const searchTitle =
     filters.sigungu ||
     filters.q ||
+    (filters.region ? '선택 지역' : '') ||
     (filters.sido
       ? SIDO_LIST.find((s) => s.name === filters.sido)?.short || filters.sido
       : '')
@@ -153,6 +155,12 @@ export function SearchPageContent() {
     e.preventDefault()
     const q = searchInput.trim()
     if (q) {
+      fetch('/api/search/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: 'search_submit', query: q }),
+        keepalive: true,
+      }).catch(() => {})
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       router.push(`/search?q=${encodeURIComponent(q)}` as any)
       setSearchInput('')
@@ -423,6 +431,7 @@ export function SearchPageContent() {
           </div>
         ) : activeTab === 'complexes' ? (
           <ComplexList
+            region={filters.region}
             sido={filters.sido}
             sigungu={filters.sigungu}
             keyword={filters.q}

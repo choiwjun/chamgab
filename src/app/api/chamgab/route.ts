@@ -27,7 +27,15 @@ export async function POST(request: NextRequest) {
   try {
     const supabase = getSupabase()
     const body = await request.json()
-    const { property_id, complex_id, area_type, floor, dong, direction } = body
+    const {
+      property_id,
+      complex_id,
+      area_type,
+      floor,
+      dong,
+      direction,
+      force,
+    } = body
 
     if (!property_id && !complex_id) {
       return NextResponse.json(
@@ -51,8 +59,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 캐시된 분석 결과 확인
-    if (resolvedPropertyId) {
+    // 캐시된 분석 결과 확인 (force=true면 무시)
+    if (resolvedPropertyId && !force) {
       const { data: existingAnalysis } = await supabase
         .from('chamgab_analyses')
         .select('*')
