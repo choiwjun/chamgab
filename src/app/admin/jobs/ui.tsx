@@ -14,6 +14,7 @@ type Status = {
 type MlHealth = {
   configured?: boolean
   ml_api_url?: string
+  compat?: boolean
   status?: string
   models?: Record<string, boolean>
   database?: { connected?: boolean; error?: string | null }
@@ -168,6 +169,17 @@ export function AdminJobsClient() {
       {error && (
         <div className="rounded-xl border border-[#FCA5A5] bg-[#FEF2F2] px-4 py-3 text-sm text-[#B91C1C]">
           {error}
+        </div>
+      )}
+
+      {mlHealth?.configured && mlHealth?.compat === false && (
+        <div className="rounded-xl border border-[#FDE68A] bg-[#FFFBEB] px-4 py-3 text-sm text-[#92400E]">
+          ML API는 응답은 하지만 현재 스펙과 호환되지 않습니다. (구버전 HF
+          Space일 가능성 높음)
+          <div className="mt-1 text-xs text-[#92400E]">
+            `ML_API_URL`이 최신 `ml-api` 배포를 가리키도록 교체해야
+            `source=ml_model`과 90%+ 신뢰도가 가능합니다.
+          </div>
         </div>
       )}
 

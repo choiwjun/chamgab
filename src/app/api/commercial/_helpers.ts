@@ -5,6 +5,8 @@
  * Python commercial.py의 헬퍼 함수들을 TypeScript로 포팅.
  */
 
+import 'server-only'
+
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 // ============================================================================
@@ -12,10 +14,17 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js'
 // ============================================================================
 
 export function getSupabase(): SupabaseClient {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-  )
+  // Use service role on server routes if available to avoid any RLS drift
+  // causing "silent empty data" (we intentionally catch/return [] in helpers).
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+  const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    ''
+
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
 }
 
 // ============================================================================

@@ -32,11 +32,20 @@ export async function GET(req: NextRequest) {
     clearTimeout(timeout)
 
     const data = await res.json().catch(() => ({}))
+    const obj =
+      typeof data === 'object' && data
+        ? (data as Record<string, unknown>)
+        : null
+    const models = obj?.models as Record<string, unknown> | undefined
+    const hasModels = !!models && typeof models === 'object'
+    const compat = hasModels && typeof models?.business_model === 'boolean'
+
     return NextResponse.json(
       {
         configured: true,
         ml_api_url: ML_API_URL,
-        ...(typeof data === 'object' && data ? data : { raw: data }),
+        compat,
+        ...(obj ? obj : { raw: data }),
       },
       { status: res.status }
     )
@@ -46,6 +55,7 @@ export async function GET(req: NextRequest) {
         error: 'ML API unavailable',
         configured: true,
         ml_api_url: ML_API_URL,
+        compat: false,
       },
       { status: 503 }
     )

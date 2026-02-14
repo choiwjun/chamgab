@@ -21,7 +21,7 @@ export function SuccessProbabilityCard({
 }: SuccessProbabilityCardProps) {
   const { success_probability, confidence, factors, recommendation, source } =
     result
-  const { ml_status, ml_http_status, data_coverage } = result
+  const { ml_status, ml_http_status, ml_detail, data_coverage } = result
 
   const getColorClass = (probability: number) => {
     if (probability >= 70) return 'text-green-700 bg-green-50'
@@ -104,6 +104,9 @@ export function SuccessProbabilityCard({
                 ML 호출 상태: <span className="font-mono">{ml_status}</span>
                 {typeof ml_http_status === 'number' && (
                   <span className="ml-1 font-mono">({ml_http_status})</span>
+                )}
+                {ml_detail && (
+                  <span className="ml-2 text-gray-600">{ml_detail}</span>
                 )}
               </div>
             )}

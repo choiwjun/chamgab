@@ -16,6 +16,7 @@ import {
   fetchBusinessStats,
   fetchSalesStats,
   fetchStoreStats,
+  latestMonth,
   fallbackPredict,
   FACTOR_NAME_MAP,
   INDUSTRY_NAMES,
@@ -34,66 +35,117 @@ interface MlPredictResponse {
   recommendation: string
 }
 
+type MlCallResult =
+  | { ok: true; data: MlPredictResponse }
+  | {
+      ok: false
+      reason:
+        | 'not_configured'
+        | 'timeout'
+        | 'http_error'
+        | 'incompatible'
+        | 'invalid_shape'
+        | 'exception'
+      status?: number
+      detail?: string
+    }
+
 async function callMlApi(params: {
   districtCode: string
   industryCode: string
   overrides?: Record<string, number>
-}): Promise<MlPredictResponse | null> {
-  if (!ML_API_URL) return null
+}): Promise<MlCallResult> {
+  if (!ML_API_URL) return { ok: false, reason: 'not_configured' }
 
-  try {
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 5000)
+  const attempt = async (timeoutMs: number): Promise<MlCallResult> => {
+    try {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), timeoutMs)
 
-    const qs = new URLSearchParams({
-      district_code: params.districtCode,
-      industry_code: params.industryCode,
-    })
+      const qs = new URLSearchParams({
+        district_code: params.districtCode,
+        industry_code: params.industryCode,
+      })
 
-    // Optional overrides: ML API can fetch from Supabase by itself.
-    const o = params.overrides
-    if (o) {
-      const allow = [
-        'survival_rate',
-        'monthly_avg_sales',
-        'sales_growth_rate',
-        'store_count',
-        'franchise_ratio',
-        'competition_ratio',
-      ] as const
-      for (const k of allow) {
-        const v = Number((o as Record<string, unknown>)[k])
-        if (Number.isFinite(v) && v !== 0) qs.set(k, String(v))
+      // Optional overrides: ML API can fetch from Supabase by itself.
+      const o = params.overrides
+      if (o) {
+        const allow = [
+          'survival_rate',
+          'monthly_avg_sales',
+          'sales_growth_rate',
+          'store_count',
+          'franchise_ratio',
+          'competition_ratio',
+        ] as const
+        for (const k of allow) {
+          const v = Number((o as Record<string, unknown>)[k])
+          // 0 is a valid value; pass it through.
+          if (Number.isFinite(v)) qs.set(k, String(v))
+        }
       }
+
+      // NOTE: ML API의 상권 예측 엔드포인트는 /api/commercial/predict 입니다.
+      const res = await fetch(`${ML_API_URL}/api/commercial/predict?${qs}`, {
+        method: 'POST',
+        signal: controller.signal,
+        cache: 'no-store',
+      })
+      clearTimeout(timeout)
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => '')
+        let detail = ''
+        try {
+          const j = text ? JSON.parse(text) : null
+          detail = String((j && (j.detail || j.error || j.message)) || '')
+        } catch {
+          detail = text
+        }
+        detail = detail.trim().slice(0, 220)
+        const incompatible =
+          res.status === 404 &&
+          (detail.includes('상권을 찾을 수 없습니다') ||
+            detail.toLowerCase().includes('not found'))
+        return {
+          ok: false,
+          reason: incompatible ? 'incompatible' : 'http_error',
+          status: res.status,
+          detail: detail || undefined,
+        }
+      }
+      const data = (await res.json()) as Record<string, unknown>
+
+      if (
+        typeof data?.success_probability !== 'number' ||
+        typeof data?.confidence !== 'number' ||
+        !Array.isArray(data?.factors)
+      ) {
+        return { ok: false, reason: 'invalid_shape' }
+      }
+
+      return {
+        ok: true,
+        data: {
+          success_probability: data.success_probability,
+          confidence: data.confidence,
+          factors: data.factors,
+          recommendation: String(data.recommendation || ''),
+        },
+      }
+    } catch (e) {
+      if (e instanceof Error && e.name === 'AbortError') {
+        return { ok: false, reason: 'timeout' }
+      }
+      return { ok: false, reason: 'exception' }
     }
-
-    // NOTE: ML API의 상권 예측 엔드포인트는 /api/commercial/predict 입니다.
-    const res = await fetch(`${ML_API_URL}/api/commercial/predict?${qs}`, {
-      method: 'POST',
-      signal: controller.signal,
-    })
-    clearTimeout(timeout)
-
-    if (!res.ok) return null
-    const data = (await res.json()) as Record<string, unknown>
-
-    if (
-      typeof data?.success_probability !== 'number' ||
-      typeof data?.confidence !== 'number' ||
-      !Array.isArray(data?.factors)
-    ) {
-      return null
-    }
-
-    return {
-      success_probability: data.success_probability,
-      confidence: data.confidence,
-      factors: data.factors,
-      recommendation: String(data.recommendation || ''),
-    }
-  } catch {
-    return null
   }
+
+  // HuggingFace Spaces can be cold-started; give it more time and one retry.
+  const first = await attempt(12_000)
+  if (first.ok) return first
+  if (first.reason === 'timeout') return attempt(12_000)
+  return first
 }
 
 function monthsSince(yyyymm: string): number | null {
@@ -161,6 +213,27 @@ function calcRuleBasedConfidence(args: {
   return Math.round(Math.min(Math.max(c, 30), cap) * 10) / 10
 }
 
+function weightedMean(
+  rows: Record<string, unknown>[],
+  field: string,
+  weightField: string
+): number | null {
+  let wsum = 0
+  let vsum = 0
+  let seen = 0
+  for (const r of rows) {
+    const v = Number(r[field])
+    if (!Number.isFinite(v)) continue
+    const wRaw = Number(r[weightField])
+    const w = Number.isFinite(wRaw) && wRaw > 0 ? wRaw : 1
+    wsum += w
+    vsum += w * v
+    seen += 1
+  }
+  if (seen === 0) return null
+  return wsum > 0 ? vsum / wsum : null
+}
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = getSupabase()
@@ -182,6 +255,10 @@ export async function POST(request: NextRequest) {
     const sales = await fetchSalesStats(supabase, districtCode, industryCode)
     const stores = await fetchStoreStats(supabase, districtCode, industryCode)
 
+    const bizLatest = latestMonth(biz)
+    const salesLatest = latestMonth(sales)
+    const storesLatest = latestMonth(stores)
+
     let industryName = INDUSTRY_NAMES[industryCode] || industryCode
     let survivalRate: number | null = null
     let monthlyAvgSales: number | null = null
@@ -189,18 +266,36 @@ export async function POST(request: NextRequest) {
     let storeCount: number | null = null
     let franchiseRatio: number | null = null
 
-    if (biz.length > 0) {
-      industryName = (biz[0].industry_name as string) || industryCode
-      survivalRate = num(biz[0].survival_rate) || null
+    if (bizLatest.length > 0) {
+      industryName = (bizLatest[0].industry_name as string) || industryCode
+      survivalRate =
+        weightedMean(bizLatest, 'survival_rate', 'operating_count') ??
+        (num(bizLatest[0].survival_rate) || null)
     }
-    if (sales.length > 0) {
-      monthlyAvgSales = num(sales[0].monthly_avg_sales) || null
-      salesGrowthRate = num(sales[0].sales_growth_rate) || null
+    if (salesLatest.length > 0) {
+      monthlyAvgSales =
+        weightedMean(salesLatest, 'monthly_avg_sales', 'monthly_sales_count') ??
+        (num(salesLatest[0].monthly_avg_sales) || null)
+      salesGrowthRate =
+        weightedMean(salesLatest, 'sales_growth_rate', 'monthly_avg_sales') ??
+        (num(salesLatest[0].sales_growth_rate) || null)
     }
-    if (stores.length > 0) {
-      storeCount = num(stores[0].store_count) || null
-      const fc = num(stores[0].franchise_count)
-      const sc = num(stores[0].store_count, 1)
+    if (storesLatest.length > 0) {
+      const sc = storesLatest.reduce(
+        (s, r) =>
+          s +
+          (Number.isFinite(Number(r.store_count)) ? Number(r.store_count) : 0),
+        0
+      )
+      const fc = storesLatest.reduce(
+        (s, r) =>
+          s +
+          (Number.isFinite(Number(r.franchise_count))
+            ? Number(r.franchise_count)
+            : 0),
+        0
+      )
+      storeCount = sc > 0 ? sc : num(storesLatest[0].store_count) || null
       franchiseRatio = sc > 0 ? Math.round((fc / sc) * 1000) / 1000 : null
     }
 
@@ -218,16 +313,16 @@ export async function POST(request: NextRequest) {
       competition_ratio: num(params.get('competition_ratio'), 0) || 1.2,
     }
 
-    const mlResult = await callMlApi({
+    const mlCall = await callMlApi({
       districtCode,
       industryCode,
       overrides: feat,
     })
 
     const ruleConfidence = calcRuleBasedConfidence({
-      bizRows: biz,
-      salesRows: sales,
-      storeRows: stores,
+      bizRows: bizLatest,
+      salesRows: salesLatest,
+      storeRows: storesLatest,
       hasSurvival: survivalRate != null,
       hasSales: monthlyAvgSales != null,
       hasGrowth: salesGrowthRate != null,
@@ -235,12 +330,12 @@ export async function POST(request: NextRequest) {
       hasFranchise: franchiseRatio != null,
     })
 
-    if (mlResult) {
+    if (mlCall.ok) {
       return NextResponse.json({
-        success_probability: mlResult.success_probability,
-        confidence: mlResult.confidence,
-        factors: mlResult.factors,
-        recommendation: mlResult.recommendation,
+        success_probability: mlCall.data.success_probability,
+        confidence: mlCall.data.confidence,
+        factors: mlCall.data.factors,
+        recommendation: mlCall.data.recommendation,
         source: 'ml_model',
       })
     }
@@ -266,6 +361,20 @@ export async function POST(request: NextRequest) {
       factors,
       recommendation,
       source: 'rule_based',
+      ml_status: mlCall.reason,
+      ml_http_status:
+        mlCall.reason === 'http_error' || mlCall.reason === 'incompatible'
+          ? (mlCall.status ?? null)
+          : null,
+      ml_detail:
+        mlCall.reason === 'http_error' || mlCall.reason === 'incompatible'
+          ? (mlCall.detail ?? null)
+          : null,
+      data_coverage: {
+        business_rows: bizLatest.length,
+        sales_rows: salesLatest.length,
+        store_rows: storesLatest.length,
+      },
     })
   } catch (err) {
     console.error('[Commercial Predict] Exception:', err)

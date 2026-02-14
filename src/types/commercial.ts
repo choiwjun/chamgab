@@ -55,9 +55,11 @@ export interface BusinessPredictionResult {
     | 'not_configured'
     | 'timeout'
     | 'http_error'
+    | 'incompatible'
     | 'invalid_shape'
     | 'exception'
   ml_http_status?: number | null
+  ml_detail?: string | null
   data_coverage?: {
     business_rows: number
     sales_rows: number

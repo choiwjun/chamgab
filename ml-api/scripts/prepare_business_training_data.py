@@ -26,13 +26,17 @@ try:
     import pandas as pd
     import numpy as np
     from supabase import create_client, Client
+    from supabase.lib.client_options import SyncClientOptions
+    import httpx
 except ImportError:
     print("Installing required packages...")
     import subprocess
-    subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'pandas', 'numpy', 'supabase'])
+    subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'pandas', 'numpy', 'supabase', 'httpx'])
     import pandas as pd
     import numpy as np
     from supabase import create_client, Client
+    from supabase.lib.client_options import SyncClientOptions
+    import httpx
 
 
 # Supabase credentials
@@ -236,7 +240,12 @@ def main():
     print("=" * 60)
 
     # Create Supabase client
-    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    # Disable env proxy usage to prevent local proxy settings from breaking DB access.
+    supabase = create_client(
+        SUPABASE_URL,
+        SUPABASE_KEY,
+        SyncClientOptions(httpx_client=httpx.Client(trust_env=False)),
+    )
 
     # Fetch data
     business_df, sales_df, store_df, foot_df = fetch_statistics(supabase)

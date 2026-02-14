@@ -36,6 +36,7 @@ load_dotenv()
 import httpx
 import numpy as np
 from supabase import create_client, Client
+from supabase.lib.client_options import SyncClientOptions
 
 np.random.seed(42)
 
@@ -1360,7 +1361,12 @@ async def main():
         logger.error("SUPABASE_URL, SUPABASE_SERVICE_KEY environment variables required")
         sys.exit(1)
 
-    supabase = create_client(supabase_url, supabase_key)
+    # Disable env proxy usage to prevent local proxy settings from breaking DB access.
+    supabase = create_client(
+        supabase_url,
+        supabase_key,
+        SyncClientOptions(httpx_client=httpx.Client(trust_env=False)),
+    )
 
     if args.clean:
         logger.info("\n[Clean] Deleting all existing commercial data...")
