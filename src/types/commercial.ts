@@ -49,6 +49,20 @@ export interface BusinessPredictionResult {
   factors: PredictionFactor[]
   recommendation: string
   source?: 'ml_model' | 'rule_based'
+
+  // Diagnostics (present on rule-based fallback; used to explain "왜 60%인가")
+  ml_status?:
+    | 'not_configured'
+    | 'timeout'
+    | 'http_error'
+    | 'invalid_shape'
+    | 'exception'
+  ml_http_status?: number | null
+  data_coverage?: {
+    business_rows: number
+    sales_rows: number
+    store_rows: number
+  }
 }
 
 // 지역 비교

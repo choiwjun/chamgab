@@ -48,6 +48,7 @@ async function fetchWithTimeout(
   try {
     const response = await fetch(url, {
       ...options,
+      cache: options.cache ?? 'no-store',
       signal: controller.signal,
     })
     clearTimeout(id)

@@ -21,6 +21,7 @@ export function SuccessProbabilityCard({
 }: SuccessProbabilityCardProps) {
   const { success_probability, confidence, factors, recommendation, source } =
     result
+  const { ml_status, ml_http_status, data_coverage } = result
 
   const getColorClass = (probability: number) => {
     if (probability >= 70) return 'text-green-700 bg-green-50'
@@ -92,6 +93,37 @@ export function SuccessProbabilityCard({
         {source === 'rule_based' && confidence < 90 && (
           <div className="mt-3 text-xs text-gray-500">
             ML API 연결/데이터 최신화가 되면 신뢰도가 더 올라갈 수 있습니다.
+          </div>
+        )}
+
+        {source === 'rule_based' && (ml_status || data_coverage) && (
+          <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700">
+            <div className="font-semibold">진단</div>
+            {ml_status && (
+              <div className="mt-1">
+                ML 호출 상태: <span className="font-mono">{ml_status}</span>
+                {typeof ml_http_status === 'number' && (
+                  <span className="ml-1 font-mono">({ml_http_status})</span>
+                )}
+              </div>
+            )}
+            {data_coverage && (
+              <div className="mt-1">
+                데이터 커버리지:
+                <span className="ml-1 font-mono">
+                  biz={data_coverage.business_rows}, sales=
+                  {data_coverage.sales_rows}, store={data_coverage.store_rows}
+                </span>
+              </div>
+            )}
+            {data_coverage &&
+              (data_coverage.sales_rows === 0 ||
+                data_coverage.store_rows === 0) && (
+                <div className="mt-1 text-gray-600">
+                  `sales_statistics`/`store_statistics`가 비어있으면 신뢰도가
+                  60% 근처로 내려가는 게 정상입니다.
+                </div>
+              )}
           </div>
         )}
       </div>
