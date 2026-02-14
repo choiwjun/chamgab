@@ -155,8 +155,16 @@ export async function getIndustries(category?: string): Promise<Industry[]> {
 /**
  * 상권 상세 정보 조회
  */
-export async function getDistrictDetail(code: string): Promise<DistrictDetail> {
-  const response = await fetchWithRetry(`/api/commercial/districts/${code}`)
+export async function getDistrictDetail(
+  code: string,
+  industryCode?: string
+): Promise<DistrictDetail> {
+  const qs = industryCode
+    ? `?industry_code=${encodeURIComponent(industryCode)}`
+    : ''
+  const response = await fetchWithRetry(
+    `/api/commercial/districts/${code}${qs}`
+  )
   return handleResponse<DistrictDetail>(response)
 }
 

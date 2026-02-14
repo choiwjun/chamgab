@@ -40,8 +40,15 @@ export function MetricsCard({ statistics, characteristics }: MetricsCardProps) {
   // 매출 예측 (월평균 매출)
   const estimatedSales = monthly_avg_sales
 
-  // 유동인구 (총 합산)
-  const totalTraffic = peak_time_traffic * 4 // 피크 타임의 약 4배로 추정
+  // 유동인구 (일평균)
+  // characteristics.time_distribution은 /characteristics API에서 time slot 합산으로 만들어지므로
+  // 가능한 경우 이 값을 사용 (추정치보다 정확).
+  const totalTraffic = characteristics?.time_distribution?.length
+    ? characteristics.time_distribution.reduce(
+        (sum, t) => sum + (t.traffic_count || 0),
+        0
+      )
+    : peak_time_traffic * 4 // fallback: 피크 타임의 약 4배로 추정
 
   const competitionLevel = getCompetitionLevel(competition_ratio)
   const riskScore = calculateRisk()
