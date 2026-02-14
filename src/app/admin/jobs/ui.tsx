@@ -85,21 +85,48 @@ export function AdminJobsClient() {
   const sleep = (ms: number) =>
     new Promise((resolve) => setTimeout(resolve, ms))
 
-  const waitForJob = async (expectedJobType: string, timeoutMs: number) => {
+  const fetchStatus = async () => {
+    const sRes = await fetch('/api/admin/scheduler/status', {
+      cache: 'no-store',
+    })
+    const sData = await sRes.json().catch(() => ({}))
+    if (!sRes.ok)
+      throw new Error(
+        sData?.detail || sData?.error || 'Failed to poll scheduler'
+      )
+    setStatus(sData)
+    return sData as Status
+  }
+
+  const waitForJob = async (
+    expectedJobType: string,
+    timeoutMs: number,
+    baseline?: { startedAt?: string | null; finishedAt?: string | null }
+  ) => {
     const start = Date.now()
-    let seenStartAt: string | null = null
+    const baseStartedAt = baseline?.startedAt ?? null
+    const baseFinishedAt = baseline?.finishedAt ?? null
 
+    // Phase 1) Wait until we observe a *new* start (started_at changes) for this job type.
     while (Date.now() - start < timeoutMs) {
-      const sRes = await fetch('/api/admin/scheduler/status', {
-        cache: 'no-store',
-      })
-      const sData = await sRes.json().catch(() => ({}))
-      if (!sRes.ok)
-        throw new Error(
-          sData?.detail || sData?.error || 'Failed to poll scheduler'
-        )
-      setStatus(sData)
+      const sData = await fetchStatus()
+      const jt = (sData?.current_job_type as string | undefined) || null
+      const startedAt =
+        (sData?.current_job_started_at as string | undefined) || null
+      const running = Boolean(sData?.current_job_running)
 
+      const isNewStart =
+        jt === expectedJobType &&
+        startedAt != null &&
+        startedAt !== baseStartedAt
+
+      if (isNewStart && (running || startedAt)) break
+      await sleep(1000)
+    }
+
+    // Phase 2) Wait until it finishes (finished_at changes) and report ok/error.
+    while (Date.now() - start < timeoutMs) {
+      const sData = await fetchStatus()
       const jt = (sData?.current_job_type as string | undefined) || null
       const running = Boolean(sData?.current_job_running)
       const startedAt =
@@ -110,18 +137,17 @@ export function AdminJobsClient() {
       const err =
         (sData?.current_job_error as string | undefined) || 'job failed'
 
-      if (jt === expectedJobType && running && startedAt) {
-        seenStartAt = startedAt
-      }
-
       if (
         jt === expectedJobType &&
-        !running &&
-        finishedAt &&
-        (!seenStartAt || startedAt === seenStartAt)
+        startedAt != null &&
+        startedAt !== baseStartedAt &&
+        !running
       ) {
-        if (ok === false) throw new Error(err)
-        return
+        const isNewFinish = finishedAt != null && finishedAt !== baseFinishedAt
+        if (isNewFinish) {
+          if (ok === false) throw new Error(err)
+          return
+        }
       }
 
       await sleep(2000)
@@ -270,6 +296,7 @@ export function AdminJobsClient() {
 
       // 1) Collect commercial stats (may take long; SBIZ API).
       setFixFlow({ running: true, step: 'collect_commercial' })
+      const pre1 = await fetchStatus()
       {
         const res = await fetch('/api/admin/scheduler/run', {
           method: 'POST',
@@ -282,10 +309,14 @@ export function AdminJobsClient() {
             data?.detail || data?.error || 'Failed to start collect_commercial'
           )
       }
-      await waitForJob('collect_commercial', 65 * 60 * 1000)
+      await waitForJob('collect_commercial', 65 * 60 * 1000, {
+        startedAt: pre1?.current_job_started_at ?? null,
+        finishedAt: pre1?.current_job_finished_at ?? null,
+      })
 
       // 2) Train business model (writes app/models/business_model.pkl).
       setFixFlow({ running: true, step: 'train_business' })
+      const pre2 = await fetchStatus()
       {
         const res = await fetch('/api/admin/scheduler/run', {
           method: 'POST',
@@ -298,7 +329,10 @@ export function AdminJobsClient() {
             data?.detail || data?.error || 'Failed to start train_business'
           )
       }
-      await waitForJob('train_business', 20 * 60 * 1000)
+      await waitForJob('train_business', 20 * 60 * 1000, {
+        startedAt: pre2?.current_job_started_at ?? null,
+        finishedAt: pre2?.current_job_finished_at ?? null,
+      })
 
       // 3) Probe predict via Next.js API (must return source=ml_model).
       setFixFlow({ running: true, step: 'probe' })
