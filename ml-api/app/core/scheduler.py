@@ -41,6 +41,17 @@ class DataScheduler:
         self.last_collection_job: Optional[str] = None
         self.last_analysis_job: Optional[str] = None
         self.last_training_job: Optional[str] = None
+
+        # Admin UX: expose the currently running (manual) job status via /api/scheduler/status.
+        # Note: APScheduler cron jobs call the underlying methods directly; run_now() is the
+        # admin-triggered entrypoint and is guarded by a lock to avoid concurrency.
+        self.current_job_running: bool = False
+        self.current_job_type: Optional[str] = None
+        self.current_job_started_at: Optional[str] = None
+        self.current_job_finished_at: Optional[str] = None
+        self.current_job_ok: Optional[bool] = None
+        self.current_job_error: Optional[str] = None
+        self._run_lock = asyncio.Lock()
         self._app = None  # FastAPI app 참조 (핫리로드용)
 
     def set_app(self, app):
@@ -197,10 +208,12 @@ class DataScheduler:
         - 5개 테이블 업데이트: business/sales/store_statistics, foot_traffic/district_characteristics
         """
         job_id = f"commercial_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        # Expose the run id immediately so /api/scheduler/status reflects that a run started.
+        self.last_collection_job = job_id
         print(f"[스케줄러] 주간 상권 데이터 수집 시작: {job_id}")
 
         # Step 1: API 수집 + 데이터 생성 + Supabase 저장 (한 번에)
-        ok = self._run_script(
+        ok = await self._run_script(
             "scripts.collect_business_statistics",
             args=["--months", "24"],
             timeout=3600  # 1시간 (API 호출 130개 지역 × 7개 업종)
@@ -212,7 +225,7 @@ class DataScheduler:
             print(f"[스케줄러] 상권 데이터 수집 실패: {job_id}")
             # 캐시가 있으면 fallback으로 재시도
             print("[스케줄러] 캐시 데이터로 재시도...")
-            ok = self._run_script(
+            ok = await self._run_script(
                 "scripts.collect_business_statistics",
                 args=["--skip-api", "--months", "24"],
                 timeout=300
@@ -224,7 +237,7 @@ class DataScheduler:
     # 학습 작업 (신규)
     # ─────────────────────────────────────────────
 
-    def _run_script(self, module: str, args: list = None, timeout: int = 600) -> bool:
+    async def _run_script(self, module: str, args: list = None, timeout: int = 600) -> bool:
         """
         학습 스크립트를 subprocess로 실행 (메모리 격리)
 
@@ -243,7 +256,10 @@ class DataScheduler:
         print(f"[스케줄러] 스크립트 실행: {' '.join(cmd)}")
 
         try:
-            result = subprocess.run(
+            # Run in a worker thread so the FastAPI event loop stays responsive while
+            # long-running collection/training scripts execute.
+            result = await asyncio.to_thread(
+                subprocess.run,
                 cmd,
                 cwd=str(PROJECT_ROOT),
                 capture_output=True,
@@ -332,7 +348,7 @@ class DataScheduler:
         print(f"[스케줄러] 주간 상권 모델 학습 시작: {job_id}")
 
         # Step 1: 학습 데이터 준비
-        ok = self._run_script(
+        ok = await self._run_script(
             "scripts.prepare_business_training_data",
             timeout=120
         )
@@ -342,7 +358,7 @@ class DataScheduler:
 
         # Step 2: 모델 학습
         csv_path = str(SCRIPTS_DIR / "business_training_data.csv")
-        ok = self._run_script(
+        ok = await self._run_script(
             "scripts.train_business_model",
             args=["--data", csv_path],
             timeout=300
@@ -365,7 +381,7 @@ class DataScheduler:
         print(f"[스케줄러] 월간 전체 모델 학습 시작: {job_id}")
 
         # Step 1: 아파트 모델 학습 (v2 - Supabase에서 직접 읽기, CSV 불필요)
-        ok_apt = self._run_script(
+        ok_apt = await self._run_script(
             "scripts.train_model",
             args=[],
             timeout=900
@@ -376,7 +392,7 @@ class DataScheduler:
             print("[스케줄러] 아파트 모델 학습 실패")
 
         # Step 3: 상권 학습 데이터 준비
-        ok = self._run_script(
+        ok = await self._run_script(
             "scripts.prepare_business_training_data",
             timeout=120
         )
@@ -384,7 +400,7 @@ class DataScheduler:
         # Step 4: 상권 모델 학습
         if ok:
             biz_csv = str(SCRIPTS_DIR / "business_training_data.csv")
-            ok_biz = self._run_script(
+            ok_biz = await self._run_script(
                 "scripts.train_business_model",
                 args=["--data", biz_csv],
                 timeout=300
@@ -608,23 +624,42 @@ class DataScheduler:
         ]
 
     async def run_now(self, job_type: str):
-        """즉시 실행"""
-        if job_type == "daily":
-            await self.daily_collection()
-        elif job_type == "weekly":
-            await self.weekly_collection()
-        elif job_type == "monthly":
-            await self.monthly_collection()
-        elif job_type == "train_business":
-            await self.weekly_business_training()
-        elif job_type == "train_all":
-            await self.monthly_full_training()
-        elif job_type == "collect_commercial":
-            await self.weekly_commercial_collection()
-        elif job_type == "catchup":
-            await self.startup_catchup()
-        else:
-            raise ValueError(f"Unknown job type: {job_type}")
+        """즉시 실행 (관리자 트리거)."""
+        async with self._run_lock:
+            self.current_job_running = True
+            self.current_job_type = job_type
+            self.current_job_started_at = datetime.now().isoformat()
+            self.current_job_finished_at = None
+            self.current_job_ok = None
+            self.current_job_error = None
+
+            try:
+                if job_type == "daily":
+                    await self.daily_collection()
+                elif job_type == "weekly":
+                    await self.weekly_collection()
+                elif job_type == "monthly":
+                    await self.monthly_collection()
+                elif job_type == "train_business":
+                    await self.weekly_business_training()
+                elif job_type == "train_all":
+                    await self.monthly_full_training()
+                elif job_type == "collect_commercial":
+                    await self.weekly_commercial_collection()
+                elif job_type == "catchup":
+                    await self.startup_catchup()
+                else:
+                    raise ValueError(f"Unknown job type: {job_type}")
+
+                self.current_job_ok = True
+            except Exception as e:
+                # Keep error on status for admin debugging.
+                self.current_job_ok = False
+                self.current_job_error = str(e)
+                raise
+            finally:
+                self.current_job_running = False
+                self.current_job_finished_at = datetime.now().isoformat()
 
 
 # 싱글톤 인스턴스

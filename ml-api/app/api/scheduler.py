@@ -28,6 +28,12 @@ class SchedulerStatusResponse(BaseModel):
     last_collection_job: Optional[str]
     last_analysis_job: Optional[str]
     last_training_job: Optional[str]
+    current_job_running: Optional[bool] = None
+    current_job_type: Optional[str] = None
+    current_job_started_at: Optional[str] = None
+    current_job_finished_at: Optional[str] = None
+    current_job_ok: Optional[bool] = None
+    current_job_error: Optional[str] = None
 
 
 class RunNowRequest(BaseModel):
@@ -65,6 +71,12 @@ async def get_scheduler_status(
         last_collection_job=data_scheduler.last_collection_job,
         last_analysis_job=data_scheduler.last_analysis_job,
         last_training_job=data_scheduler.last_training_job,
+        current_job_running=getattr(data_scheduler, "current_job_running", None),
+        current_job_type=getattr(data_scheduler, "current_job_type", None),
+        current_job_started_at=getattr(data_scheduler, "current_job_started_at", None),
+        current_job_finished_at=getattr(data_scheduler, "current_job_finished_at", None),
+        current_job_ok=getattr(data_scheduler, "current_job_ok", None),
+        current_job_error=getattr(data_scheduler, "current_job_error", None),
     )
 
 

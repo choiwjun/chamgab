@@ -8,6 +8,12 @@ type Status = {
   last_collection_job?: string | null
   last_analysis_job?: string | null
   last_training_job?: string | null
+  current_job_running?: boolean | null
+  current_job_type?: string | null
+  current_job_started_at?: string | null
+  current_job_finished_at?: string | null
+  current_job_ok?: boolean | null
+  current_job_error?: string | null
   error?: string
 }
 
@@ -52,8 +58,10 @@ export function AdminJobsClient() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
-  const [districtCode, setDistrictCode] = useState('')
-  const [industryCode, setIndustryCode] = useState('')
+  // Known-good probe pair (has data coverage in Supabase). This is used to verify
+  // that ML_API_URL points to the compatible "ml-api" service.
+  const [districtCode, setDistrictCode] = useState('11680')
+  const [industryCode, setIndustryCode] = useState('Q12')
   const [dataHealth, setDataHealth] = useState<CommercialDataHealth | null>(
     null
   )
@@ -61,6 +69,66 @@ export function AdminJobsClient() {
     string,
     unknown
   > | null>(null)
+
+  const [fixFlow, setFixFlow] = useState<{
+    running: boolean
+    step:
+      | 'idle'
+      | 'check_health'
+      | 'collect_commercial'
+      | 'train_business'
+      | 'probe'
+      | 'done'
+    note?: string
+  }>({ running: false, step: 'idle' })
+
+  const sleep = (ms: number) =>
+    new Promise((resolve) => setTimeout(resolve, ms))
+
+  const waitForJob = async (expectedJobType: string, timeoutMs: number) => {
+    const start = Date.now()
+    let seenStartAt: string | null = null
+
+    while (Date.now() - start < timeoutMs) {
+      const sRes = await fetch('/api/admin/scheduler/status', {
+        cache: 'no-store',
+      })
+      const sData = await sRes.json().catch(() => ({}))
+      if (!sRes.ok)
+        throw new Error(
+          sData?.detail || sData?.error || 'Failed to poll scheduler'
+        )
+      setStatus(sData)
+
+      const jt = (sData?.current_job_type as string | undefined) || null
+      const running = Boolean(sData?.current_job_running)
+      const startedAt =
+        (sData?.current_job_started_at as string | undefined) || null
+      const finishedAt =
+        (sData?.current_job_finished_at as string | undefined) || null
+      const ok = (sData?.current_job_ok as boolean | undefined) ?? null
+      const err =
+        (sData?.current_job_error as string | undefined) || 'job failed'
+
+      if (jt === expectedJobType && running && startedAt) {
+        seenStartAt = startedAt
+      }
+
+      if (
+        jt === expectedJobType &&
+        !running &&
+        finishedAt &&
+        (!seenStartAt || startedAt === seenStartAt)
+      ) {
+        if (ok === false) throw new Error(err)
+        return
+      }
+
+      await sleep(2000)
+    }
+
+    throw new Error(`Timeout waiting for job: ${expectedJobType}`)
+  }
 
   const load = async () => {
     setLoading(true)
@@ -89,6 +157,41 @@ export function AdminJobsClient() {
     }
   }
 
+  const fetchDataHealth = async (dc: string, ic: string) => {
+    const qs = new URLSearchParams()
+    if (dc.trim()) qs.set('district_code', dc.trim())
+    if (ic.trim()) qs.set('industry_code', ic.trim())
+
+    const res = await fetch(
+      `/api/admin/commercial/data-health?${qs.toString()}`,
+      {
+        cache: 'no-store',
+      }
+    )
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok)
+      throw new Error(data?.detail || data?.error || 'Failed to check')
+    setDataHealth(data)
+    return data
+  }
+
+  const fetchPredictProbe = async (dc: string, ic: string) => {
+    if (!dc.trim() || !ic.trim())
+      throw new Error('district_code / industry_code 를 입력하세요')
+    const qs = new URLSearchParams({
+      district_code: dc.trim(),
+      industry_code: ic.trim(),
+    })
+    const res = await fetch(`/api/commercial/predict?${qs.toString()}`, {
+      method: 'POST',
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok)
+      throw new Error(data?.detail || data?.error || 'Failed to predict')
+    setPredictProbe(data)
+    return data
+  }
+
   const run = async () => {
     setLoading(true)
     setError(null)
@@ -113,20 +216,7 @@ export function AdminJobsClient() {
     setLoading(true)
     setError(null)
     try {
-      const qs = new URLSearchParams()
-      if (districtCode.trim()) qs.set('district_code', districtCode.trim())
-      if (industryCode.trim()) qs.set('industry_code', industryCode.trim())
-
-      const res = await fetch(
-        `/api/admin/commercial/data-health?${qs.toString()}`,
-        {
-          cache: 'no-store',
-        }
-      )
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok)
-        throw new Error(data?.detail || data?.error || 'Failed to check')
-      setDataHealth(data)
+      await fetchDataHealth(districtCode, industryCode)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to check')
       setDataHealth(null)
@@ -139,19 +229,7 @@ export function AdminJobsClient() {
     setLoading(true)
     setError(null)
     try {
-      const dc = districtCode.trim()
-      const ic = industryCode.trim()
-      if (!dc || !ic)
-        throw new Error('district_code / industry_code 를 입력하세요')
-
-      const qs = new URLSearchParams({ district_code: dc, industry_code: ic })
-      const res = await fetch(`/api/commercial/predict?${qs.toString()}`, {
-        method: 'POST',
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok)
-        throw new Error(data?.detail || data?.error || 'Failed to predict')
-      setPredictProbe(data)
+      await fetchPredictProbe(districtCode, industryCode)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to predict')
       setPredictProbe(null)
@@ -163,6 +241,88 @@ export function AdminJobsClient() {
   useEffect(() => {
     load()
   }, [])
+
+  const runFixFlow = async () => {
+    setFixFlow({ running: true, step: 'check_health' })
+    setLoading(true)
+    setError(null)
+    try {
+      // Always re-check health before running expensive jobs.
+      const hRes = await fetch('/api/admin/ml/health', { cache: 'no-store' })
+      const hData = await hRes.json().catch(() => ({}))
+      setMlHealth(hData)
+      if (!hRes.ok)
+        throw new Error(
+          hData?.detail || hData?.error || 'Failed to load health'
+        )
+
+      if (!hData?.configured) {
+        throw new Error('ML_API_URL not configured')
+      }
+      if (hData?.compat === false) {
+        throw new Error(
+          'ML API is incompatible. ML_API_URL must point to the latest ml-api deployment.'
+        )
+      }
+
+      const tokenOk = true // requireAdmin already gates this page; run route checks token.
+      if (!tokenOk) throw new Error('ML_ADMIN_TOKEN not configured')
+
+      // 1) Collect commercial stats (may take long; SBIZ API).
+      setFixFlow({ running: true, step: 'collect_commercial' })
+      {
+        const res = await fetch('/api/admin/scheduler/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ job_type: 'collect_commercial' }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok)
+          throw new Error(
+            data?.detail || data?.error || 'Failed to start collect_commercial'
+          )
+      }
+      await waitForJob('collect_commercial', 65 * 60 * 1000)
+
+      // 2) Train business model (writes app/models/business_model.pkl).
+      setFixFlow({ running: true, step: 'train_business' })
+      {
+        const res = await fetch('/api/admin/scheduler/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ job_type: 'train_business' }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok)
+          throw new Error(
+            data?.detail || data?.error || 'Failed to start train_business'
+          )
+      }
+      await waitForJob('train_business', 20 * 60 * 1000)
+
+      // 3) Probe predict via Next.js API (must return source=ml_model).
+      setFixFlow({ running: true, step: 'probe' })
+      await fetchDataHealth(districtCode, industryCode)
+      const probe = await fetchPredictProbe(districtCode, industryCode)
+
+      const src = (probe?.source as string | undefined) || null
+      if (src !== 'ml_model') {
+        setFixFlow({
+          running: false,
+          step: 'probe',
+          note: "Probe finished but source isn't ml_model. Check ML_API_URL, data coverage, and ML API logs.",
+        })
+        return
+      }
+
+      setFixFlow({ running: false, step: 'done' })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to run fix flow')
+      setFixFlow({ running: false, step: 'idle' })
+    } finally {
+      setLoading(false)
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -182,6 +342,33 @@ export function AdminJobsClient() {
           </div>
         </div>
       )}
+
+      <div className="rounded-2xl border border-[#E5E8EB] bg-white p-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="text-sm font-semibold text-[#191F28]">
+              ML 경로 고정 플로우
+            </div>
+            <div className="mt-1 text-xs text-[#6B7684]">
+              health 호환성 확인 → 상권 수집(`collect_commercial`) → 상권 학습(
+              `train_business`) → 예측 probe에서 `source=ml_model` 확인
+            </div>
+            {fixFlow.step !== 'idle' && (
+              <div className="mt-2 text-xs text-[#191F28]">
+                step: <span className="font-semibold">{fixFlow.step}</span>
+                {fixFlow.note ? ` (${fixFlow.note})` : ''}
+              </div>
+            )}
+          </div>
+          <button
+            onClick={runFixFlow}
+            disabled={loading || fixFlow.running}
+            className="rounded-xl bg-[#111827] px-4 py-3 text-sm font-semibold text-white disabled:opacity-30"
+          >
+            고정 플로우 실행
+          </button>
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
         <div className="rounded-2xl border border-[#E5E8EB] bg-[#F9FAFB] p-4">

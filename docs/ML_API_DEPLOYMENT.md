@@ -27,6 +27,7 @@ node scripts/check_ml_api_compat.mjs 11680 Q12
 ## 배포 옵션 A: Railway (권장)
 
 레포 안의 `ml-api/`는 Railway 배포 설정 파일이 포함되어 있습니다.
+더 상세한 체크리스트/운영 루틴은 `docs/RAILWAY_DEPLOYMENT_CHECKLIST.md`를 따르세요.
 
 필수 환경변수(예시):
 
