@@ -181,6 +181,273 @@ export async function fetchDistrictChar(
   }
 }
 
+function clamp(n: number, lo: number, hi: number): number {
+  return Math.min(Math.max(n, lo), hi)
+}
+
+function weightedMean(
+  rows: Record<string, unknown>[],
+  field: string,
+  weightBy: (row: Record<string, unknown>) => number
+): number {
+  let wsum = 0
+  let vsum = 0
+  for (const r of rows) {
+    const v = num(r[field], NaN)
+    if (!isFinite(v)) continue
+    const w = weightBy(r)
+    if (!isFinite(w) || w <= 0) continue
+    wsum += w
+    vsum += w * v
+  }
+  return wsum > 0 ? vsum / wsum : 0
+}
+
+function weightedMode(
+  rows: Record<string, unknown>[],
+  field: string,
+  weightBy: (row: Record<string, unknown>) => number
+): string {
+  const map = new Map<string, number>()
+  for (const r of rows) {
+    const key = String(r[field] || '').trim()
+    if (!key) continue
+    const w = weightBy(r)
+    if (!isFinite(w) || w <= 0) continue
+    map.set(key, (map.get(key) || 0) + w)
+  }
+  let best = ''
+  let bestW = -1
+  map.forEach((w, k) => {
+    if (w > bestW) {
+      bestW = w
+      best = k
+    }
+  })
+  return best
+}
+
+/**
+ * 시군구 코드(5자리) 기준으로 district_characteristics를 "최신 분기"로 모아 집계.
+ * - 숫자: 유동인구(total_foot_traffic) 가중 평균
+ * - 범주: 유동인구 가중 최빈값
+ *
+ * 목적: 시군구 단위 화면에서 임의 1개 상권 샘플이 대표처럼 보이는 문제를 완화.
+ */
+export async function fetchDistrictCharAggregated(
+  supabase: SupabaseClient,
+  sigunguCode: string,
+  maxRows = 3000
+): Promise<Record<string, unknown>> {
+  try {
+    // 1) 최신 분기 찾기 (문자열 내림차순이 최신으로 동작한다는 가정: YYYYQQ)
+    // district_characteristics가 비어있을 수 있으니 다른 테이블로 fallback.
+    const findLatestQuarter = async (table: string): Promise<string> => {
+      try {
+        const { data } = await supabase
+          .from(table)
+          .select('base_year_quarter')
+          .like('commercial_district_code', `${sigunguCode}%`)
+          .order('base_year_quarter', { ascending: false })
+          .limit(1)
+        return (data?.[0]?.base_year_quarter as string) || ''
+      } catch {
+        return ''
+      }
+    }
+
+    let latestQuarter = await findLatestQuarter('district_characteristics')
+    if (!latestQuarter)
+      latestQuarter = await findLatestQuarter('work_population')
+    if (!latestQuarter)
+      latestQuarter = await findLatestQuarter('residential_population')
+    if (!latestQuarter)
+      latestQuarter = await findLatestQuarter('foot_traffic_statistics')
+    if (!latestQuarter) return {}
+
+    // 2) 최신 분기의 모든 상권 특성 행
+    const { data: rows } = await supabase
+      .from('district_characteristics')
+      .select('*')
+      .like('commercial_district_code', `${sigunguCode}%`)
+      .eq('base_year_quarter', latestQuarter)
+      .range(0, maxRows - 1)
+
+    const charRows = (rows || []) as Record<string, unknown>[]
+
+    // 3) 같은 분기의 유동인구 행을 weight로 사용
+    const { data: footRows } = await supabase
+      .from('foot_traffic_statistics')
+      .select('commercial_district_code,total_foot_traffic')
+      .like('commercial_district_code', `${sigunguCode}%`)
+      .eq('base_year_quarter', latestQuarter)
+      .range(0, maxRows - 1)
+
+    const weightMap = new Map<string, number>()
+    for (const r of (footRows || []) as Record<string, unknown>[]) {
+      const cd = String(r.commercial_district_code || '')
+      if (!cd) continue
+      const w = num(r.total_foot_traffic, 0)
+      if (w > 0) weightMap.set(cd, w)
+    }
+
+    const weightBy = (r: Record<string, unknown>) => {
+      const cd = String(r.commercial_district_code || '')
+      return weightMap.get(cd) || 1
+    }
+
+    const districtType = charRows.length
+      ? weightedMode(charRows, 'district_type', weightBy)
+      : ''
+    const primaryAgeGroup = charRows.length
+      ? weightedMode(charRows, 'primary_age_group', weightBy)
+      : ''
+    const peakStart = charRows.length
+      ? weightedMode(charRows, 'peak_time_start', weightBy)
+      : ''
+    const peakEnd = charRows.length
+      ? weightedMode(charRows, 'peak_time_end', weightBy)
+      : ''
+    const consumptionLevel = charRows.length
+      ? weightedMode(charRows, 'consumption_level', weightBy)
+      : ''
+
+    // student_ratio는 별도 실측 테이블이 없으므로 district_characteristics 기반(있으면)만 사용.
+    // office/resident는 work/residential 실측이 있으면 그 비율을 사용하고, 없으면 char 기반으로 fallback.
+    const studentRatio = clamp(
+      charRows.length ? weightedMean(charRows, 'student_ratio', weightBy) : 0,
+      0,
+      100
+    )
+
+    // 3.5) 실측 인구(직장/주거) 집계
+    const { data: workRows } = await supabase
+      .from('work_population')
+      .select('commercial_district_code,total_workers')
+      .like('commercial_district_code', `${sigunguCode}%`)
+      .eq('base_year_quarter', latestQuarter)
+      .range(0, maxRows - 1)
+
+    const { data: resRows } = await supabase
+      .from('residential_population')
+      .select('commercial_district_code,total_population')
+      .like('commercial_district_code', `${sigunguCode}%`)
+      .eq('base_year_quarter', latestQuarter)
+      .range(0, maxRows - 1)
+
+    const totalWorkers = (workRows || []).reduce(
+      (s: number, r: Record<string, unknown>) => s + num(r.total_workers),
+      0
+    )
+    const totalResidents = (resRows || []).reduce(
+      (s: number, r: Record<string, unknown>) => s + num(r.total_population),
+      0
+    )
+
+    let officeWorkerRatio = 0
+    let residentRatio = 0
+
+    if (totalWorkers > 0 || totalResidents > 0) {
+      // 실측 비율(직장/주거)을 (100 - student) 안에서 비례 배분해서 합이 100이 되게 맞춤
+      const denom = totalWorkers + totalResidents || 1
+      const officeShare = totalWorkers / denom
+      const residentShare = totalResidents / denom
+      const remaining = clamp(100 - studentRatio, 0, 100)
+      officeWorkerRatio = remaining * officeShare
+      residentRatio = remaining * residentShare
+    } else {
+      const officeFromChar = clamp(
+        charRows.length
+          ? weightedMean(charRows, 'office_worker_ratio', weightBy)
+          : 0,
+        0,
+        100
+      )
+      officeWorkerRatio = officeFromChar
+      residentRatio = clamp(100 - officeWorkerRatio - studentRatio, 0, 100)
+    }
+
+    const weekendSalesRatio = clamp(
+      charRows.length
+        ? weightedMean(charRows, 'weekend_sales_ratio', weightBy)
+        : 0,
+      0,
+      100
+    )
+
+    const avgTicketPrice = Math.round(
+      clamp(
+        charRows.length
+          ? weightedMean(charRows, 'avg_ticket_price', weightBy)
+          : 0,
+        0,
+        1_000_000
+      )
+    )
+
+    const peakTraffic = Math.round(
+      clamp(
+        charRows.length
+          ? weightedMean(charRows, 'peak_time_traffic', weightBy)
+          : 0,
+        0,
+        10_000_000
+      )
+    )
+
+    // 가중 최빈값으로 주중 우세 여부도 결정 (동률이면 false)
+    const weekdayDominant =
+      (charRows.length
+        ? (() => {
+            let t = 0
+            let f = 0
+            for (const r of charRows) {
+              const v = r.weekday_dominant
+              if (v == null) continue
+              const w = weightBy(r)
+              if (!isFinite(w) || w <= 0) continue
+              if (Boolean(v)) t += w
+              else f += w
+            }
+            return t > f
+          })()
+        : false) || false
+
+    // primary_age_ratio: 선택된 primary_age_group의 가중 비중(%) 추정
+    let primaryAgeRatio = 0
+    if (primaryAgeGroup) {
+      let wAll = 0
+      let wHit = 0
+      for (const r of charRows) {
+        const w = weightBy(r)
+        wAll += w
+        if (String(r.primary_age_group || '').trim() === primaryAgeGroup)
+          wHit += w
+      }
+      primaryAgeRatio = wAll > 0 ? (wHit / wAll) * 100 : 0
+    }
+
+    return {
+      base_year_quarter: latestQuarter,
+      district_type: districtType,
+      primary_age_group: primaryAgeGroup,
+      primary_age_ratio: Math.round(primaryAgeRatio * 10) / 10,
+      office_worker_ratio: Math.round(officeWorkerRatio * 10) / 10,
+      resident_ratio: Math.round(residentRatio * 10) / 10,
+      student_ratio: Math.round(studentRatio * 10) / 10,
+      peak_time_start: peakStart,
+      peak_time_end: peakEnd,
+      peak_time_traffic: peakTraffic,
+      weekday_dominant: weekdayDominant,
+      weekend_sales_ratio: Math.round(weekendSalesRatio * 10) / 10,
+      avg_ticket_price: avgTicketPrice,
+      consumption_level: consumptionLevel,
+    }
+  } catch {
+    return {}
+  }
+}
+
 // ============================================================================
 // 유틸리티
 // ============================================================================

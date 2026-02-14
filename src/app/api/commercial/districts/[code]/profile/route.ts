@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import {
   getSupabase,
-  fetchDistrictChar,
+  fetchDistrictCharAggregated,
   fetchFootTraffic,
   fetchBusinessStats,
   latestByIndustry,
@@ -24,7 +24,7 @@ export async function GET(
   try {
     const { code } = await params
     const supabase = getSupabase()
-    const charData = await fetchDistrictChar(supabase, code)
+    const charData = await fetchDistrictCharAggregated(supabase, code)
 
     let districtType = (charData.district_type as string) || ''
     let primaryAge = (charData.primary_age_group as string) || ''
