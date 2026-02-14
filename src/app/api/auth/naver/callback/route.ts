@@ -4,7 +4,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
 
 interface NaverTokenResponse {
   access_token: string
@@ -143,36 +142,38 @@ export async function GET(request: Request) {
       },
     })
 
-    // 이메일로 기존 사용자 조회
-    const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers()
-    const existingUser = existingUsers?.users?.find((u) => u.email === email)
-
     let userId: string
 
-    if (existingUser) {
-      // 기존 사용자
-      userId = existingUser.id
+    // Fast-path: lookup by email in user_profiles first (avoids listUsers O(n)).
+    const { data: existingProfile } = await supabaseAdmin
+      .from('user_profiles')
+      .select('id')
+      .eq('email', email)
+      .maybeSingle()
 
-      // 사용자 메타데이터 업데이트
+    if (existingProfile?.id) {
+      userId = existingProfile.id
+
+      // Load auth user to merge metadata safely.
+      const { data: authUser } =
+        await supabaseAdmin.auth.admin.getUserById(userId)
+      const existingMeta = authUser?.user?.user_metadata || {}
+
       await supabaseAdmin.auth.admin.updateUserById(userId, {
         user_metadata: {
-          ...existingUser.user_metadata,
+          ...existingMeta,
           naver_id: naverUser.id,
-          name:
-            naverUser.name ||
-            naverUser.nickname ||
-            existingUser.user_metadata?.name,
-          avatar_url:
-            naverUser.profile_image || existingUser.user_metadata?.avatar_url,
+          name: naverUser.name || naverUser.nickname || existingMeta?.name,
+          avatar_url: naverUser.profile_image || existingMeta?.avatar_url,
           provider: 'naver',
         },
       })
     } else {
-      // 새 사용자 생성
+      // Create new user (will also create user_profiles via trigger in most cases).
       const { data: newUser, error: createError } =
         await supabaseAdmin.auth.admin.createUser({
           email,
-          email_confirm: true, // 네이버에서 이메일 검증됨
+          email_confirm: true,
           user_metadata: {
             naver_id: naverUser.id,
             name: naverUser.name || naverUser.nickname,
@@ -182,13 +183,52 @@ export async function GET(request: Request) {
         })
 
       if (createError || !newUser.user) {
-        console.error('Failed to create user:', createError)
+        // Rare fallback: user exists but profile missing; fall back to listUsers once.
+        const msg = (createError?.message || '').toLowerCase()
+        if (msg.includes('already') || msg.includes('exists')) {
+          const { data: usersPage } = await supabaseAdmin.auth.admin.listUsers()
+          const found = usersPage?.users?.find((u) => u.email === email)
+          if (found?.id) {
+            userId = found.id
+          } else {
+            console.error('Failed to resolve existing user by email')
+            return NextResponse.redirect(
+              `${origin}/auth/login?error=${encodeURIComponent('사용자 조회 실패')}`
+            )
+          }
+        } else {
+          console.error('Failed to create user:', createError)
+          return NextResponse.redirect(
+            `${origin}/auth/login?error=${encodeURIComponent('사용자 생성 실패')}`
+          )
+        }
+      } else {
+        userId = newUser.user.id
+      }
+    }
+
+    // Suspended user gate (banned accounts cannot proceed)
+    try {
+      const { data: prof } = await supabaseAdmin
+        .from('user_profiles')
+        .select('is_suspended,suspended_until')
+        .eq('id', userId)
+        .maybeSingle()
+      const suspended = !!prof?.is_suspended
+      const until = prof?.suspended_until
+        ? new Date(prof.suspended_until)
+        : null
+      const activeSuspension =
+        suspended &&
+        (!until ||
+          (!Number.isNaN(until.getTime()) && until.getTime() > Date.now()))
+      if (activeSuspension) {
         return NextResponse.redirect(
-          `${origin}/auth/login?error=${encodeURIComponent('사용자 생성 실패')}`
+          `${origin}/auth/login?error=${encodeURIComponent('정지된 계정입니다. 관리자에게 문의해주세요.')}`
         )
       }
-
-      userId = newUser.user.id
+    } catch {
+      // ignore
     }
 
     // 4. 세션 생성 (magic link 방식 사용)

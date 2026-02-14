@@ -53,10 +53,94 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return data as UserProfile
   }, [])
 
+  const isSuspended = (profile: UserProfile | null) => {
+    if (!profile?.is_suspended) return false
+    if (!profile.suspended_until) return true
+    const until = new Date(profile.suspended_until)
+    return !Number.isNaN(until.getTime()) ? until.getTime() > Date.now() : true
+  }
+
+  const jwtIatMs = (accessToken?: string | null) => {
+    if (!accessToken) return null
+    try {
+      const parts = accessToken.split('.')
+      if (parts.length < 2) return null
+      const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+      const pad =
+        payload.length % 4 === 0 ? '' : '='.repeat(4 - (payload.length % 4))
+      const json = atob(payload + pad)
+      const obj = JSON.parse(json) as { iat?: number }
+      if (typeof obj.iat !== 'number') return null
+      return obj.iat * 1000
+    } catch {
+      return null
+    }
+  }
+
+  const shouldForceLogout = (
+    profile: UserProfile | null,
+    user: User | null,
+    accessToken?: string | null
+  ) => {
+    const marker = profile?.force_logout_at
+    if (!marker) return false
+    const markerMs = new Date(marker).getTime()
+    if (Number.isNaN(markerMs)) return false
+
+    // Primary: token issued-at time.
+    const iat = jwtIatMs(accessToken)
+    if (typeof iat === 'number') return iat < markerMs
+
+    // Fallback: last_sign_in_at if present on the user object.
+    const lastSignIn = (user as Record<string, unknown> | null)
+      ?.last_sign_in_at as string | undefined
+    if (!lastSignIn) return false
+    const lastMs = new Date(lastSignIn).getTime()
+    if (Number.isNaN(lastMs)) return false
+    return lastMs < markerMs
+  }
+
+  const enforceSuspension = useCallback(async (profile: UserProfile | null) => {
+    if (!isSuspended(profile)) return false
+    // If the account is suspended, drop the session client-side as a belt-and-suspenders.
+    try {
+      await supabase.auth.signOut()
+    } catch {
+      // ignore
+    } finally {
+      setUser(null)
+      setProfile(null)
+    }
+    return true
+  }, [])
+
+  const enforceForceLogout = useCallback(
+    async (
+      profile: UserProfile | null,
+      user: User | null,
+      accessToken?: string | null
+    ) => {
+      if (!shouldForceLogout(profile, user, accessToken)) return false
+      try {
+        await supabase.auth.signOut()
+      } catch {
+        // ignore
+      } finally {
+        setUser(null)
+        setProfile(null)
+      }
+      return true
+    },
+    []
+  )
+
   // 사용자 정보 새로고침
   const refreshUser = useCallback(async () => {
     setIsLoading(true)
     try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
       const {
         data: { user: currentUser },
       } = await supabase.auth.getUser()
@@ -65,7 +149,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       if (currentUser) {
         const userProfile = await fetchProfile(currentUser.id)
-        setProfile(userProfile)
+        if (!(await enforceSuspension(userProfile))) {
+          if (
+            await enforceForceLogout(
+              userProfile,
+              currentUser,
+              session?.access_token
+            )
+          )
+            return
+          setProfile(userProfile)
+        }
       } else {
         setProfile(null)
       }
@@ -172,7 +266,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
           if (session?.user) {
             setUser(session.user)
             const userProfile = await fetchProfile(session.user.id)
-            setProfile(userProfile)
+            if (!(await enforceSuspension(userProfile))) {
+              if (
+                await enforceForceLogout(
+                  userProfile,
+                  session.user,
+                  session.access_token
+                )
+              )
+                return
+              setProfile(userProfile)
+            }
           }
         } else if (event === 'SIGNED_OUT') {
           setUser(null)

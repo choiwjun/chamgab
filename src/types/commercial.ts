@@ -48,6 +48,7 @@ export interface BusinessPredictionResult {
   confidence: number
   factors: PredictionFactor[]
   recommendation: string
+  source?: 'ml_model' | 'rule_based'
 }
 
 // 지역 비교

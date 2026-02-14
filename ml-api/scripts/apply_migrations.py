@@ -45,9 +45,15 @@ DB_PASSWORD = os.environ.get('SUPABASE_DB_PASSWORD', '')
 
 # Migration files to apply
 MIGRATIONS = [
-    '015_create_commercial_analysis_tables.sql',
-    '016_add_commercial_demographics.sql',
-    '018_add_collected_columns.sql',
+    '025_create_search_stats.sql',
+    '026_create_land_regional_stats.sql',
+    '027_add_region_code_to_land_transactions.sql',
+    '028_create_land_collection_runs.sql',
+    '029_harden_rls_service_policies.sql',
+    '030_create_admin_console.sql',
+    '031_add_user_suspension.sql',
+    '032_create_chamgab_analysis_events.sql',
+    '033_admin_subscription_actions.sql',
 ]
 
 

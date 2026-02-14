@@ -11,10 +11,11 @@ export const metadata: Metadata = {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ redirect?: string }>
+  searchParams: Promise<{ redirect?: string; error?: string }>
 }) {
   const params = await searchParams
   const redirectUrl = params.redirect || '/'
+  const error = params.error
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-white px-6 py-12">
@@ -30,6 +31,17 @@ export default async function LoginPage({
             AI가 분석하는 부동산의 진짜 가치
           </p>
         </div>
+
+        {error === 'suspended' && (
+          <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            정지된 계정입니다. 관리자에게 문의해주세요.
+          </div>
+        )}
+        {error === 'forced_logout' && (
+          <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            보안상 로그아웃 처리되었습니다. 다시 로그인해주세요.
+          </div>
+        )}
 
         {/* 로그인 폼 */}
         <LoginForm redirectUrl={redirectUrl} />

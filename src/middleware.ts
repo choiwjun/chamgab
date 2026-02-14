@@ -15,6 +15,7 @@ const PROTECTED_ROUTES = [
   '/mypage',
   '/reports',
   '/subscriptions',
+  '/admin',
 ]
 
 /**
@@ -91,6 +92,10 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+
   const pathname = request.nextUrl.pathname
 
   // 보호된 라우트 접근 제어
@@ -103,6 +108,67 @@ export async function middleware(request: NextRequest) {
     const redirectUrl = new URL('/auth/login', request.url)
     redirectUrl.searchParams.set('redirect', pathname)
     return NextResponse.redirect(redirectUrl)
+  }
+
+  // Suspended users: block protected routes (server-side gate)
+  if (isProtectedRoute && user) {
+    try {
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('is_suspended,suspended_until,force_logout_at')
+        .eq('id', user.id)
+        .maybeSingle()
+
+      const suspended = !!profile?.is_suspended
+      const until = profile?.suspended_until
+        ? new Date(profile.suspended_until)
+        : null
+      const activeSuspension =
+        suspended &&
+        (!until ||
+          (!Number.isNaN(until.getTime()) && until.getTime() > Date.now()))
+
+      if (activeSuspension) {
+        const redirectUrl = new URL('/auth/login', request.url)
+        redirectUrl.searchParams.set('error', 'suspended')
+        return NextResponse.redirect(redirectUrl)
+      }
+
+      const marker = profile?.force_logout_at
+        ? new Date(profile.force_logout_at)
+        : null
+      const markerMs =
+        marker && !Number.isNaN(marker.getTime()) ? marker.getTime() : null
+
+      const jwtIatMs = (accessToken?: string | null) => {
+        if (!accessToken) return null
+        try {
+          const parts = accessToken.split('.')
+          if (parts.length < 2) return null
+          const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+          const pad =
+            payload.length % 4 === 0 ? '' : '='.repeat(4 - (payload.length % 4))
+          const json = atob(payload + pad)
+          const obj = JSON.parse(json) as { iat?: number }
+          if (typeof obj.iat !== 'number') return null
+          return obj.iat * 1000
+        } catch {
+          return null
+        }
+      }
+
+      const iatMs = jwtIatMs(session?.access_token)
+      const forcedLogout =
+        markerMs !== null && typeof iatMs === 'number' && iatMs < markerMs
+
+      if (forcedLogout) {
+        const redirectUrl = new URL('/auth/login', request.url)
+        redirectUrl.searchParams.set('error', 'forced_logout')
+        return NextResponse.redirect(redirectUrl)
+      }
+    } catch {
+      // If profile lookup fails, do not block.
+    }
   }
 
   // 로그인된 상태에서 Auth 페이지 접근 시 홈으로 리다이렉트

@@ -15,12 +15,13 @@ export default function robots(): MetadataRoute.Robots {
           '/mypage/',
           '/checkout/',
           '/notifications/',
+          '/admin/',
         ],
       },
       {
         userAgent: 'GPTBot',
         allow: '/',
-        disallow: ['/api/', '/auth/', '/mypage/', '/checkout/'],
+        disallow: ['/api/', '/auth/', '/mypage/', '/checkout/', '/admin/'],
       },
       {
         userAgent: 'Google-Extended',

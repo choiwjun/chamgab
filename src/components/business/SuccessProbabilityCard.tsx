@@ -19,40 +19,48 @@ export function SuccessProbabilityCard({
   districtName,
   industryName,
 }: SuccessProbabilityCardProps) {
-  const { success_probability, confidence, factors, recommendation } = result
+  const { success_probability, confidence, factors, recommendation, source } =
+    result
 
-  // 성공 확률에 따른 색상
   const getColorClass = (probability: number) => {
-    if (probability >= 70) return 'text-green-600 bg-green-50'
-    if (probability >= 50) return 'text-yellow-600 bg-yellow-50'
-    return 'text-red-600 bg-red-50'
+    if (probability >= 70) return 'text-green-700 bg-green-50'
+    if (probability >= 50) return 'text-amber-700 bg-amber-50'
+    return 'text-red-700 bg-red-50'
   }
 
   const getProgressColor = (probability: number) => {
     if (probability >= 70) return 'bg-green-500'
-    if (probability >= 50) return 'bg-yellow-500'
+    if (probability >= 50) return 'bg-amber-500'
     return 'bg-red-500'
   }
 
   const getRecommendationIcon = (probability: number) => {
     if (probability >= 70)
       return <CheckCircle className="h-6 w-6 text-green-600" />
-    if (probability >= 50)
-      return <AlertCircle className="h-6 w-6 text-yellow-600" />
-    return <AlertCircle className="h-6 w-6 text-red-600" />
+    return <AlertCircle className="h-6 w-6 text-amber-600" />
   }
+
+  const sourceLabel =
+    source === 'ml_model'
+      ? 'ML 모델'
+      : source === 'rule_based'
+        ? '룰 기반(대체)'
+        : null
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-8">
-      {/* 헤더 */}
       <div className="mb-8 text-center">
         <h2 className="mb-2 text-2xl font-bold text-gray-900">
-          {districtName} × {industryName}
+          {districtName} / {industryName}
         </h2>
-        <p className="text-gray-600">창업 성공 예측 분석</p>
+        <p className="text-gray-600">창업 성공 확률 분석</p>
+        {sourceLabel && (
+          <div className="mt-3 inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-semibold text-gray-700">
+            {sourceLabel}
+          </div>
+        )}
       </div>
 
-      {/* 성공 확률 */}
       <div className="mb-8 text-center">
         <div className="mb-4">
           <div
@@ -67,37 +75,39 @@ export function SuccessProbabilityCard({
           </div>
         </div>
 
-        {/* 프로그레스 바 */}
         <div className="mb-4 h-3 w-full rounded-full bg-gray-200">
           <div
-            className={`h-3 rounded-full transition-all duration-1000 ${getProgressColor(success_probability)}`}
+            className={`h-3 rounded-full transition-all duration-700 ${getProgressColor(success_probability)}`}
             style={{ width: `${success_probability}%` }}
           />
         </div>
 
-        {/* 신뢰도 */}
         <div className="flex items-center justify-center gap-2 text-sm text-gray-600">
-          <span>분석 신뢰도:</span>
+          <span>분석 신뢰도</span>
           <span className="font-semibold text-gray-900">
             {confidence.toFixed(1)}%
           </span>
         </div>
+
+        {source === 'rule_based' && confidence < 90 && (
+          <div className="mt-3 text-xs text-gray-500">
+            ML API 연결/데이터 최신화가 되면 신뢰도가 더 올라갈 수 있습니다.
+          </div>
+        )}
       </div>
 
-      {/* 추천 메시지 */}
       <div
-        className={`rounded-xl p-4 ${getColorClass(success_probability)} mb-8`}
+        className={`mb-8 rounded-xl p-4 ${getColorClass(success_probability)}`}
       >
         <div className="flex gap-3">
           {getRecommendationIcon(success_probability)}
           <div className="flex-1">
-            <h3 className="mb-1 font-semibold">종합 평가</h3>
+            <h3 className="mb-1 font-semibold">종합 의견</h3>
             <p className="text-sm">{recommendation}</p>
           </div>
         </div>
       </div>
 
-      {/* 주요 요인 */}
       <div>
         <h3 className="mb-4 font-semibold text-gray-900">주요 영향 요인</h3>
         <div className="space-y-3">
@@ -123,7 +133,7 @@ export function SuccessProbabilityCard({
                     }`}
                   >
                     {factor.direction === 'positive' ? '+' : '-'}
-                    {factor.impact.toFixed(1)}점
+                    {Number(factor.impact).toFixed(1)}
                   </span>
                 </div>
                 <div className="mt-1 h-1.5 w-full rounded-full bg-gray-200">
@@ -134,7 +144,7 @@ export function SuccessProbabilityCard({
                         : 'bg-red-500'
                     }`}
                     style={{
-                      width: `${Math.min(Math.abs(factor.impact), 100)}%`,
+                      width: `${Math.min(Math.abs(Number(factor.impact)), 100)}%`,
                     }}
                   />
                 </div>
