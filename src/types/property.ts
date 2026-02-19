@@ -60,4 +60,5 @@ export interface SearchSuggestion {
   type: 'property' | 'complex' | 'region'
   address?: string
   description?: string
+  region_level?: 1 | 2 | 3
 }

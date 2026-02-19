@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from 'next/server'
 export const dynamic = 'force-dynamic'
 import { getComplexes, getComplexesByBrand } from '@/services/complexes'
 import { REGION_COORDS } from '@/lib/region-coords'
-import { sanitizeFilterInput } from '@/lib/sanitize'
+import { buildSearchTerms, sanitizeFilterInput } from '@/lib/sanitize'
 
 function getSupabase() {
   return createClient(
@@ -192,11 +192,15 @@ async function handleMapMode(
     })
 
   if (keyword) {
-    const sanitizedKeyword = sanitizeFilterInput(keyword)
-    if (sanitizedKeyword) {
-      query = query.or(
-        `name.ilike.%${sanitizedKeyword}%,sigungu.ilike.%${sanitizedKeyword}%,address.ilike.%${sanitizedKeyword}%`
-      )
+    const terms = buildSearchTerms(keyword, 5)
+    if (terms.length > 0) {
+      const searchFilters = terms.flatMap((term) => [
+        `name.ilike.%${term}%`,
+        `sigungu.ilike.%${term}%`,
+        `sido.ilike.%${term}%`,
+        `address.ilike.%${term}%`,
+      ])
+      query = query.or(searchFilters.join(','))
     }
   }
   if (sigungu) {

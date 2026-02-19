@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Search, MapPin, Home, ArrowRight } from 'lucide-react'
 import { searchAutocomplete } from '@/lib/api/properties'
 import type { SearchSuggestion } from '@/types/property'
+import { normalizeSearchQuery } from '@/lib/sanitize'
 
 export function SearchBar() {
   const router = useRouter()
@@ -62,14 +63,15 @@ export function SearchBar() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (query.trim()) {
+    const normalized = normalizeSearchQuery(query)
+    if (normalized) {
       fetch('/api/search/events', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ event: 'search_submit', query: query.trim() }),
+        body: JSON.stringify({ event: 'search_submit', query: normalized }),
         keepalive: true,
       }).catch(() => {})
-      router.push(`/search?q=${encodeURIComponent(query.trim())}`)
+      router.push(`/search?q=${encodeURIComponent(normalized)}`)
       setIsOpen(false)
       setSuggestions([])
     }
@@ -97,9 +99,8 @@ export function SearchBar() {
     } else if (suggestion.type === 'complex' && suggestion.id) {
       router.push(`/complex/${suggestion.id}`)
     } else if (suggestion.type === 'region' && suggestion.id) {
-      router.push(
-        `/search?region=${suggestion.id}&sigungu=${encodeURIComponent(suggestion.name)}`
-      )
+      // Region suggestions can be level 1/2/3. Pass region id only and let API resolve.
+      router.push(`/search?region=${encodeURIComponent(suggestion.id)}`)
     } else {
       router.push(`/search?q=${encodeURIComponent(suggestion.name)}`)
     }

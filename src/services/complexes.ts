@@ -1,9 +1,8 @@
-// @TASK P2-R0-T1 - Complexes 서비스 레이어
-// @SPEC specs/domain/resources.yaml#complexes
+// @TASK P2-R0-T1 - Complexes ?쒕퉬???덉씠??// @SPEC specs/domain/resources.yaml#complexes
 
 import { createClient } from '@supabase/supabase-js'
 import type { Complex, ComplexSearchParams } from '@/types/complex'
-import { sanitizeFilterInput } from '@/lib/sanitize'
+import { buildSearchTerms, sanitizeFilterInput } from '@/lib/sanitize'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || '',
@@ -18,7 +17,7 @@ export interface ComplexListResult {
 }
 
 /**
- * 아파트 단지 목록 조회
+ * ?꾪뙆???⑥? 紐⑸줉 議고쉶
  */
 export async function getComplexes(
   params: ComplexSearchParams
@@ -28,24 +27,27 @@ export async function getComplexes(
 
   let query = supabase.from('complexes').select('*', { count: 'exact' })
 
-  // 필터 적용
+  // ?꾪꽣 ?곸슜
   if (sido) {
     query = query.eq('sido', sido)
   }
   if (sigungu) {
-    // 선택 필터는 정확 매칭으로 처리 (검색어 조건과 충돌 방지)
+    // ?좏깮 ?꾪꽣???뺥솗 留ㅼ묶?쇰줈 泥섎━ (寃?됱뼱 議곌굔怨?異⑸룎 諛⑹?)
     const sanitizedSigungu = sanitizeFilterInput(sigungu)
     if (sanitizedSigungu) {
       query = query.eq('sigungu', sanitizedSigungu)
     }
   }
   if (keyword) {
-    // 키워드가 지역명일 수 있으므로 이름, 시군구, 주소에서 모두 검색
-    const sanitizedKeyword = sanitizeFilterInput(keyword)
-    if (sanitizedKeyword) {
-      query = query.or(
-        `name.ilike.%${sanitizedKeyword}%,sigungu.ilike.%${sanitizedKeyword}%,address.ilike.%${sanitizedKeyword}%`
-      )
+    const terms = buildSearchTerms(keyword, 5)
+    if (terms.length > 0) {
+      const searchFilters = terms.flatMap((term) => [
+        `name.ilike.%${term}%`,
+        `sigungu.ilike.%${term}%`,
+        `sido.ilike.%${term}%`,
+        `address.ilike.%${term}%`,
+      ])
+      query = query.or(searchFilters.join(','))
     }
   }
 
@@ -60,7 +62,7 @@ export async function getComplexes(
     throw new Error(error.message)
   }
 
-  // location 변환 (PostGIS GEOGRAPHY → lat/lng)
+  // location 蹂??(PostGIS GEOGRAPHY ??lat/lng)
   const items = (data || []).map(transformComplex)
 
   return {
@@ -72,7 +74,7 @@ export async function getComplexes(
 }
 
 /**
- * 아파트 단지 단일 조회
+ * ?꾪뙆???⑥? ?⑥씪 議고쉶
  */
 export async function getComplexById(id: string): Promise<Complex | null> {
   const { data, error } = await supabase
@@ -92,7 +94,7 @@ export async function getComplexById(id: string): Promise<Complex | null> {
 }
 
 /**
- * 브랜드별 아파트 단지 목록 조회
+ * 釉뚮옖?쒕퀎 ?꾪뙆???⑥? 紐⑸줉 議고쉶
  */
 export async function getComplexesByBrand(
   brand: string,
@@ -123,9 +125,7 @@ export async function getComplexesByBrand(
 }
 
 /**
- * DB 레코드를 Complex 타입으로 변환
- * PostGIS GEOGRAPHY 타입을 lat/lng 객체로 변환
- */
+ * DB ?덉퐫?쒕? Complex ??낆쑝濡?蹂?? * PostGIS GEOGRAPHY ??낆쓣 lat/lng 媛앹껜濡?蹂?? */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function transformComplex(record: any): Complex {
   const complex: Complex = {
@@ -146,9 +146,9 @@ function transformComplex(record: any): Complex {
     updated_at: record.updated_at,
   }
 
-  // PostGIS GEOGRAPHY POINT → lat/lng 변환
+  // PostGIS GEOGRAPHY POINT -> lat/lng
   if (record.location) {
-    // Supabase는 GEOGRAPHY를 GeoJSON 형식으로 반환
+    // Supabase??GEOGRAPHY瑜?GeoJSON ?뺤떇?쇰줈 諛섑솚
     // { type: 'Point', coordinates: [lng, lat] }
     if (typeof record.location === 'object' && record.location.coordinates) {
       complex.location = {
