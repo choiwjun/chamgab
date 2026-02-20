@@ -563,12 +563,12 @@ async def predict_business_success(
     weekend_ratio = (weekend_ft / (weekday_ft + weekend_ft) * 100) if (weekday_ft + weekend_ft) > 0 else 35.0
 
     feat = {
-        "survival_rate": survival_rate or 75.0,
-        "monthly_avg_sales": monthly_avg_sales or 40000000,
-        "sales_growth_rate": sales_growth_rate or 3.0,
-        "store_count": store_count or 120,
-        "franchise_ratio": franchise_ratio or 0.3,
-        "competition_ratio": competition_ratio or 1.2,
+        "survival_rate": survival_rate if survival_rate is not None else 50.0,
+        "monthly_avg_sales": monthly_avg_sales if monthly_avg_sales is not None else 20_000_000,
+        "sales_growth_rate": sales_growth_rate if sales_growth_rate is not None else 0.0,
+        "store_count": store_count if store_count is not None else 80,
+        "franchise_ratio": franchise_ratio if franchise_ratio is not None else 0.15,
+        "competition_ratio": competition_ratio if competition_ratio is not None else 1.5,
     }
 
     result = business_model_service.predict(

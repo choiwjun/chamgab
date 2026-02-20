@@ -21,6 +21,7 @@ import {
   FACTOR_NAME_MAP,
   INDUSTRY_NAMES,
   num,
+  numOrNull,
 } from '../_helpers'
 
 const ML_API_URL =
@@ -213,6 +214,27 @@ function calcRuleBasedConfidence(args: {
   return Math.round(Math.min(Math.max(c, 30), cap) * 10) / 10
 }
 
+function calcMlConfidence(args: {
+  ruleBasedConfidence: number
+  successProbability: number
+  modelConfidence: number
+  hasFullCoverage: boolean
+}): number {
+  const p = Math.min(Math.max(args.successProbability, 0), 100) / 100
+  // 0 near 50/50, 1 near 0% or 100% prediction.
+  const decisiveness = 1 - 4 * p * (1 - p)
+  const decisivenessScore = 35 + decisiveness * 55
+  const modelConfidence = Math.min(Math.max(args.modelConfidence, 50), 99)
+
+  const blended =
+    args.ruleBasedConfidence * 0.6 +
+    decisivenessScore * 0.3 +
+    modelConfidence * 0.1
+
+  const cap = args.hasFullCoverage ? 93 : 85
+  return Math.round(Math.min(Math.max(blended, 35), cap) * 10) / 10
+}
+
 function weightedMean(
   rows: Record<string, unknown>[],
   field: string,
@@ -299,18 +321,20 @@ export async function POST(request: NextRequest) {
       franchiseRatio = sc > 0 ? Math.round((fc / sc) * 1000) / 1000 : null
     }
 
-    // 명시적 파라미터 우선
+    // 명시적 파라미터 우선 (nullish coalescing: 0은 유효한 값으로 보존)
     const feat = {
       survival_rate:
-        num(params.get('survival_rate'), 0) || survivalRate || 75.0,
+        numOrNull(params.get('survival_rate')) ?? survivalRate ?? 50.0,
       monthly_avg_sales:
-        num(params.get('monthly_avg_sales'), 0) || monthlyAvgSales || 40000000,
+        numOrNull(params.get('monthly_avg_sales')) ??
+        monthlyAvgSales ??
+        20_000_000,
       sales_growth_rate:
-        num(params.get('sales_growth_rate'), 0) || salesGrowthRate || 3.0,
-      store_count: num(params.get('store_count'), 0) || storeCount || 120,
+        numOrNull(params.get('sales_growth_rate')) ?? salesGrowthRate ?? 0.0,
+      store_count: numOrNull(params.get('store_count')) ?? storeCount ?? 80,
       franchise_ratio:
-        num(params.get('franchise_ratio'), 0) || franchiseRatio || 0.3,
-      competition_ratio: num(params.get('competition_ratio'), 0) || 1.2,
+        numOrNull(params.get('franchise_ratio')) ?? franchiseRatio ?? 0.15,
+      competition_ratio: numOrNull(params.get('competition_ratio')) ?? 1.5,
     }
 
     const mlCall = await callMlApi({
@@ -329,14 +353,30 @@ export async function POST(request: NextRequest) {
       hasStoreCount: storeCount != null,
       hasFranchise: franchiseRatio != null,
     })
+    const hasFullCoverage =
+      bizLatest.length > 0 && salesLatest.length > 0 && storesLatest.length > 0
 
     if (mlCall.ok) {
+      const mlConfidence = calcMlConfidence({
+        ruleBasedConfidence: ruleConfidence,
+        successProbability: mlCall.data.success_probability,
+        modelConfidence: mlCall.data.confidence,
+        hasFullCoverage,
+      })
       return NextResponse.json({
         success_probability: mlCall.data.success_probability,
-        confidence: mlCall.data.confidence,
+        confidence: mlConfidence,
+        model_confidence:
+          Math.round(Math.min(Math.max(mlCall.data.confidence, 0), 100) * 10) /
+          10,
         factors: mlCall.data.factors,
         recommendation: mlCall.data.recommendation,
         source: 'ml_model',
+        data_coverage: {
+          business_rows: bizLatest.length,
+          sales_rows: salesLatest.length,
+          store_rows: storesLatest.length,
+        },
       })
     }
 

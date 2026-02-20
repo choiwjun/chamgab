@@ -467,6 +467,13 @@ export function num(val: unknown, fallback = 0): number {
   return isNaN(n) ? fallback : n
 }
 
+/** Number or null — 파라미터 미설정 시 null 반환 (0은 유효값으로 보존) */
+export function numOrNull(val: unknown): number | null {
+  if (val == null || val === '') return null
+  const n = Number(val)
+  return isNaN(n) ? null : n
+}
+
 /** 안전한 평균 */
 export function avg(
   rows: Record<string, unknown>[],
@@ -605,23 +612,78 @@ export function fallbackPredict(features: {
     direction: string
   }[]
 } {
-  let score = 0
-  score += features.survival_rate * 0.4
-  score += Math.min(features.sales_growth_rate * 5, 20)
-  score += Math.max(20 - features.competition_ratio * 10, 0)
-  score += features.franchise_ratio * 20
+  // 1. Survival component: 0-35 (주요 요인, 0-100% 정규화)
+  const survComp = (features.survival_rate / 100) * 35
 
-  const success_probability = Math.min(Math.max(score, 0), 100)
+  // 2. Sales component: 0-20 (로그 스케일, 매출 수준 차별화)
+  const salesComp = Math.min(
+    Math.log10(Math.max(features.monthly_avg_sales, 5_000_000) / 5_000_000) *
+      12.5,
+    20
+  )
+
+  // 3. Growth component: -5 ~ +15
+  const growthComp = Math.min(
+    Math.max(features.sales_growth_rate * 2.5, -5),
+    15
+  )
+
+  // 4. Competition penalty: -15 ~ +5 (ratio > 1이면 패널티)
+  const compComp = Math.min(
+    Math.max((1 - features.competition_ratio) * 10, -15),
+    5
+  )
+
+  // 5. Franchise bonus: 0-8
+  const franchComp = Math.min(features.franchise_ratio * 25, 8)
+
+  // 6. Store density signal: 2-7 (적정 점포수 = 시장 검증)
+  const sc = features.store_count
+  const storeComp = sc >= 30 && sc <= 150 ? 7 : sc > 150 ? 4 : 2
+
+  const score =
+    survComp + salesComp + growthComp + compComp + franchComp + storeComp
+  const success_probability = Math.min(Math.max(score, 5), 95)
+
+  // 기여도는 실제 컴포넌트 크기 기반
+  const contribs = [
+    {
+      name: 'survival_rate',
+      importance: Math.abs(survComp) / 100,
+      direction: survComp >= 0 ? 'positive' : 'negative',
+    },
+    {
+      name: 'monthly_avg_sales',
+      importance: Math.abs(salesComp) / 100,
+      direction: 'positive',
+    },
+    {
+      name: 'sales_growth_rate',
+      importance: Math.abs(growthComp) / 100,
+      direction: growthComp >= 0 ? 'positive' : 'negative',
+    },
+    {
+      name: 'competition_ratio',
+      importance: Math.abs(compComp) / 100,
+      direction: compComp >= 0 ? 'positive' : 'negative',
+    },
+    {
+      name: 'franchise_ratio',
+      importance: Math.abs(franchComp) / 100,
+      direction: 'positive',
+    },
+    {
+      name: 'store_count',
+      importance: Math.abs(storeComp) / 100,
+      direction: 'positive',
+    },
+  ]
+  contribs.sort((a, b) => b.importance - a.importance)
 
   return {
     success_probability: Math.round(success_probability * 10) / 10,
-    confidence: 60.0,
-    feature_contributions: [
-      { name: 'survival_rate', importance: 0.4, direction: 'positive' },
-      { name: 'sales_growth_rate', importance: 0.2, direction: 'positive' },
-      { name: 'competition_ratio', importance: 0.2, direction: 'negative' },
-      { name: 'franchise_ratio', importance: 0.2, direction: 'positive' },
-    ],
+    confidence: 55.0,
+    feature_contributions: contribs.slice(0, 5),
   }
 }
 
