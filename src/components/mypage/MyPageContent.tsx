@@ -3,6 +3,7 @@
 // @TASK P4-S4 - 마이페이지 콘텐츠 (Editorial Luxury 스타일)
 
 import { useRouter } from 'next/navigation'
+import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import {
   User,
@@ -14,6 +15,7 @@ import {
   Crown,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
+import { ENABLE_FREE_OPEN_MODE } from '@/lib/features'
 
 const TIER_BADGES = {
   free: { label: 'Free', color: 'bg-[#8B95A1]', textColor: 'text-white' },
@@ -25,35 +27,68 @@ const TIER_BADGES = {
   },
 }
 
+interface CreditData {
+  daily_credit_used: number
+  daily_credit_limit: number
+  monthly_credit_used: number
+  monthly_credit_limit: number
+  bonus_credits: number
+}
+
 export function MyPageContent() {
   const router = useRouter()
   const { user, profile, signOut, isLoading } = useAuth()
+  const [credits, setCredits] = useState<CreditData | null>(null)
+
+  // 마이페이지 진입 시 서버에서 최신 크레딧 데이터 조회
+  useEffect(() => {
+    if (!user) return
+    fetch('/api/me/credits')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.profile) {
+          setCredits({
+            daily_credit_used: data.profile.daily_credit_used ?? 0,
+            daily_credit_limit: data.profile.daily_credit_limit ?? 20,
+            monthly_credit_used: data.profile.monthly_credit_used ?? 0,
+            monthly_credit_limit: data.profile.monthly_credit_limit ?? 400,
+            bonus_credits: data.profile.bonus_credits ?? 0,
+          })
+        }
+      })
+      .catch(() => {})
+  }, [user])
 
   const handleLogout = async () => {
     await signOut()
-    router.push('/')
-    router.refresh()
+    window.location.href = '/'
   }
 
+  // 서버 데이터 우선, 없으면 AuthProvider profile fallback
   const dailyCreditsUsed =
-    typeof profile?.daily_credit_used === 'number'
+    credits?.daily_credit_used ??
+    (typeof profile?.daily_credit_used === 'number'
       ? profile.daily_credit_used
-      : profile?.daily_analysis_count || 0
+      : 0)
   const dailyCreditsLimit =
-    typeof profile?.daily_credit_limit === 'number'
+    credits?.daily_credit_limit ??
+    (typeof profile?.daily_credit_limit === 'number'
       ? profile.daily_credit_limit
-      : profile?.daily_analysis_limit || 3
+      : 20)
 
   const monthlyCreditsUsed =
-    typeof profile?.monthly_credit_used === 'number'
+    credits?.monthly_credit_used ??
+    (typeof profile?.monthly_credit_used === 'number'
       ? profile.monthly_credit_used
-      : null
+      : null)
   const monthlyCreditsLimit =
-    typeof profile?.monthly_credit_limit === 'number'
+    credits?.monthly_credit_limit ??
+    (typeof profile?.monthly_credit_limit === 'number'
       ? profile.monthly_credit_limit
-      : null
+      : null)
   const bonusCredits =
-    typeof profile?.bonus_credits === 'number' ? profile.bonus_credits : 0
+    credits?.bonus_credits ??
+    (typeof profile?.bonus_credits === 'number' ? profile.bonus_credits : 0)
 
   const usagePercent =
     dailyCreditsLimit > 0 ? (dailyCreditsUsed / dailyCreditsLimit) * 100 : 0
@@ -75,6 +110,10 @@ export function MyPageContent() {
       href: '/checkout/plans',
     },
   ]
+
+  if (ENABLE_FREE_OPEN_MODE) {
+    menuItems.pop()
+  }
 
   // Loading state
   if (isLoading) {
@@ -192,7 +231,7 @@ export function MyPageContent() {
             {bonusCredits > 0 && <div>보너스: {bonusCredits}</div>}
           </div>
         )}
-        {displayTier === 'free' && (
+        {!ENABLE_FREE_OPEN_MODE && displayTier === 'free' && (
           <p className="mt-4 text-sm text-[#4E5968]">
             Premium으로 업그레이드하면 더 많은 크레딧을 사용할 수 있어요
           </p>
