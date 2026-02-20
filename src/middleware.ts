@@ -5,23 +5,66 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+const AUTH_REQUEST_TIMEOUT_MS = 8000
+
+async function withTimeout<T>(
+  operation: Promise<T>,
+  fallback: T,
+  label: string
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<T>((resolve) => {
+        timeoutId = setTimeout(() => {
+          console.warn(
+            `[middleware] ${label} timed out after ${AUTH_REQUEST_TIMEOUT_MS}ms`
+          )
+          resolve(fallback)
+        }, AUTH_REQUEST_TIMEOUT_MS)
+      }),
+    ])
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId)
+  }
+}
+
 /**
- * 보호된 라우트 목록
- * 인증이 필요한 경로들
+ * 공개 라우트 목록
+ * 인증이 필요하지 않은 경로
  */
-const PROTECTED_ROUTES = [
-  '/favorites',
-  '/notifications',
-  '/mypage',
-  '/reports',
-  '/subscriptions',
-  '/admin',
+const PUBLIC_EXACT_ROUTES = [
+  '/',
+  '/search',
+  '/business-analysis',
+  '/school-analysis',
+]
+const PUBLIC_PREFIX_ROUTES = [
+  '/auth',
+  '/terms',
+  '/complex',
+  '/property',
+  '/school-analysis/share',
 ]
 
 /**
  * Auth 관련 라우트 (로그인된 상태에서 접근 시 리다이렉트)
  */
 const AUTH_ROUTES = ['/auth/login', '/auth/signup']
+
+function isRouteMatch(pathname: string, route: string) {
+  if (route === '/') return pathname === '/'
+  return pathname === route || pathname.startsWith(`${route}/`)
+}
+
+function isExactRouteMatch(pathname: string, route: string) {
+  return pathname === route
+}
+
+function isPrefixRouteMatch(pathname: string, route: string) {
+  return pathname === route || pathname.startsWith(`${route}/`)
+}
 
 /**
  * 미들웨어 - Supabase Auth 세션 관리
@@ -38,7 +81,7 @@ export async function middleware(request: NextRequest) {
     },
   })
 
-  // Supabase 서버 클라이언트 생성 (쿠키 갱신용)
+  // Supabase 서버 클라이언트 생성 (쿠키 갱신)
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -69,93 +112,39 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  // 세션 갱신 (중요: getUser()로 검증된 사용자 정보 가져오기)
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
+  // Session lookup with timeout to prevent route hangs.
   const {
     data: { session },
-  } = await supabase.auth.getSession()
+  } = await withTimeout(
+    supabase.auth.getSession(),
+    { data: { session: null }, error: null },
+    'getSession'
+  )
+  const user = session?.user ?? null
 
   const pathname = request.nextUrl.pathname
 
   // 보호된 라우트 접근 제어
-  const isProtectedRoute = PROTECTED_ROUTES.some((route) =>
-    pathname.startsWith(route)
-  )
+  const isAuthRoute = AUTH_ROUTES.some((route) => isRouteMatch(pathname, route))
+  const isPublicRoute =
+    PUBLIC_EXACT_ROUTES.some((route) => isExactRouteMatch(pathname, route)) ||
+    PUBLIC_PREFIX_ROUTES.some((route) => isPrefixRouteMatch(pathname, route))
+  const requiresAuth = !isAuthRoute && !isPublicRoute
 
-  if (isProtectedRoute && !user) {
-    // 로그인 페이지로 리다이렉트 (원래 URL 저장)
+  if (requiresAuth && !user) {
+    // 로그인 페이지로 리다이렉트 (원래 URL 포함)
     const redirectUrl = new URL('/auth/login', request.url)
-    redirectUrl.searchParams.set('redirect', pathname)
+    redirectUrl.searchParams.set(
+      'redirect',
+      `${pathname}${request.nextUrl.search}`
+    )
     return NextResponse.redirect(redirectUrl)
   }
 
-  // Suspended users: block protected routes (server-side gate)
-  if (isProtectedRoute && user) {
-    try {
-      const { data: profile } = await supabase
-        .from('user_profiles')
-        .select('is_suspended,suspended_until,force_logout_at')
-        .eq('id', user.id)
-        .maybeSingle()
+  // Note: 정지/강제로그아웃 체크는 AuthProvider(클라이언트)에서 수행.
+  // 미들웨어에서 매 요청마다 user_profiles DB 쿼리를 하면 로딩 속도가 크게 저하됨.
 
-      const suspended = !!profile?.is_suspended
-      const until = profile?.suspended_until
-        ? new Date(profile.suspended_until)
-        : null
-      const activeSuspension =
-        suspended &&
-        (!until ||
-          (!Number.isNaN(until.getTime()) && until.getTime() > Date.now()))
-
-      if (activeSuspension) {
-        const redirectUrl = new URL('/auth/login', request.url)
-        redirectUrl.searchParams.set('error', 'suspended')
-        return NextResponse.redirect(redirectUrl)
-      }
-
-      const marker = profile?.force_logout_at
-        ? new Date(profile.force_logout_at)
-        : null
-      const markerMs =
-        marker && !Number.isNaN(marker.getTime()) ? marker.getTime() : null
-
-      const jwtIatMs = (accessToken?: string | null) => {
-        if (!accessToken) return null
-        try {
-          const parts = accessToken.split('.')
-          if (parts.length < 2) return null
-          const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/')
-          const pad =
-            payload.length % 4 === 0 ? '' : '='.repeat(4 - (payload.length % 4))
-          const json = atob(payload + pad)
-          const obj = JSON.parse(json) as { iat?: number }
-          if (typeof obj.iat !== 'number') return null
-          return obj.iat * 1000
-        } catch {
-          return null
-        }
-      }
-
-      const iatMs = jwtIatMs(session?.access_token)
-      const forcedLogout =
-        markerMs !== null && typeof iatMs === 'number' && iatMs < markerMs
-
-      if (forcedLogout) {
-        const redirectUrl = new URL('/auth/login', request.url)
-        redirectUrl.searchParams.set('error', 'forced_logout')
-        return NextResponse.redirect(redirectUrl)
-      }
-    } catch {
-      // If profile lookup fails, do not block.
-    }
-  }
-
-  // 로그인된 상태에서 Auth 페이지 접근 시 홈으로 리다이렉트
-  const isAuthRoute = AUTH_ROUTES.some((route) => pathname.startsWith(route))
-
+  // Redirect authenticated users away from auth pages
   if (isAuthRoute && user) {
     return NextResponse.redirect(new URL('/', request.url))
   }
