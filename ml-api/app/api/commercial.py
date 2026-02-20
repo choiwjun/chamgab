@@ -38,10 +38,6 @@ from app.services.business_model_service import business_model_service
 router = APIRouter(prefix="/api/commercial", tags=["commercial"])
 limiter = Limiter(key_func=get_remote_address)
 
-# 비상업/시설 업종 (창업 분석 제외)
-EXCLUDED_INDUSTRY_CODES = {"L05", "L06", "L01", "L02", "L03", "L04", "I05", "I06"}
-
-
 def _compress_ml_probability(raw: float) -> float:
     """ML 모델 과신 보정: 60% 이하 통과, 60% 초과 점진 압축 (최대 ~74%)."""
     capped = min(max(raw, 0), 100)
@@ -532,8 +528,6 @@ async def predict_business_success(
     competition_ratio: Optional[float] = None,
 ):
     """창업 성공 확률 예측 - 실데이터 기반 피처 자동 조회"""
-    if industry_code in EXCLUDED_INDUSTRY_CODES:
-        raise HTTPException(status_code=400, detail=f"{industry_code}은(는) 창업 분석 대상 업종이 아닙니다.")
     client = _try_get_supabase()
     district_name = district_code
     industry_name = industry_code

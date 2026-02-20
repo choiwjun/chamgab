@@ -19,7 +19,6 @@ import {
   latestMonth,
   fallbackPredict,
   compressMlProbability,
-  EXCLUDED_INDUSTRY_CODES,
   FACTOR_NAME_MAP,
   INDUSTRY_NAMES,
   num,
@@ -268,15 +267,6 @@ export async function POST(request: NextRequest) {
     if (!districtCode || !industryCode) {
       return NextResponse.json(
         { detail: 'district_code, industry_code is required' },
-        { status: 400 }
-      )
-    }
-
-    if (EXCLUDED_INDUSTRY_CODES.includes(industryCode)) {
-      return NextResponse.json(
-        {
-          detail: `${INDUSTRY_NAMES[industryCode] || industryCode}은(는) 창업 분석 대상 업종이 아닙니다.`,
-        },
         { status: 400 }
       )
     }
