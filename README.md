@@ -431,6 +431,6 @@ MIT License
 
 ## 연락처
 
-- **이메일**: support@chamgab.com
+- **이메일**: bricksoft@bricksoft.co.kr
 - **GitHub Issues**: [chamgab/issues](https://github.com/chamgab/issues)
 - **카카오톡 채널**: @참값

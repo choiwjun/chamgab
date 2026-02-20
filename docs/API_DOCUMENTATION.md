@@ -1013,4 +1013,4 @@ API documentation is auto-generated and available at:
 For API support and questions:
 
 - GitHub Issues: [chamgab/issues](https://github.com/chamgab/issues)
-- Email: support@chamgab.com
+- Email: bricksoft@bricksoft.co.kr

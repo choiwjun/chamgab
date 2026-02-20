@@ -584,7 +584,7 @@ For deployment issues:
 For project-specific issues:
 
 - **GitHub Issues**: [github.com/chamgab/issues](https://github.com/chamgab/issues)
-- **Email**: support@chamgab.com
+- **Email**: bricksoft@bricksoft.co.kr
 
 ---
 
