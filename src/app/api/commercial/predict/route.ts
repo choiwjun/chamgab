@@ -32,6 +32,7 @@ type MlFactor = { name: string; impact: number; direction: string }
 
 interface MlPredictResponse {
   success_probability: number
+  raw_success_probability?: number
   confidence: number
   factors: MlFactor[]
   recommendation: string
@@ -130,6 +131,10 @@ async function callMlApi(params: {
         ok: true,
         data: {
           success_probability: data.success_probability,
+          raw_success_probability:
+            typeof data.raw_success_probability === 'number'
+              ? data.raw_success_probability
+              : undefined,
           confidence: data.confidence,
           factors: data.factors,
           recommendation: String(data.recommendation || ''),
@@ -370,25 +375,45 @@ export async function POST(request: NextRequest) {
       bizLatest.length > 0 && salesLatest.length > 0 && storesLatest.length > 0
 
     if (mlCall.ok) {
+      const mlApiProbability =
+        Math.round(
+          Math.min(
+            Math.max(Number(mlCall.data.success_probability) || 0, 0),
+            100
+          ) * 10
+        ) / 10
+      const hasRawFromMl =
+        typeof mlCall.data.raw_success_probability === 'number' &&
+        Number.isFinite(mlCall.data.raw_success_probability)
+      const rawProbability = hasRawFromMl
+        ? Math.round(
+            Math.min(
+              Math.max(mlCall.data.raw_success_probability as number, 0),
+              100
+            ) * 10
+          ) / 10
+        : mlApiProbability
+      const finalProbability = hasRawFromMl
+        ? mlApiProbability
+        : compressMlProbability(mlApiProbability)
+
       const mlConfidence = calcMlConfidence({
         ruleBasedConfidence: ruleConfidence,
-        rawSuccessProbability: mlCall.data.success_probability,
-        calibratedSuccessProbability: compressMlProbability(
-          mlCall.data.success_probability
-        ),
+        rawSuccessProbability: rawProbability,
+        calibratedSuccessProbability: finalProbability,
         modelConfidence: mlCall.data.confidence,
         hasFullCoverage,
       })
       // ML 모델 과신 보정: 합성 데이터 학습으로 인한 상향 편향 압축
-      const compressed = compressMlProbability(mlCall.data.success_probability)
       const mlRecommendation =
-        compressed >= 70
+        finalProbability >= 70
           ? `${districtName}에서 ${industryName} 창업을 추천합니다. 성공 가능성이 높습니다.`
-          : compressed >= 50
+          : finalProbability >= 50
             ? `${districtName}에서 ${industryName} 창업은 신중히 검토하세요. 추가 분석이 필요합니다.`
             : `${districtName}에서 ${industryName} 창업은 리스크가 큽니다. 다른 지역/업종을 고려하세요.`
       return NextResponse.json({
-        success_probability: compressed,
+        success_probability: finalProbability,
+        raw_success_probability: hasRawFromMl ? rawProbability : undefined,
         confidence: mlConfidence,
         model_confidence:
           Math.round(Math.min(Math.max(mlCall.data.confidence, 0), 100) * 10) /
