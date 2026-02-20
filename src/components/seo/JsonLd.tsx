@@ -1,3 +1,5 @@
+import { ENABLE_LAND } from '@/lib/features'
+
 const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL || 'https://chamgab.vercel.app'
 
@@ -24,11 +26,12 @@ export function OrganizationJsonLd() {
         name: '참값',
         url: SITE_URL,
         logo: `${SITE_URL}/icon-512.png`,
-        description:
-          'AI 기반 부동산 가격 분석 서비스. 아파트 적정가격, 상권분석, 토지 시세를 제공합니다.',
+        description: ENABLE_LAND
+          ? 'AI 기반 부동산 가격 분석 서비스. 아파트 적정가격, 상권분석, 토지 시세를 제공합니다.'
+          : 'AI 기반 부동산 가격 분석 서비스. 아파트 적정가격, 상권분석을 제공합니다.',
         contactPoint: {
           '@type': 'ContactPoint',
-          email: 'support@chamgab.com',
+          email: 'bricksoft@bricksoft.co.kr',
           contactType: 'customer service',
           availableLanguage: 'Korean',
         },
