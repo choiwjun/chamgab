@@ -18,6 +18,8 @@ import {
   fetchStoreStats,
   latestMonth,
   fallbackPredict,
+  compressMlProbability,
+  EXCLUDED_INDUSTRY_CODES,
   FACTOR_NAME_MAP,
   INDUSTRY_NAMES,
   num,
@@ -270,6 +272,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    if (EXCLUDED_INDUSTRY_CODES.includes(industryCode)) {
+      return NextResponse.json(
+        {
+          detail: `${INDUSTRY_NAMES[industryCode] || industryCode}은(는) 창업 분석 대상 업종이 아닙니다.`,
+        },
+        { status: 400 }
+      )
+    }
+
     const { name, sido } = await getDistrictName(supabase, districtCode)
     const districtName = fullName(name, sido)
 
@@ -363,14 +374,22 @@ export async function POST(request: NextRequest) {
         modelConfidence: mlCall.data.confidence,
         hasFullCoverage,
       })
+      // ML 모델 과신 보정: 합성 데이터 학습으로 인한 상향 편향 압축
+      const compressed = compressMlProbability(mlCall.data.success_probability)
+      const mlRecommendation =
+        compressed >= 70
+          ? `${districtName}에서 ${industryName} 창업을 추천합니다. 성공 가능성이 높습니다.`
+          : compressed >= 50
+            ? `${districtName}에서 ${industryName} 창업은 신중히 검토하세요. 추가 분석이 필요합니다.`
+            : `${districtName}에서 ${industryName} 창업은 리스크가 큽니다. 다른 지역/업종을 고려하세요.`
       return NextResponse.json({
-        success_probability: mlCall.data.success_probability,
+        success_probability: compressed,
         confidence: mlConfidence,
         model_confidence:
           Math.round(Math.min(Math.max(mlCall.data.confidence, 0), 100) * 10) /
           10,
         factors: mlCall.data.factors,
-        recommendation: mlCall.data.recommendation,
+        recommendation: mlRecommendation,
         source: 'ml_model',
         data_coverage: {
           business_rows: bizLatest.length,

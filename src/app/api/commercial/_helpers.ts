@@ -690,6 +690,16 @@ export function fallbackPredict(features: {
   }
 }
 
+/**
+ * ML 모델 출력 압축 — 합성 데이터 학습 과신(overconfidence) 보정.
+ * 60% 이하는 그대로, 60% 초과는 점진 압축 (최대 ~74%).
+ */
+export function compressMlProbability(raw: number): number {
+  const capped = Math.min(Math.max(raw, 0), 100)
+  if (capped <= 60) return Math.round(capped * 10) / 10
+  return Math.round((60 + (capped - 60) * 0.35) * 10) / 10
+}
+
 /** 창업 추천에서 제외할 업종 (비상업/시설 업종) */
 export const EXCLUDED_INDUSTRY_CODES = [
   'L05', // 장례식장
