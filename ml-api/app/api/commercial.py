@@ -42,9 +42,9 @@ def _compress_ml_probability(raw: float) -> float:
     """ML 모델 과신 보정: 60% 이하 통과, 60% 초과 점진 압축 (최대 ~74%)."""
     capped = min(max(raw, 0), 100)
     if capped < 40:
-        return round(40 - (40 - capped) * 0.35, 1)
+        return round(40 - (40 - capped) * 0.6, 1)
     if capped > 60:
-        return round(60 + (capped - 60) * 0.35, 1)
+        return round(60 + (capped - 60) * 0.55, 1)
     return round(capped, 1)
 
 
@@ -127,6 +127,7 @@ class PredictionFactor(BaseModel):
 
 class BusinessPredictionResult(BaseModel):
     success_probability: float
+    raw_success_probability: Optional[float] = None
     confidence: float
     factors: List[PredictionFactor]
     recommendation: str
@@ -697,7 +698,8 @@ async def predict_business_success(
         industry_code=industry_code,
     )
 
-    success_probability = _compress_ml_probability(result["success_probability"])
+    raw_success_probability = float(result["success_probability"])
+    success_probability = _compress_ml_probability(raw_success_probability)
     confidence = result["confidence"]
 
     factor_name_map = {
@@ -738,6 +740,7 @@ async def predict_business_success(
 
     return BusinessPredictionResult(
         success_probability=round(success_probability, 1),
+        raw_success_probability=round(raw_success_probability, 1),
         confidence=round(confidence, 1),
         factors=factors, recommendation=recommendation
     )
