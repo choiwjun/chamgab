@@ -41,9 +41,11 @@ limiter = Limiter(key_func=get_remote_address)
 def _compress_ml_probability(raw: float) -> float:
     """ML 모델 과신 보정: 60% 이하 통과, 60% 초과 점진 압축 (최대 ~74%)."""
     capped = min(max(raw, 0), 100)
-    if capped <= 60:
-        return round(capped, 1)
-    return round(60 + (capped - 60) * 0.35, 1)
+    if capped < 40:
+        return round(40 - (40 - capped) * 0.35, 1)
+    if capped > 60:
+        return round(60 + (capped - 60) * 0.35, 1)
+    return round(capped, 1)
 
 
 # 데이터 출처 및 면책 문구
@@ -283,6 +285,97 @@ def _fetch_store_stats(client, sigungu_code: str, industry_code: str = None) -> 
         return result.data or []
     except Exception:
         return []
+
+
+def _to_float(value, default: Optional[float] = None) -> Optional[float]:
+    """Best-effort numeric cast for mixed Supabase payloads."""
+    try:
+        if value is None:
+            return default
+        num = float(value)
+        if num != num:
+            return default
+        return num
+    except (TypeError, ValueError):
+        return default
+
+
+def _latest_month_rows(rows: List[dict], month_field: str = 'base_year_month') -> List[dict]:
+    """Keep rows from the latest YYYYMM only."""
+    if not rows:
+        return []
+    latest = max(str(r.get(month_field) or '') for r in rows)
+    if not latest:
+        return []
+    return [r for r in rows if str(r.get(month_field) or '') == latest]
+
+
+def _weighted_mean(rows: List[dict], value_field: str, weight_field: str) -> Optional[float]:
+    """Weighted mean with safe fallbacks for missing/zero weights."""
+    weighted_sum = 0.0
+    total_weight = 0.0
+    seen = False
+
+    for row in rows:
+        value = _to_float(row.get(value_field))
+        if value is None:
+            continue
+        weight = _to_float(row.get(weight_field), 1.0)
+        if weight is None or weight <= 0:
+            weight = 1.0
+        weighted_sum += value * weight
+        total_weight += weight
+        seen = True
+
+    if not seen or total_weight <= 0:
+        return None
+    return weighted_sum / total_weight
+
+
+def _resolve_latest_market_features(
+    biz_rows: List[dict],
+    sales_rows: List[dict],
+    store_rows: List[dict],
+) -> Dict[str, object]:
+    """Resolve feature values using latest-month weighted aggregation."""
+    biz_latest = _latest_month_rows(biz_rows)
+    sales_latest = _latest_month_rows(sales_rows)
+    store_latest = _latest_month_rows(store_rows)
+
+    industry_name = ''
+    if biz_latest:
+        industry_name = str(biz_latest[0].get('industry_name') or '')
+    elif sales_latest:
+        industry_name = str(sales_latest[0].get('industry_name') or '')
+    elif store_latest:
+        industry_name = str(store_latest[0].get('industry_name') or '')
+
+    survival_rate = _weighted_mean(biz_latest, 'survival_rate', 'operating_count')
+    monthly_avg_sales = _weighted_mean(sales_latest, 'monthly_avg_sales', 'monthly_sales_count')
+    sales_growth_rate = _weighted_mean(sales_latest, 'sales_growth_rate', 'monthly_avg_sales')
+
+    store_count_sum = sum(_to_float(row.get('store_count'), 0.0) or 0.0 for row in store_latest)
+    franchise_count_sum = sum(_to_float(row.get('franchise_count'), 0.0) or 0.0 for row in store_latest)
+    store_count = store_count_sum if store_count_sum > 0 else None
+    franchise_ratio = (
+        franchise_count_sum / store_count_sum
+        if store_count_sum > 0
+        else None
+    )
+
+    open_count = _weighted_mean(biz_latest, 'open_count', 'operating_count')
+    close_count = _weighted_mean(biz_latest, 'close_count', 'operating_count')
+
+    return {
+        'industry_name': industry_name,
+        'survival_rate': survival_rate,
+        'monthly_avg_sales': monthly_avg_sales,
+        'sales_growth_rate': sales_growth_rate,
+        'store_count': store_count,
+        'franchise_ratio': franchise_ratio,
+        'open_count': open_count,
+        'close_count': close_count,
+    }
 
 
 def _fetch_foot_traffic(client, sigungu_code: str) -> dict:
@@ -539,23 +632,32 @@ async def predict_business_success(
         biz = _fetch_business_stats(client, district_code, industry_code)
         sales = _fetch_sales_stats(client, district_code, industry_code)
         stores = _fetch_store_stats(client, district_code, industry_code)
+        latest = _resolve_latest_market_features(biz, sales, stores)
 
-        if biz:
-            industry_name = biz[0].get('industry_name', industry_code)
-            if survival_rate is None:
-                survival_rate = biz[0].get('survival_rate')
-        if sales:
-            if monthly_avg_sales is None:
-                monthly_avg_sales = sales[0].get('monthly_avg_sales')
-            if sales_growth_rate is None:
-                sales_growth_rate = sales[0].get('sales_growth_rate')
-        if stores:
-            if store_count is None:
-                store_count = stores[0].get('store_count')
-            if franchise_ratio is None:
-                fc = stores[0].get('franchise_count', 0) or 0
-                sc = stores[0].get('store_count', 1) or 1
-                franchise_ratio = round(fc / sc, 3) if sc > 0 else 0
+        resolved_industry_name = str(latest.get('industry_name') or '')
+        if resolved_industry_name:
+            industry_name = resolved_industry_name
+
+        if survival_rate is None:
+            sr = _to_float(latest.get('survival_rate'))
+            if sr is not None:
+                survival_rate = sr
+        if monthly_avg_sales is None:
+            ms = _to_float(latest.get('monthly_avg_sales'))
+            if ms is not None:
+                monthly_avg_sales = ms
+        if sales_growth_rate is None:
+            sgr = _to_float(latest.get('sales_growth_rate'))
+            if sgr is not None:
+                sales_growth_rate = sgr
+        if store_count is None:
+            sc = _to_float(latest.get('store_count'))
+            if sc is not None and sc > 0:
+                store_count = int(round(sc))
+        if franchise_ratio is None:
+            fr = _to_float(latest.get('franchise_ratio'))
+            if fr is not None:
+                franchise_ratio = round(fr, 3)
 
     # 유동인구 데이터 조회
     foot_data = _fetch_foot_traffic(client, district_code) if client else {}
@@ -759,13 +861,21 @@ async def get_business_trends(
         sales = _fetch_sales_stats(client, district_code, industry_code)
         stores = _fetch_store_stats(client, district_code, industry_code)
         biz = _fetch_business_stats(client, district_code, industry_code)
-        if sales:
-            base_sales = sales[0].get('monthly_avg_sales', 0) or 40000000
-        if stores:
-            base_stores = stores[0].get('store_count', 0) or 100
-        if biz:
-            base_open = biz[0].get('open_count', 0) or 10
-            base_close = biz[0].get('close_count', 0) or 8
+        latest = _resolve_latest_market_features(biz, sales, stores)
+
+        resolved_sales = _to_float(latest.get('monthly_avg_sales'))
+        resolved_stores = _to_float(latest.get('store_count'))
+        resolved_open = _to_float(latest.get('open_count'))
+        resolved_close = _to_float(latest.get('close_count'))
+
+        if resolved_sales is not None and resolved_sales > 0:
+            base_sales = resolved_sales
+        if resolved_stores is not None and resolved_stores > 0:
+            base_stores = int(round(resolved_stores))
+        if resolved_open is not None and resolved_open >= 0:
+            base_open = int(round(resolved_open))
+        if resolved_close is not None and resolved_close >= 0:
+            base_close = int(round(resolved_close))
 
     trends = []
     for i in range(months):

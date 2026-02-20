@@ -217,23 +217,35 @@ function calcRuleBasedConfidence(args: {
 
 function calcMlConfidence(args: {
   ruleBasedConfidence: number
-  successProbability: number
+  rawSuccessProbability: number
+  calibratedSuccessProbability: number
   modelConfidence: number
   hasFullCoverage: boolean
 }): number {
-  const p = Math.min(Math.max(args.successProbability, 0), 100) / 100
+  const rawProbability = Math.min(Math.max(args.rawSuccessProbability, 0), 100)
+  const calibratedProbability = Math.min(
+    Math.max(args.calibratedSuccessProbability, 0),
+    100
+  )
+  const p = calibratedProbability / 100
   // 0 near 50/50, 1 near 0% or 100% prediction.
   const decisiveness = 1 - 4 * p * (1 - p)
-  const decisivenessScore = 35 + decisiveness * 55
-  const modelConfidence = Math.min(Math.max(args.modelConfidence, 50), 99)
+  const decisivenessScore = 40 + decisiveness * 45
+  const modelConfidence = Math.min(Math.max(args.modelConfidence, 45), 99)
+
+  // Calibration gap reflects how much tail compression was required.
+  // Larger gap implies lower trust in raw model confidence.
+  const calibrationGap = Math.abs(rawProbability - calibratedProbability)
+  const calibrationPenalty = Math.min(18, calibrationGap * 0.8)
 
   const blended =
-    args.ruleBasedConfidence * 0.6 +
-    decisivenessScore * 0.3 +
-    modelConfidence * 0.1
+    args.ruleBasedConfidence * 0.55 +
+    decisivenessScore * 0.1 +
+    modelConfidence * 0.35
 
-  const cap = args.hasFullCoverage ? 93 : 85
-  return Math.round(Math.min(Math.max(blended, 35), cap) * 10) / 10
+  const adjusted = blended - calibrationPenalty
+  const cap = args.hasFullCoverage ? 90 : 82
+  return Math.round(Math.min(Math.max(adjusted, 30), cap) * 10) / 10
 }
 
 function weightedMean(
@@ -360,7 +372,10 @@ export async function POST(request: NextRequest) {
     if (mlCall.ok) {
       const mlConfidence = calcMlConfidence({
         ruleBasedConfidence: ruleConfidence,
-        successProbability: mlCall.data.success_probability,
+        rawSuccessProbability: mlCall.data.success_probability,
+        calibratedSuccessProbability: compressMlProbability(
+          mlCall.data.success_probability
+        ),
         modelConfidence: mlCall.data.confidence,
         hasFullCoverage,
       })
