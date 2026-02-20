@@ -612,6 +612,9 @@ export function fallbackPredict(features: {
     direction: string
   }[]
 } {
+  // 0. Base score: 모든 사업체의 기본 생존 가능성 (+10)
+  const base = 10
+
   // 1. Survival component: 0-35 (주요 요인, 0-100% 정규화)
   const survComp = (features.survival_rate / 100) * 35
 
@@ -628,21 +631,21 @@ export function fallbackPredict(features: {
     15
   )
 
-  // 4. Competition penalty: -15 ~ +5 (ratio > 1이면 패널티)
+  // 4. Competition penalty: -10 ~ +5 (ratio > 1이면 패널티)
   const compComp = Math.min(
-    Math.max((1 - features.competition_ratio) * 10, -15),
+    Math.max((1 - features.competition_ratio) * 10, -10),
     5
   )
 
   // 5. Franchise bonus: 0-8
   const franchComp = Math.min(features.franchise_ratio * 25, 8)
 
-  // 6. Store density signal: 2-7 (적정 점포수 = 시장 검증)
+  // 6. Store density signal: 3-8 (대도시 특성 반영, 300개까지 적정)
   const sc = features.store_count
-  const storeComp = sc >= 30 && sc <= 150 ? 7 : sc > 150 ? 4 : 2
+  const storeComp = sc < 10 ? 3 : sc < 30 ? 5 : sc <= 300 ? 8 : 6
 
   const score =
-    survComp + salesComp + growthComp + compComp + franchComp + storeComp
+    base + survComp + salesComp + growthComp + compComp + franchComp + storeComp
   const success_probability = Math.min(Math.max(score, 5), 95)
 
   // 기여도는 실제 컴포넌트 크기 기반

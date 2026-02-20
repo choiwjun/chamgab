@@ -568,7 +568,7 @@ async def predict_business_success(
         "sales_growth_rate": sales_growth_rate if sales_growth_rate is not None else 0.0,
         "store_count": store_count if store_count is not None else 80,
         "franchise_ratio": franchise_ratio if franchise_ratio is not None else 0.15,
-        "competition_ratio": competition_ratio if competition_ratio is not None else 1.5,
+        "competition_ratio": competition_ratio if competition_ratio is not None else 1.0,
     }
 
     result = business_model_service.predict(

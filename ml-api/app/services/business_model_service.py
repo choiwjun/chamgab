@@ -90,7 +90,7 @@ class BusinessModelService:
         sales_growth_rate: float = 0.0,
         store_count: int = 80,
         franchise_ratio: float = 0.15,
-        competition_ratio: float = 1.5,
+        competition_ratio: float = 1.0,
         foot_traffic_score: float = 60.0,
         peak_hour_ratio: float = 0.3,
         weekend_ratio: float = 35.0,
@@ -390,7 +390,10 @@ class BusinessModelService:
         franchise_ratio: float,
         competition_ratio: float,
     ) -> dict:
-        """모델 미로드 시 규칙 기반 폴백 (v2 - 매출 반영 + 차별화 개선)"""
+        """모델 미로드 시 규칙 기반 폴백 (v3 - base score + 대도시 보정)"""
+        # 0. Base: 모든 사업체 기본 생존 가능성
+        base = 10
+
         # 1. Survival: 0-35
         surv_comp = (survival_rate / 100) * 35
 
@@ -403,21 +406,23 @@ class BusinessModelService:
         # 3. Growth: -5 ~ +15
         growth_comp = min(max(sales_growth_rate * 2.5, -5), 15)
 
-        # 4. Competition: -15 ~ +5
-        comp_comp = min(max((1 - competition_ratio) * 10, -15), 5)
+        # 4. Competition: -10 ~ +5
+        comp_comp = min(max((1 - competition_ratio) * 10, -10), 5)
 
         # 5. Franchise: 0-8
         franch_comp = min(franchise_ratio * 25, 8)
 
-        # 6. Store density: 2-7
-        if 30 <= store_count <= 150:
-            store_comp = 7
-        elif store_count > 150:
-            store_comp = 4
+        # 6. Store density: 3-8 (대도시 특성 반영, 300개까지 적정)
+        if store_count < 10:
+            store_comp = 3
+        elif store_count < 30:
+            store_comp = 5
+        elif store_count <= 300:
+            store_comp = 8
         else:
-            store_comp = 2
+            store_comp = 6
 
-        score = surv_comp + sales_comp + growth_comp + comp_comp + franch_comp + store_comp
+        score = base + surv_comp + sales_comp + growth_comp + comp_comp + franch_comp + store_comp
         success_probability = min(max(score, 5), 95)
 
         contribs = sorted(

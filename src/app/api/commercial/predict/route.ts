@@ -334,7 +334,7 @@ export async function POST(request: NextRequest) {
       store_count: numOrNull(params.get('store_count')) ?? storeCount ?? 80,
       franchise_ratio:
         numOrNull(params.get('franchise_ratio')) ?? franchiseRatio ?? 0.15,
-      competition_ratio: numOrNull(params.get('competition_ratio')) ?? 1.5,
+      competition_ratio: numOrNull(params.get('competition_ratio')) ?? 1.0,
     }
 
     const mlCall = await callMlApi({
