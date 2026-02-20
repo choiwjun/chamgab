@@ -696,8 +696,13 @@ export function fallbackPredict(features: {
  */
 export function compressMlProbability(raw: number): number {
   const capped = Math.min(Math.max(raw, 0), 100)
-  if (capped <= 60) return Math.round(capped * 10) / 10
-  return Math.round((60 + (capped - 60) * 0.35) * 10) / 10
+  if (capped < 40) {
+    return Math.round((40 - (40 - capped) * 0.35) * 10) / 10
+  }
+  if (capped > 60) {
+    return Math.round((60 + (capped - 60) * 0.35) * 10) / 10
+  }
+  return Math.round(capped * 10) / 10
 }
 
 /** 창업 추천에서 제외할 업종 (비상업/시설 업종) */
