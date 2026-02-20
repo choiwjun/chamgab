@@ -45,7 +45,9 @@ export interface PredictionFactor {
 // 창업 성공 예측 결과
 export interface BusinessPredictionResult {
   success_probability: number
+  raw_success_probability?: number
   confidence: number
+  model_confidence?: number
   factors: PredictionFactor[]
   recommendation: string
   source?: 'ml_model' | 'rule_based'
