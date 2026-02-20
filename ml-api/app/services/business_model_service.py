@@ -16,7 +16,7 @@ import pandas as pd
 from app.core.database import get_supabase_client
 
 
-# train_business_model.py / BusinessFeatureEngineer.FEATURE_COLUMNS와 동기화 (v2 - 32개)
+# train_business_model.py / BusinessFeatureEngineer.FEATURE_COLUMNS와 동기화 (v4 - 39개)
 FEATURE_COLUMNS = [
     # 기존 18개
     "survival_rate", "survival_rate_normalized",
@@ -38,6 +38,14 @@ FEATURE_COLUMNS = [
     # 유동인구 파생 (3개)
     "foot_traffic_per_store", "evening_morning_ratio",
     "age_concentration_index",
+    # v4 신규 피처 (7개)
+    "sales_survival_interaction",
+    "sales_per_store_log",
+    "competition_survival_ratio",
+    "industry_season_strength",
+    "region_sales_rank",
+    "survival_growth_momentum",
+    "market_efficiency",
 ]
 
 
@@ -77,12 +85,12 @@ class BusinessModelService:
 
     def predict(
         self,
-        survival_rate: float = 75.0,
-        monthly_avg_sales: float = 40_000_000,
-        sales_growth_rate: float = 3.0,
-        store_count: int = 120,
-        franchise_ratio: float = 0.3,
-        competition_ratio: float = 1.2,
+        survival_rate: float = 50.0,
+        monthly_avg_sales: float = 20_000_000,
+        sales_growth_rate: float = 0.0,
+        store_count: int = 80,
+        franchise_ratio: float = 0.15,
+        competition_ratio: float = 1.0,
         foot_traffic_score: float = 60.0,
         peak_hour_ratio: float = 0.3,
         weekend_ratio: float = 35.0,
@@ -172,7 +180,7 @@ class BusinessModelService:
             return None
 
     def _prepare_features(self, **kwargs) -> pd.DataFrame:
-        """학습 시와 동일한 피처 엔지니어링 (BusinessFeatureEngineer.create_features 일치, v2 - 32개)"""
+        """학습 시와 동일한 피처 엔지니어링 (BusinessFeatureEngineer.create_features 일치, v4 - 39개)"""
         survival_rate = kwargs["survival_rate"]
         monthly_avg_sales = kwargs["monthly_avg_sales"]
         sales_growth_rate = kwargs["sales_growth_rate"]
@@ -252,10 +260,28 @@ class BusinessModelService:
         region_industry_density_ratio = 1.0  # 비교 대상 없으므로 1.0
 
         # ── 유동인구 파생 피처 (3개) ──
-        foot_traffic_per_store = foot_traffic_score / max(store_count, 1) * 1000
-        morning_safe = max(morning_traffic, 1)
-        evening_morning_ratio = evening_traffic / morning_safe if morning_safe > 0 else 1.0
+        # 학습 파이프라인과 동일하게 스케일 보존 (x1000 미적용)
+        foot_traffic_per_store = foot_traffic_score / max(store_count, 1)
+        if evening_traffic > 0 or morning_traffic > 0:
+            morning_safe = max(morning_traffic, 1)
+            evening_morning_ratio = evening_traffic / morning_safe if morning_safe > 0 else 1.0
+        else:
+            # 학습 시 evening/morning 값이 없으면 1 + peak_hour_ratio를 사용
+            evening_morning_ratio = 1.0 + peak_hour_ratio
         age_concentration_index = 0.167  # 균등 분포 HHI (1/6)
+
+        # ── v4 신규 피처 (7개) ──
+        sales_survival_interaction = monthly_avg_sales_log * survival_rate_normalized
+        sales_per_store_log = float(np.log1p(sales_per_store))
+        sr_safe = max(survival_rate, 1)
+        competition_survival_ratio = competition_ratio / (sr_safe / 100)
+        competition_survival_ratio = min(max(competition_survival_ratio, 0), 10)
+        industry_season_strength = sales_volatility  # 단일 예측 fallback
+        region_sales_rank = 0.5  # 단일 예측 fallback
+        survival_growth_momentum = survival_rate_normalized * (growth_clipped + 10) / 30
+        sat_safe = max(market_saturation, 1)
+        market_efficiency = monthly_avg_sales_log / sat_safe
+        market_efficiency = min(max(market_efficiency, 0), 50)
 
         row = {
             # 기존 18개
@@ -295,6 +321,14 @@ class BusinessModelService:
             "foot_traffic_per_store": foot_traffic_per_store,
             "evening_morning_ratio": evening_morning_ratio,
             "age_concentration_index": age_concentration_index,
+            # v4 신규 피처 (7개)
+            "sales_survival_interaction": sales_survival_interaction,
+            "sales_per_store_log": sales_per_store_log,
+            "competition_survival_ratio": competition_survival_ratio,
+            "industry_season_strength": industry_season_strength,
+            "region_sales_rank": region_sales_rank,
+            "survival_growth_momentum": survival_growth_momentum,
+            "market_efficiency": market_efficiency,
         }
 
         df = pd.DataFrame([row])
@@ -356,24 +390,58 @@ class BusinessModelService:
         franchise_ratio: float,
         competition_ratio: float,
     ) -> dict:
-        """모델 미로드 시 규칙 기반 폴백"""
-        score = 0.0
-        score += survival_rate * 0.4
-        score += min(sales_growth_rate * 5, 20)
-        score += max(20 - competition_ratio * 10, 0)
-        score += franchise_ratio * 20
+        """모델 미로드 시 규칙 기반 폴백 (v3 - base score + 대도시 보정)"""
+        # 0. Base: 모든 사업체 기본 생존 가능성
+        base = 10
 
-        success_probability = min(max(score, 0), 100)
+        # 1. Survival: 0-35
+        surv_comp = (survival_rate / 100) * 35
+
+        # 2. Sales: 0-20 (log scale)
+        sales_comp = min(
+            math.log10(max(monthly_avg_sales, 5_000_000) / 5_000_000) * 12.5,
+            20,
+        )
+
+        # 3. Growth: -5 ~ +15
+        growth_comp = min(max(sales_growth_rate * 2.5, -5), 15)
+
+        # 4. Competition: -10 ~ +5
+        comp_comp = min(max((1 - competition_ratio) * 10, -10), 5)
+
+        # 5. Franchise: 0-8
+        franch_comp = min(franchise_ratio * 25, 8)
+
+        # 6. Store density: 3-8 (대도시 특성 반영, 300개까지 적정)
+        if store_count < 10:
+            store_comp = 3
+        elif store_count < 30:
+            store_comp = 5
+        elif store_count <= 300:
+            store_comp = 8
+        else:
+            store_comp = 6
+
+        score = base + surv_comp + sales_comp + growth_comp + comp_comp + franch_comp + store_comp
+        success_probability = min(max(score, 5), 95)
+
+        contribs = sorted(
+            [
+                {"name": "survival_rate", "importance": abs(surv_comp) / 100, "direction": "positive" if surv_comp >= 0 else "negative"},
+                {"name": "monthly_avg_sales", "importance": abs(sales_comp) / 100, "direction": "positive"},
+                {"name": "sales_growth_rate", "importance": abs(growth_comp) / 100, "direction": "positive" if growth_comp >= 0 else "negative"},
+                {"name": "competition_ratio", "importance": abs(comp_comp) / 100, "direction": "positive" if comp_comp >= 0 else "negative"},
+                {"name": "franchise_ratio", "importance": abs(franch_comp) / 100, "direction": "positive"},
+                {"name": "store_count", "importance": abs(store_comp) / 100, "direction": "positive"},
+            ],
+            key=lambda x: x["importance"],
+            reverse=True,
+        )
 
         return {
             "success_probability": round(success_probability, 1),
-            "confidence": 60.0,  # 규칙 기반이므로 낮은 신뢰도
-            "feature_contributions": [
-                {"name": "survival_rate", "importance": 0.4, "direction": "positive"},
-                {"name": "sales_growth_rate", "importance": 0.2, "direction": "positive"},
-                {"name": "competition_ratio", "importance": 0.2, "direction": "negative"},
-                {"name": "franchise_ratio", "importance": 0.2, "direction": "positive"},
-            ],
+            "confidence": 55.0,  # 규칙 기반이므로 낮은 신뢰도
+            "feature_contributions": contribs[:5],
         }
 
 

@@ -12,7 +12,7 @@ import {
   getDistrictName,
   fullName,
   fetchFootTraffic,
-  fetchDistrictChar,
+  fetchDistrictCharAggregated,
   fetchSalesStats,
   latestByIndustry,
   num,
@@ -30,7 +30,7 @@ export async function GET(
     const dname = fullName(name, sido)
 
     const footData = await fetchFootTraffic(supabase, code)
-    const charData = await fetchDistrictChar(supabase, code)
+    const charData = await fetchDistrictCharAggregated(supabase, code)
     const salesStats = latestByIndustry(await fetchSalesStats(supabase, code))
 
     // 시간대별 유동인구

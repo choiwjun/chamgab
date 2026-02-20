@@ -19,6 +19,17 @@ export interface UserProfile {
   tier: UserTier
   daily_analysis_count: number
   daily_analysis_limit: number
+  daily_credit_used?: number
+  daily_credit_limit?: number
+  daily_credit_reset_at?: string
+  monthly_credit_used?: number
+  monthly_credit_limit?: number
+  monthly_credit_reset_at?: string
+  bonus_credits?: number
+  force_logout_at?: string | null
+  is_suspended?: boolean
+  suspended_until?: string | null
+  suspended_reason?: string | null
   created_at: string
   updated_at: string
 }

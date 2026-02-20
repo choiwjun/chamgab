@@ -35,7 +35,7 @@ jobs:
     strategy:
       matrix:
         # 병렬로 시도별 수집
-        region_group: [1, 2, 3, 4, 5, 6, 7]
+        region_group: [1, 2, 3, 4, 5, 6, 7, 8, 9]
       fail-fast: false
 
     steps:
@@ -66,7 +66,8 @@ jobs:
           python scripts/collect_all_transactions.py \
             --group $REGION_GROUP \
             --mode $COLLECTION_MODE \
-            --months $MONTHS
+            --months $MONTHS \
+            --resume
 
       - name: Upload collection logs
         if: always()

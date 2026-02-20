@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Search, MapPin, Home, ArrowRight } from 'lucide-react'
 import { searchAutocomplete } from '@/lib/api/properties'
 import type { SearchSuggestion } from '@/types/property'
+import { normalizeSearchQuery } from '@/lib/sanitize'
 
 export function SearchBar() {
   const router = useRouter()
@@ -13,23 +14,33 @@ export function SearchBar() {
   const [isOpen, setIsOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const debounceTimer = useRef<NodeJS.Timeout>()
+  const requestSeq = useRef(0)
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (query.length < 2) {
       setSuggestions([])
       setIsOpen(false)
+      setIsLoading(false)
       return
     }
 
     setIsLoading(true)
+    setIsOpen(true)
     if (debounceTimer.current) clearTimeout(debounceTimer.current)
 
+    const seq = ++requestSeq.current
     debounceTimer.current = setTimeout(async () => {
-      const results = await searchAutocomplete(query)
-      setSuggestions(results)
-      setIsOpen(results.length > 0)
-      setIsLoading(false)
+      try {
+        const results = await searchAutocomplete(query)
+        if (seq !== requestSeq.current) return
+        setSuggestions(results)
+        setIsOpen(true)
+      } finally {
+        if (seq === requestSeq.current) {
+          setIsLoading(false)
+        }
+      }
     }, 300)
 
     return () => {
@@ -52,21 +63,44 @@ export function SearchBar() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (query.trim()) {
-      router.push(`/search?q=${encodeURIComponent(query.trim())}`)
+    const normalized = normalizeSearchQuery(query)
+    if (normalized) {
+      fetch('/api/search/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: 'search_submit', query: normalized }),
+        keepalive: true,
+      }).catch(() => {})
+      router.push(`/search?q=${encodeURIComponent(normalized)}`)
       setIsOpen(false)
+      setSuggestions([])
     }
   }
 
   const handleSuggestionClick = (suggestion: SearchSuggestion) => {
+    const currentQuery = query
+    fetch('/api/search/events', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event: 'autocomplete_select',
+        query: currentQuery,
+        suggestion: {
+          type: suggestion.type,
+          id: suggestion.id,
+          name: suggestion.name,
+        },
+      }),
+      keepalive: true,
+    }).catch(() => {})
+
     if (suggestion.type === 'property' && suggestion.id) {
       router.push(`/property/${suggestion.id}`)
     } else if (suggestion.type === 'complex' && suggestion.id) {
       router.push(`/complex/${suggestion.id}`)
     } else if (suggestion.type === 'region' && suggestion.id) {
-      router.push(
-        `/search?region=${suggestion.id}&sigungu=${encodeURIComponent(suggestion.name)}`
-      )
+      // Region suggestions can be level 1/2/3. Pass region id only and let API resolve.
+      router.push(`/search?region=${encodeURIComponent(suggestion.id)}`)
     } else {
       router.push(`/search?q=${encodeURIComponent(suggestion.name)}`)
     }
@@ -118,7 +152,7 @@ export function SearchBar() {
         </div>
 
         {/* Autocomplete dropdown */}
-        {isOpen && suggestions.length > 0 && (
+        {isOpen && (isLoading || suggestions.length > 0) && (
           <div
             id="search-suggestions"
             role="listbox"
@@ -150,6 +184,11 @@ export function SearchBar() {
                   </div>
                 </button>
               ))}
+            {!isLoading && suggestions.length === 0 && (
+              <div className="px-4 py-3 text-sm text-[#8B95A1]">
+                검색 결과가 없습니다.
+              </div>
+            )}
           </div>
         )}
       </form>

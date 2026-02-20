@@ -85,20 +85,20 @@ ALL_REGIONS = {
         ('31200', '울산 북구'), ('31710', '울산 울주군'), ('50110', '제주시'),
         ('50130', '서귀포시'),
     ],
-    6: [  # 그룹 6: 강원, 전북
-        # 강원특별자치도
-        ('42110', '춘천시'), ('42130', '원주시'), ('42150', '강릉시'),
-        ('42170', '동해시'), ('42190', '태백시'), ('42210', '속초시'),
-        ('42230', '삼척시'), ('42720', '홍천군'), ('42730', '횡성군'),
-        ('42750', '영월군'), ('42760', '평창군'), ('42770', '정선군'),
-        ('42780', '철원군'), ('42790', '화천군'), ('42800', '양구군'),
-        ('42810', '인제군'), ('42820', '고성군'), ('42830', '양양군'),
-        # 전북특별자치도
-        ('45111', '전주시 완산구'), ('45113', '전주시 덕진구'), ('45130', '군산시'),
-        ('45140', '익산시'), ('45150', '정읍시'), ('45180', '남원시'),
-        ('45190', '김제시'), ('45710', '완주군'), ('45720', '진안군'),
-        ('45730', '무주군'), ('45740', '장수군'), ('45750', '임실군'),
-        ('45770', '순창군'), ('45790', '고창군'), ('45800', '부안군'),
+    6: [  # 그룹 6: 강원, 전북 (특별자치도 전환으로 LAWD_CD 변경: 42→51, 45→52)
+        # 강원특별자치도 (51xxx, 구 42xxx)
+        ('51110', '춘천시'), ('51130', '원주시'), ('51150', '강릉시'),
+        ('51170', '동해시'), ('51190', '태백시'), ('51210', '속초시'),
+        ('51230', '삼척시'), ('51720', '홍천군'), ('51730', '횡성군'),
+        ('51750', '영월군'), ('51760', '평창군'), ('51770', '정선군'),
+        ('51780', '철원군'), ('51790', '화천군'), ('51800', '양구군'),
+        ('51810', '인제군'), ('51820', '고성군'), ('51830', '양양군'),
+        # 전북특별자치도 (52xxx, 구 45xxx)
+        ('52111', '전주시 완산구'), ('52113', '전주시 덕진구'), ('52130', '군산시'),
+        ('52140', '익산시'), ('52150', '정읍시'), ('52180', '남원시'),
+        ('52190', '김제시'), ('52710', '완주군'), ('52720', '진안군'),
+        ('52730', '무주군'), ('52740', '장수군'), ('52750', '임실군'),
+        ('52770', '순창군'), ('52790', '고창군'), ('52800', '부안군'),
     ],
     7: [  # 그룹 7: 전남
         # 전라남도
@@ -146,7 +146,7 @@ SEOUL_REGIONS = ALL_REGIONS[1]
 class TransactionCollector:
     """실거래가 수집기"""
 
-    def __init__(self):
+    def __init__(self, resume: bool = False):
         self.supabase = create_client(
             os.environ['SUPABASE_URL'],
             os.environ['SUPABASE_SERVICE_KEY']
@@ -156,6 +156,33 @@ class TransactionCollector:
             logger.error("API 키 없음: DATA_GO_KR_API_KEY 또는 MOLIT_API_KEY 설정 필요")
             sys.exit(1)
         self.base_url = "https://apis.data.go.kr/1613000/RTMSDataSvcAptTrade"
+        self.resume = resume
+
+    def is_month_collected(self, region_code: str, deal_ymd: str) -> bool:
+        """해당 지역+월에 이미 수집된 데이터가 있는지 확인"""
+        year = int(deal_ymd[:4])
+        month = int(deal_ymd[4:6])
+        start_date = f"{year:04d}-{month:02d}-01"
+        if month == 12:
+            end_date = f"{year + 1:04d}-01-01"
+        else:
+            end_date = f"{year:04d}-{month + 1:02d}-01"
+
+        try:
+            result = self.supabase.table('transactions').select(
+                'id', count='exact'
+            ).eq(
+                'region_code', region_code
+            ).gte(
+                'transaction_date', start_date
+            ).lt(
+                'transaction_date', end_date
+            ).limit(1).execute()
+            count = result.count if result.count else 0
+            return count > 0
+        except Exception as e:
+            logger.debug(f"Resume 확인 실패: {region_code} {deal_ymd} - {e}")
+            return False
 
     async def collect_apartment_trades(
         self,
@@ -289,11 +316,17 @@ class TransactionCollector:
     ) -> int:
         """특정 지역의 데이터 수집"""
         total = 0
+        skipped = 0
         now = datetime.now()
 
         for i in range(months):
             target_date = now - timedelta(days=30 * i)
             deal_ymd = target_date.strftime('%Y%m')
+
+            # --resume: 이미 수집된 월 스킵
+            if self.resume and self.is_month_collected(region_code, deal_ymd):
+                skipped += 1
+                continue
 
             transactions = await self.collect_apartment_trades(
                 region_code, region_name, deal_ymd
@@ -306,21 +339,27 @@ class TransactionCollector:
             # API 호출 제한 방지
             await asyncio.sleep(2.0)
 
+        if skipped > 0:
+            logger.info(f"  └ {region_name}: {skipped}개월 스킵 (이미 수집됨)")
         return total
 
 
 async def main():
     parser = argparse.ArgumentParser(description='전국 실거래가 수집')
-    parser.add_argument('--group', type=int, default=0, help='지역 그룹 번호 (1-5, 0=전체)')
+    parser.add_argument('--group', type=int, default=0, help='지역 그룹 번호 (1-9, 0=전체)')
     parser.add_argument('--mode', type=str, default='all', choices=['all', 'seoul', 'sample'])
     parser.add_argument('--months', type=int, default=36, help='수집 기간 (개월)')
     parser.add_argument('--clean', action='store_true', help='기존 불량 데이터 삭제 후 수집')
+    parser.add_argument('--resume', action='store_true', help='이미 수집된 region+month 스킵')
     args = parser.parse_args()
 
     # 로그 디렉토리 생성
     os.makedirs('logs', exist_ok=True)
 
-    collector = TransactionCollector()
+    collector = TransactionCollector(resume=args.resume)
+
+    if args.resume:
+        logger.info("Resume 모드: 이미 수집된 region+month 조합은 스킵합니다.")
 
     # --clean: 불량 데이터 삭제
     if args.clean:
@@ -337,8 +376,8 @@ async def main():
 
     # 수집 대상 결정
     if args.group == 0:
-        # 전체 그룹 순서대로
-        groups = [1, 2, 3, 4, 5]
+        # 전체 그룹 순서대로 (1-9)
+        groups = list(range(1, 10))
     else:
         groups = [args.group]
 

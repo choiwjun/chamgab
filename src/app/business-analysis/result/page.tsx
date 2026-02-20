@@ -118,7 +118,7 @@ function BusinessAnalysisResultContent() {
             industry_code: industryCode,
           }),
           getDistrictCharacteristics(districtCode),
-          getDistrictDetail(districtCode),
+          getDistrictDetail(districtCode, industryCode),
           getDistricts(),
           getIndustries(),
         ])

@@ -4,7 +4,7 @@ import { PlanSelector } from '@/components/checkout/PlanSelector'
 
 export const metadata: Metadata = {
   title: '플랜 선택 | 참값',
-  description: '나에게 맞는 플랜을 선택하세요',
+  description: '내 사용 패턴에 맞는 크레딧 플랜을 선택하세요.',
 }
 
 export default function CheckoutPlansPage() {
@@ -14,7 +14,8 @@ export default function CheckoutPlansPage() {
         <div className="mb-10 text-center">
           <h1 className="text-3xl font-bold text-gray-900">플랜 선택</h1>
           <p className="mt-2 text-gray-600">
-            나에게 맞는 플랜을 선택하고 더 많은 기능을 이용하세요
+            상권/집값/토지 분석을 크레딧으로 이용합니다. 내 사용량에 맞는 플랜을
+            선택하세요.
           </p>
         </div>
         <PlanSelector />

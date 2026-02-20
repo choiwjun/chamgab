@@ -35,10 +35,28 @@ export function MyPageContent() {
     router.refresh()
   }
 
-  const dailyAnalysisCount = profile?.daily_analysis_count || 0
-  const dailyAnalysisLimit = profile?.daily_analysis_limit || 3
+  const dailyCreditsUsed =
+    typeof profile?.daily_credit_used === 'number'
+      ? profile.daily_credit_used
+      : profile?.daily_analysis_count || 0
+  const dailyCreditsLimit =
+    typeof profile?.daily_credit_limit === 'number'
+      ? profile.daily_credit_limit
+      : profile?.daily_analysis_limit || 3
 
-  const usagePercent = (dailyAnalysisCount / dailyAnalysisLimit) * 100
+  const monthlyCreditsUsed =
+    typeof profile?.monthly_credit_used === 'number'
+      ? profile.monthly_credit_used
+      : null
+  const monthlyCreditsLimit =
+    typeof profile?.monthly_credit_limit === 'number'
+      ? profile.monthly_credit_limit
+      : null
+  const bonusCredits =
+    typeof profile?.bonus_credits === 'number' ? profile.bonus_credits : 0
+
+  const usagePercent =
+    dailyCreditsLimit > 0 ? (dailyCreditsUsed / dailyCreditsLimit) * 100 : 0
 
   const menuItems = [
     {
@@ -143,15 +161,15 @@ export function MyPageContent() {
         className="mb-8 rounded-xl border border-[#E5E8EB] bg-white p-6"
       >
         <h3 className="mb-4 text-xs font-semibold text-[#8B95A1]">
-          일일 분석 사용량
+          크레딧 사용량
         </h3>
         <div className="mb-3 flex items-baseline justify-between">
           <div className="flex items-baseline gap-1">
             <span className="text-3xl font-bold text-[#191F28]">
-              {dailyAnalysisCount}
+              {dailyCreditsUsed}
             </span>
             <span className="text-sm text-[#8B95A1]">
-              / {dailyAnalysisLimit}
+              / {dailyCreditsLimit} (일)
             </span>
           </div>
           <span className="text-sm font-medium text-[#3182F6]">
@@ -164,9 +182,19 @@ export function MyPageContent() {
             style={{ width: `${usagePercent}%` }}
           />
         </div>
+        {(monthlyCreditsLimit !== null || bonusCredits > 0) && (
+          <div className="mt-4 grid grid-cols-1 gap-2 text-sm text-[#4E5968]">
+            {monthlyCreditsLimit !== null && (
+              <div>
+                이번 달: {monthlyCreditsUsed ?? 0} / {monthlyCreditsLimit}
+              </div>
+            )}
+            {bonusCredits > 0 && <div>보너스: {bonusCredits}</div>}
+          </div>
+        )}
         {displayTier === 'free' && (
           <p className="mt-4 text-sm text-[#4E5968]">
-            Premium으로 업그레이드하면 무제한 분석이 가능해요
+            Premium으로 업그레이드하면 더 많은 크레딧을 사용할 수 있어요
           </p>
         )}
       </motion.div>

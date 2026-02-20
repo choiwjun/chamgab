@@ -164,24 +164,38 @@ def fetch_price_history(sb):
 
     all_txns = []
     offset = 0
+    batch_size = 500
     print("  최근 18개월 거래 데이터 조회 중...")
     while True:
-        result = sb.table("transactions").select(
-            "complex_id, sigungu, transaction_date, price"
-        ).not_.is_(
-            "complex_id", "null"
-        ).gte(
-            "transaction_date", cutoff
-        ).gt(
-            "price", 0
-        ).range(offset, offset + 999).execute()
+        for attempt in range(3):
+            try:
+                result = sb.table("transactions").select(
+                    "complex_id, sigungu, transaction_date, price"
+                ).not_.is_(
+                    "complex_id", "null"
+                ).gte(
+                    "transaction_date", cutoff
+                ).gt(
+                    "price", 0
+                ).range(offset, offset + batch_size - 1).execute()
+                break
+            except Exception as e:
+                if attempt < 2:
+                    import time
+                    time.sleep(3)
+                    continue
+                print(f"  WARNING: 거래 조회 실패 (offset={offset}): {e}")
+                result = type('R', (), {'data': []})()
+                break
 
         if not result.data:
             break
         all_txns.extend(result.data)
-        if len(result.data) < 1000:
+        if len(result.data) < batch_size:
             break
-        offset += 1000
+        offset += batch_size
+        if offset % 5000 == 0:
+            print(f"  ... {offset}건 조회됨")
 
     print(f"  최근 18개월 거래: {len(all_txns)}건")
 
@@ -353,6 +367,149 @@ def sync_complexes_to_properties(sb, area_map=None):
 # ─────────────────────────────────────────────
 # Step 2 + 3: chamgab_analyses + price_factors 생성
 # ─────────────────────────────────────────────
+
+def compute_recalibration_factor(
+    sb, model, artifacts, fill_values, feature_names,
+    area_map, complex_price_stats, sigungu_price_stats,
+    sample_size=200,
+):
+    """
+    Compare raw XGBoost predictions against latest transactions to compute
+    a multiplicative recalibration factor that corrects systematic bias.
+
+    Returns a float ~1.0 (no bias), <1.0 (model overestimates), >1.0 (underestimates).
+    """
+    import numpy as np
+
+    print("\n[Recalibration] 최근 거래 기반 보정 계수 산출 중...")
+
+    # Fetch recent transactions with known complex_id
+    result = sb.table("transactions").select(
+        "price, complex_id, area_exclusive, transaction_date"
+    ).not_.is_("complex_id", "null").not_.is_(
+        "price", "null"
+    ).order(
+        "transaction_date", desc=True
+    ).limit(sample_size * 3).execute()
+
+    if not result.data:
+        print("  거래 데이터 없음 - 보정 없이 진행 (factor=1.0)")
+        return 1.0
+
+    # Group by complex_id and take the latest
+    seen = {}
+    for tx in result.data:
+        cid = tx["complex_id"]
+        if cid not in seen:
+            seen[cid] = tx
+        if len(seen) >= sample_size:
+            break
+
+    # Match with properties
+    ratios = []
+    for cid, tx in seen.items():
+        actual_price = tx["price"]
+        if not actual_price or actual_price <= 0:
+            continue
+
+        # Find property for this complex
+        prop_result = sb.table("properties").select(
+            "*, complexes(*)"
+        ).eq("complex_id", cid).limit(1).execute()
+
+        if not prop_result.data:
+            continue
+
+        prop = prop_result.data[0]
+
+        # Quick feature preparation (reuse inner function logic would be complex,
+        # so we use a simplified version)
+        try:
+            complex_data = prop.get("complexes") or {}
+            sigungu = complex_data.get("sigungu", "")
+            sido = complex_data.get("sido", "")
+            area = prop.get("area_exclusive") or area_map.get(cid, 84)
+
+            label_encoders = artifacts.get("label_encoders", {})
+            target_encoders = artifacts.get("target_encoders", {})
+            brand_tiers = artifacts.get("brand_tiers", {})
+
+            # Basic features
+            features = {
+                "area_exclusive": float(area),
+                "floor": 10,
+                "building_age": max(0, 2026 - (complex_data.get("built_year") or 2005)),
+                "total_units": complex_data.get("total_units") or 500,
+                "total_floors": complex_data.get("total_floors") or 20,
+                "floor_ratio": 0.5,
+                "parking_ratio": complex_data.get("parking_ratio") or 1.2,
+            }
+
+            # Encoding
+            le_sido = label_encoders.get("sido_encoded")
+            le_sig = label_encoders.get("sigungu_encoded")
+            features["sido_encoded"] = (
+                le_sido.transform([sido])[0]
+                if le_sido and sido in le_sido.classes_ else 0
+            )
+            features["sigungu_encoded"] = (
+                le_sig.transform([sigungu])[0]
+                if le_sig and sigungu in le_sig.classes_ else 0
+            )
+
+            te_sig = target_encoders.get("sigungu_target_enc")
+            te_dong = target_encoders.get("dong_target_enc")
+            features["sigungu_target_enc"] = (
+                te_sig.get(sigungu, fill_values.get("sigungu_target_enc", 0))
+                if isinstance(te_sig, dict) else fill_values.get("sigungu_target_enc", 0)
+            )
+            features["dong_target_enc"] = fill_values.get("dong_target_enc", 0)
+
+            brand = complex_data.get("brand") or ""
+            features["brand_tier"] = brand_tiers.get(brand, 0)
+
+            # Price lag features
+            cps = complex_price_stats.get(cid, {})
+            sps = sigungu_price_stats.get(sigungu, {})
+            features["price_lag_1m"] = cps.get("latest_price") or sps.get("latest_price", 0) or 0
+            features["price_lag_3m"] = cps.get("avg_3m") or sps.get("avg_3m", 0) or 0
+            features["price_rolling_6m_mean"] = cps.get("avg_6m") or sps.get("avg_6m", 0) or 0
+            features["price_rolling_6m_std"] = 0
+            features["price_yoy_change"] = 0
+            features["transaction_volume"] = sps.get("volume", 100) or 100
+
+            # Fill remaining
+            for col in feature_names:
+                if col not in features:
+                    features[col] = fill_values.get(col, 0)
+
+            import pandas as pd
+            df = pd.DataFrame([features])
+            df = df[feature_names]
+
+            raw_pred = model.predict(df)[0]
+            if raw_pred > 0:
+                ratio = actual_price / raw_pred
+                # Filter extreme outliers
+                if 0.2 < ratio < 5.0:
+                    ratios.append(ratio)
+        except Exception:
+            continue
+
+    if len(ratios) < 10:
+        print(f"  유효 비교 {len(ratios)}건 부족 - 보정 없이 진행 (factor=1.0)")
+        return 1.0
+
+    factor = float(np.median(ratios))
+    # Clamp to reasonable range [0.5, 2.0]
+    factor = max(0.5, min(2.0, factor))
+
+    print(f"  비교 건수: {len(ratios)}건")
+    print(f"  Raw 모델 대비 실거래 비율 중앙값: {factor:.4f}")
+    print(f"  보정 계수: {factor:.4f} ({'과대→하향' if factor < 1.0 else '과소→상향'})")
+
+    return factor
+
 
 def generate_analyses(sb, model, artifacts, shap_explainer, residual_info, skip_existing=True, limit=0,
                        complex_price_stats=None, sigungu_price_stats=None, area_map=None):
@@ -593,18 +750,40 @@ def generate_analyses(sb, model, artifacts, shap_explainer, residual_info, skip_
                 df[col] = fill_values.get(col, 0)
         return df[feature_names]
 
-    def calculate_confidence(prop):
+    def calculate_confidence(prop, prediction=0, min_price=0, max_price=0,
+                              mape=None):
+        """3-factor weighted confidence (matches ModelService logic)."""
+        # Factor 1: Model Accuracy (60% weight)
+        model_mape = mape if mape is not None else 30.0
+        model_confidence = max(0.3, min(0.95, 1.0 - model_mape / 100.0))
+
+        # Factor 2: Prediction Precision (30% weight)
+        if prediction > 0 and max_price > min_price:
+            interval_ratio = (max_price - min_price) / prediction
+            interval_confidence = max(0.3, min(0.95, 1.0 - interval_ratio / 2.0))
+        else:
+            interval_confidence = 0.5
+
+        # Factor 3: Data Completeness (10% weight)
         complex_data = prop.get("complexes") or {}
-        score = 0.5
+        data_bonus = 0.0
         if complex_data.get("name"):
-            score += 0.2
+            data_bonus += 0.01
         if complex_data.get("brand"):
-            score += 0.1
+            data_bonus += 0.01
         if prop.get("area_exclusive"):
-            score += 0.1
+            data_bonus += 0.01
         if complex_data.get("built_year") or prop.get("built_year"):
-            score += 0.1
-        return min(1.0, score)
+            data_bonus += 0.01
+        if complex_data.get("total_units"):
+            data_bonus += 0.01
+
+        confidence = (
+            model_confidence * 0.6 +
+            interval_confidence * 0.3 +
+            data_bonus * 2.0
+        )
+        return round(min(0.95, max(0.30, confidence)), 2)
 
     # SHAP 피처 매핑 (인라인)
     FEATURE_NAME_KO = {
@@ -629,6 +808,14 @@ def generate_analyses(sb, model, artifacts, shap_explainer, residual_info, skip_
         "price_rolling_6m_mean": "6개월평균", "price_yoy_change": "전년대비변동",
     }
 
+    # Recalibration disabled: the simplified feature preparation in
+    # compute_recalibration_factor() produces different predictions than
+    # prepare_features(), leading to incorrect correction factors.
+    # TODO: fix by reusing prepare_features() in recalibration sampling
+    recalibration_factor = 1.0
+    print(f"\n[Recalibration] 비활성화 (factor=1.0)")
+    mape_value = residual_info.get("mape", 30.0) if residual_info else 30.0
+
     # 배치 처리
     total_analyses = 0
     total_factors = 0
@@ -639,16 +826,17 @@ def generate_analyses(sb, model, artifacts, shap_explainer, residual_info, skip_
             # 피처 준비
             features = prepare_features(prop)
 
-            # XGBoost 예측
-            prediction = model.predict(features)[0]
-            prediction = max(0, int(prediction))
+            # XGBoost 예측 + recalibration
+            raw_prediction = model.predict(features)[0]
+            prediction = max(0, int(raw_prediction * recalibration_factor))
 
-            # 신뢰 구간
+            # 신뢰 구간 (보정된 예측 기준)
             if residual_percentiles:
                 p10 = residual_percentiles.get(10, 0)
                 p90 = residual_percentiles.get(90, 0)
-                min_price = max(0, int(prediction + p10))
-                max_price = max(0, int(prediction + p90))
+                # Scale residuals by recalibration factor
+                min_price = max(0, int(prediction + p10 * recalibration_factor))
+                max_price = max(0, int(prediction + p90 * recalibration_factor))
                 if min_price > max_price:
                     min_price, max_price = max_price, min_price
             else:
@@ -656,7 +844,9 @@ def generate_analyses(sb, model, artifacts, shap_explainer, residual_info, skip_
                 min_price = max(0, prediction - margin)
                 max_price = prediction + margin
 
-            confidence = calculate_confidence(prop)
+            confidence = calculate_confidence(
+                prop, prediction, min_price, max_price, mape=mape_value
+            )
 
             # chamgab_analyses 저장
             analysis_record = {

@@ -54,11 +54,16 @@ class TrainingDataPreparer:
     """학습 데이터 준비"""
 
     def __init__(self):
+        # .env 파일 명시적 로드
+        from dotenv import load_dotenv
+        load_dotenv()
+
         supabase_url = os.environ.get("SUPABASE_URL")
         supabase_key = os.environ.get("SUPABASE_SERVICE_KEY")
 
         if supabase_url and supabase_key:
             self.supabase: Optional[Client] = create_client(supabase_url, supabase_key)
+            print(f"Supabase 연결: {supabase_url[:40]}...")
         else:
             print("경고: Supabase 설정이 없습니다.")
             self.supabase = None
@@ -75,7 +80,7 @@ class TrainingDataPreparer:
             try:
                 all_data = []
                 offset = 0
-                page_size = 1000
+                page_size = 500  # 타임아웃 우회: 1000 → 500
                 while True:
                     response = (
                         self.supabase.table("transactions")
@@ -86,6 +91,8 @@ class TrainingDataPreparer:
                     if not response.data:
                         break
                     all_data.extend(response.data)
+                    if len(all_data) % 10000 == 0:
+                        print(f"  {len(all_data)}건 조회 중...")
                     if len(response.data) < page_size:
                         break
                     offset += page_size
@@ -95,12 +102,15 @@ class TrainingDataPreparer:
                     # Supabase 컬럼명 → 학습용 컬럼명 매핑
                     if "built_year" in df.columns and "year_built" not in df.columns:
                         df = df.rename(columns={"built_year": "year_built"})
-                    print(f"  {len(df)}건 조회됨 (Supabase)")
+                    print(f"  {len(df)}건 조회 완료 (Supabase)")
                     return df
                 else:
                     print("  Supabase에 데이터 없음, CSV fallback 시도...")
             except Exception as e:
-                print(f"  Supabase 조회 실패: {e}, CSV fallback 시도...")
+                import traceback
+                print(f"  Supabase 조회 실패:")
+                traceback.print_exc()
+                print(f"  CSV fallback 시도...")
 
         # 2. CSV 파일에서 읽기 (fallback - 인자로 지정)
         if csv_path and Path(csv_path).exists():

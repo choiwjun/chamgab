@@ -10,7 +10,7 @@ KB부동산 데이터와 XGBoost 머신러닝을 활용한 아파트 가격 분�
 
 ### 🏠 아파트 투자 분석 (참값)
 
-- **AI 가격 예측**: XGBoost 기반 아파트 적정 가격 분석 (MAPE 5.50%, R² 0.9917)
+- **AI 가격 예측**: XGBoost 기반 아파트 적정 가격 분석 (MAPE 12.88%, R² 0.9338)
 - **SHAP 분석**: 가격 결정 요인 상세 설명 (지역 74%, 면적 18%, 브랜드 3%)
 - **투자 지표**: ROI, 전세가율, 유동성 점수 제공
 - **유사 거래 분석**: 비슷한 조건의 실거래 사례 비교
@@ -165,20 +165,24 @@ python -m scripts.train_model --csv scripts/kb_transactions.csv
 
 # 하이퍼파라미터 튜닝 (선택)
 python -m scripts.train_model --tune --trials 50 --csv scripts/kb_transactions.csv
+
+# 학습-서빙 피처 정합성 리포트
+python -m scripts.report_apartment_feature_consistency
 ```
 
 ### 아파트 가격 예측 모델
 
-- **알고리즘**: XGBoost Regressor (43개 피처)
-- **MAPE**: 5.50%
-- **R²**: 0.9917
-- **주요 피처**: 지역(74%), 면적(18%), 브랜드(3%)
+- **알고리즘**: XGBoost Regressor (68개 피처)
+- **MAPE**: 12.88%
+- **R²**: 0.9338
+- **MAE / RMSE**: 45,279,112원 / 72,363,556원
+- **주요 피처**: `price_lag_3m`, `price_lag_1m`, `dong_target_enc`, `school_count_1km`
 
 ### 창업 성공 예측 모델 (P5)
 
 ```bash
 # 모델 학습
-python -m scripts.train_business_model
+python -m scripts.train_business_model --data scripts/business_training_data.csv
 
 # Optuna 하이퍼파라미터 튜닝
 python -m scripts.train_business_model --tune
@@ -187,10 +191,16 @@ python -m scripts.train_business_model --tune
 python -m scripts.evaluate_business_model --retrain
 ```
 
-- **알고리즘**: XGBoost Classifier (19개 피처)
-- **Accuracy**: 99.75% (5-Fold CV)
-- **F1 Score**: 1.0000
-- **피처**: 생존율, 매출, 경쟁, 복합, 유동인구
+- **알고리즘**: XGBoost Classifier (39개 피처)
+- **라벨 전략**: `future_observed` (3개월 horizon)
+- **Accuracy / F1 / AUC**: 89.75% / 0.9117 / 0.9654
+- **Brier / LogLoss**: 0.0743 / 0.2531
+- **피처**: 생존율, 매출, 경쟁, 시계열 lag, 계절성, 유동인구 파생
+
+### 모델 지표 기준일
+
+- **아파트 모델**: `2026-02-12` (`ml-api/app/models/apartment_model_metrics.json`)
+- **상권 모델**: `2026-02-13` (`ml-api/app/models/business_model_metrics.json`)
 
 ---
 

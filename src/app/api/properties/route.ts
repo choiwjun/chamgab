@@ -1,14 +1,14 @@
-// @TASK P2-R1-T2 - Properties API - 목록 조회
+// @TASK P2-R1-T2 - Properties API - 紐⑸줉 議고쉶
 // @SPEC specs/domain/resources.yaml#properties
 // @SPEC docs/planning/02-trd.md#properties-api
 
-// 동적 렌더링 강제 (Supabase 사용)
+// ?숈쟻 ?뚮뜑留?媛뺤젣 (Supabase ?ъ슜)
 export const dynamic = 'force-dynamic'
 
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { REGION_COORDS, expandCityToDistricts } from '@/lib/region-coords'
-import { sanitizeFilterInput } from '@/lib/sanitize'
+import { buildSearchTerms, sanitizeFilterInput } from '@/lib/sanitize'
 
 function getSupabase() {
   return createClient(
@@ -17,8 +17,67 @@ function getSupabase() {
   )
 }
 
+interface RegionFilters {
+  sido?: string
+  sigungu?: string
+}
+
+async function resolveRegionFilters(
+  supabase: ReturnType<typeof getSupabase>,
+  regionId?: string
+): Promise<RegionFilters> {
+  if (!regionId) return {}
+
+  const { data: region } = await supabase
+    .from('regions')
+    .select('name, level, parent_code')
+    .eq('id', regionId)
+    .maybeSingle()
+
+  if (!region) return {}
+
+  if (region.level === 1) {
+    return { sido: region.name }
+  }
+
+  if (region.level === 2) {
+    let sido: string | undefined
+    if (region.parent_code) {
+      const { data: parent } = await supabase
+        .from('regions')
+        .select('name')
+        .eq('code', region.parent_code)
+        .maybeSingle()
+      sido = parent?.name
+    }
+    return { sido, sigungu: region.name }
+  }
+
+  if (region.level === 3 && region.parent_code) {
+    const { data: sigunguRegion } = await supabase
+      .from('regions')
+      .select('name, parent_code')
+      .eq('code', region.parent_code)
+      .maybeSingle()
+
+    let sido: string | undefined
+    if (sigunguRegion?.parent_code) {
+      const { data: sidoRegion } = await supabase
+        .from('regions')
+        .select('name')
+        .eq('code', sigunguRegion.parent_code)
+        .maybeSingle()
+      sido = sidoRegion?.name
+    }
+
+    return { sido, sigungu: sigunguRegion?.name }
+  }
+
+  return {}
+}
+
 /**
- * PostGIS WKB hex를 lat/lng 객체로 파싱
+ * PostGIS WKB hex瑜?lat/lng 媛앹껜濡??뚯떛
  * WKB Point with SRID 4326: 0101000020E6100000 + X(8bytes LE) + Y(8bytes LE)
  */
 function parseWKBPoint(wkb: string): { lat: number; lng: number } | null {
@@ -46,22 +105,20 @@ function parseWKBPoint(wkb: string): { lat: number; lng: number } | null {
 /**
  * GET /api/properties
  *
- * 매물 목록 조회 (필터, 페이지네이션)
+ * 留ㅻЪ 紐⑸줉 議고쉶 (?꾪꽣, ?섏씠吏?ㅼ씠??
  *
  * Query Parameters:
- * - q: 검색어 (이름, 주소 검색)
- * - region: 지역 ID (regions 테이블에서 sigungu 조회)
- * - sido: 시도 필터
- * - sigungu: 시군구 필터
- * - property_type: 매물 유형 (apt, officetel, villa, store, land, building)
- * - min_price: 최소 가격
- * - max_price: 최대 가격
- * - min_area: 최소 면적
- * - max_area: 최대 면적
- * - bounds: 지도 영역 (sw_lat,sw_lng,ne_lat,ne_lng)
- * - page: 페이지 번호 (기본: 1)
- * - limit: 페이지 사이즈 (기본: 20, 최대: 100)
- * - sort: 정렬 (예: created_at:desc, area_exclusive:asc)
+ * - q: 寃?됱뼱 (?대쫫, 二쇱냼 寃??
+ * - region: 吏??ID (regions ?뚯씠釉붿뿉??sigungu 議고쉶)
+ * - sido: ?쒕룄 ?꾪꽣
+ * - sigungu: ?쒓뎔援??꾪꽣
+ * - property_type: 留ㅻЪ ?좏삎 (apt, officetel, villa, store, land, building)
+ * - min_price: 理쒖냼 媛寃? * - max_price: 理쒕? 媛寃? * - min_area: 理쒖냼 硫댁쟻
+ * - max_area: 理쒕? 硫댁쟻
+ * - bounds: 吏???곸뿭 (sw_lat,sw_lng,ne_lat,ne_lng)
+ * - page: ?섏씠吏 踰덊샇 (湲곕낯: 1)
+ * - limit: ?섏씠吏 ?ъ씠利?(湲곕낯: 20, 理쒕?: 100)
+ * - sort: ?뺣젹 (?? created_at:desc, area_exclusive:asc)
  *
  * Response:
  * { items: Property[], total: number, page: number, limit: number }
@@ -71,12 +128,18 @@ export async function GET(request: NextRequest) {
     const supabase = getSupabase()
     const searchParams = request.nextUrl.searchParams
 
-    // Query parameters 파싱
+    // Query parameters ?뚯떛
     const q = searchParams.get('q') || undefined
     const regionId = searchParams.get('region') || undefined
-    const sido = searchParams.get('sido') || undefined
+    let sido = searchParams.get('sido') || undefined
     let sigungu = searchParams.get('sigungu') || undefined
     const property_type = searchParams.get('property_type') || undefined
+    const min_price = searchParams.get('min_price')
+      ? parseFloat(searchParams.get('min_price')!)
+      : undefined
+    const max_price = searchParams.get('max_price')
+      ? parseFloat(searchParams.get('max_price')!)
+      : undefined
     const min_area = searchParams.get('min_area')
       ? parseFloat(searchParams.get('min_area')!)
       : undefined
@@ -84,74 +147,96 @@ export async function GET(request: NextRequest) {
       ? parseFloat(searchParams.get('max_area')!)
       : undefined
     const bounds = searchParams.get('bounds') || undefined
-    const page = parseInt(searchParams.get('page') || '1')
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1'))
     const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 100)
     const sort = searchParams.get('sort') || 'created_at:desc'
+    const nowIso = new Date().toISOString()
 
-    // region ID로 sigungu 조회
-    if (regionId && !sigungu) {
-      const { data: region } = await supabase
-        .from('regions')
-        .select('name, level')
-        .eq('id', regionId)
-        .single()
-
-      if (region) {
-        if (region.level === 2) {
-          sigungu = region.name
-        } else if (region.level === 3) {
-          sigungu = region.name
-        }
-      }
+    // region ID濡??쒕룄/?쒓뎔援?議고쉶
+    if (regionId && (!sido || !sigungu)) {
+      const resolved = await resolveRegionFilters(supabase, regionId)
+      if (!sido && resolved.sido) sido = resolved.sido
+      if (!sigungu && resolved.sigungu) sigungu = resolved.sigungu
     }
 
-    // 기본 쿼리 구성
-    let query = supabase.from('properties').select('*', { count: 'exact' })
+    const hasPriceFilter =
+      (min_price !== undefined && !Number.isNaN(min_price)) ||
+      (max_price !== undefined && !Number.isNaN(max_price))
 
-    // 텍스트 검색 (이름, 주소, 시군구, 시도 + 시→구 확장)
+    // 湲곕낯 荑쇰━ 援ъ꽦
+    const SELECT_WITH_ANALYSIS =
+      '*,chamgab_analyses(chamgab_price,min_price,max_price,confidence,analyzed_at,expires_at)' as const
+
+    // supabase-js select string parser is type-level; keep literals in-branch.
+    // Use `any` for the query builder to avoid leaking ParserError types.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let query: any
+    if (hasPriceFilter) {
+      query = supabase
+        .from('properties')
+        .select(SELECT_WITH_ANALYSIS, { count: 'exact' })
+    } else {
+      query = supabase.from('properties').select('*', { count: 'exact' })
+    }
+
+    // ?띿뒪??寃??(?대쫫, 二쇱냼, ?쒓뎔援? ?쒕룄 + ?쒋넂援??뺤옣)
     if (q) {
-      // PostgREST filter injection 방지: 특수문자 제거
-      const sanitizedQ = sanitizeFilterInput(q)
-      if (sanitizedQ) {
-        // 기본: 이름, 주소, 시군구, 시도에서 검색
-        let searchFilters = `name.ilike.%${sanitizedQ}%,address.ilike.%${sanitizedQ}%,sigungu.ilike.%${sanitizedQ}%,sido.ilike.%${sanitizedQ}%`
+      const terms = buildSearchTerms(q, 5)
+      if (terms.length > 0) {
+        const filtersByTerm = terms.flatMap((term) => [
+          `name.ilike.%${term}%`,
+          `address.ilike.%${term}%`,
+          `sigungu.ilike.%${term}%`,
+          `sido.ilike.%${term}%`,
+        ])
 
-        // 시→구 확장: "안산" → 단원구, 상록구 등 하위 구 매물도 포함
-        // expandCityToDistricts returns internal data (safe), but sanitize for consistency
-        const expandedDistricts = expandCityToDistricts(sanitizedQ)
-        if (expandedDistricts.length > 0) {
-          const districtFilters = expandedDistricts
-            .map((d) => `sigungu.eq.${sanitizeFilterInput(d)}`)
-            .join(',')
-          searchFilters += `,${districtFilters}`
+        const expandedDistricts = new Set<string>()
+        for (const term of terms) {
+          for (const district of expandCityToDistricts(term)) {
+            const safeDistrict = sanitizeFilterInput(district)
+            if (safeDistrict) expandedDistricts.add(safeDistrict)
+          }
         }
 
-        query = query.or(searchFilters)
+        expandedDistricts.forEach((district) => {
+          filtersByTerm.push(`sigungu.eq.${district}`)
+        })
+
+        query = query.or(filtersByTerm.join(','))
       }
     }
 
-    // 필터 적용
+    // ?꾪꽣 ?곸슜
     if (sido) query = query.eq('sido', sido)
     if (sigungu) {
-      // sigungu 정확 매칭 또는 address에 지역명 포함 검색
+      // ?좏깮 ?꾪꽣???뺥솗 留ㅼ묶?쇰줈 泥섎━ (寃?됱뼱 議곌굔怨?異⑸룎 諛⑹?)
       const sanitizedSigungu = sanitizeFilterInput(sigungu)
       if (sanitizedSigungu) {
-        query = query.or(
-          `sigungu.eq.${sanitizedSigungu},address.ilike.%${sanitizedSigungu}%`
-        )
+        query = query.eq('sigungu', sanitizedSigungu)
       }
     }
     if (property_type) query = query.eq('property_type', property_type)
     if (min_area !== undefined) query = query.gte('area_exclusive', min_area)
     if (max_area !== undefined) query = query.lte('area_exclusive', max_area)
 
-    // 정렬 처리
+    // 가격 필터는 유효한 최근 chamgab 분석 기준으로 적용
+    if (hasPriceFilter) {
+      query = query.gt('chamgab_analyses.expires_at', nowIso)
+      if (min_price !== undefined && !Number.isNaN(min_price)) {
+        query = query.gte('chamgab_analyses.chamgab_price', min_price)
+      }
+      if (max_price !== undefined && !Number.isNaN(max_price)) {
+        query = query.lte('chamgab_analyses.chamgab_price', max_price)
+      }
+    }
+
+    // ?뺣젹 泥섎━
     const [sortField, sortOrder] = sort.split(':')
     query = query.order(sortField || 'created_at', {
       ascending: sortOrder === 'asc',
     })
 
-    // 페이지네이션 (bounds가 있으면 limit만 적용)
+    // ?섏씠吏?ㅼ씠??(bounds媛 ?덉쑝硫?limit留??곸슜)
     if (bounds) {
       query = query.limit(limit)
     } else {
@@ -161,7 +246,7 @@ export async function GET(request: NextRequest) {
 
     const { data, count, error } = await query
 
-    // Supabase 에러 처리
+    // Supabase ?먮윭 泥섎━
     if (error) {
       console.error('[Properties API] Supabase error:', error.message)
       return NextResponse.json(
@@ -170,13 +255,13 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // location WKB hex → { lat, lng } 변환
-    // location이 NULL이면 시군구 기반 근사 좌표 부여 (±400m jitter)
-    const items = (data || []).map((item) => {
+    // location WKB hex ??{ lat, lng } 蹂??    // location??NULL?대㈃ ?쒓뎔援?湲곕컲 洹쇱궗 醫뚰몴 遺??(짹400m jitter)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const items = (data || []).map((item: any) => {
       const parsed = parseWKBPoint(item.location)
       if (parsed) return { ...item, location: parsed }
 
-      // PostGIS 좌표가 없으면 시군구 중심 좌표 + jitter
+      // PostGIS 醫뚰몴媛 ?놁쑝硫??쒓뎔援?以묒떖 醫뚰몴 + jitter
       const regionCenter = REGION_COORDS[item.sigungu || '']
       if (regionCenter) {
         return {
@@ -198,7 +283,7 @@ export async function GET(request: NextRequest) {
       limit,
     })
   } catch (err) {
-    // 예외 발생 시 에러 응답
+    // ?덉쇅 諛쒖깮 ???먮윭 ?묐떟
     console.error('[Properties API] Exception:', err)
     return NextResponse.json(
       { items: [], total: 0, error: 'Database error' },

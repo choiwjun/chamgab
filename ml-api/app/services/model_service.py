@@ -12,6 +12,7 @@ import pickle
 from pathlib import Path
 from typing import Optional, Tuple, Dict
 from uuid import UUID
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -111,6 +112,9 @@ class ModelService:
     def _get_property_data(self, property_id: UUID) -> Optional[dict]:
         """Supabase에서 매물 정보 조회"""
         client = get_supabase_client()
+        now = datetime.now()
+        month = now.month
+        quarter = ((month - 1) // 3) + 1
 
         result = client.table("properties").select(
             """
@@ -130,10 +134,10 @@ class ModelService:
 
         return {
             "area_exclusive": data.get("area_exclusive"),
-            "floor": 10,
-            "transaction_year": 2026,
-            "transaction_month": 1,
-            "transaction_quarter": 1,
+            "floor": data.get("floor") or data.get("current_floor") or data.get("floor_no") or 10,
+            "transaction_year": now.year,
+            "transaction_month": month,
+            "transaction_quarter": quarter,
             "prop_sido": data.get("sido"),
             "prop_sigungu": data.get("sigungu"),
             "prop_eupmyeondong": data.get("eupmyeondong"),
@@ -150,8 +154,6 @@ class ModelService:
 
     def _prepare_features(self, property_data: dict) -> pd.DataFrame:
         """피처 DataFrame 준비 (v2 - target encoding + temporal 피처)"""
-        from datetime import datetime
-
         current_year = datetime.now().year
 
         # 기본 피처

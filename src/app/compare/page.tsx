@@ -5,8 +5,13 @@ import { Suspense } from 'react'
 import { CompareTable } from '@/components/compare/CompareTable'
 
 export const metadata = {
-  title: '매물 비교 - 참값',
-  description: '최대 4개 매물을 비교해보세요',
+  title: '아파트 비교 분석',
+  description:
+    '최대 4개 아파트를 나란히 비교하세요. AI 적정가격, 실거래가, 면적, 연식 등을 한눈에 비교할 수 있습니다.',
+  keywords: ['아파트 비교', '아파트 가격 비교', '매물 비교', '부동산 비교'],
+  alternates: {
+    canonical: '/compare',
+  },
 }
 
 export default function ComparePage() {

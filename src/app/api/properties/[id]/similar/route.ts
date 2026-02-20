@@ -18,20 +18,49 @@ function getSupabase() {
  * 거리, 면적, 년식 기반 유사도 점수 (0~100)
  */
 function calculateSimilarity(
-  target: { area?: number; built_year?: number },
-  transaction: { area_exclusive?: number; floor?: number }
+  target: {
+    area?: number
+    built_year?: number
+    complex_id?: string | null
+    eupmyeondong?: string | null
+  },
+  transaction: {
+    area_exclusive?: number | null
+    floor?: number | null
+    built_year?: number | null
+    complex_id?: string | null
+    dong?: string | null
+  }
 ): number {
-  let score = 100
+  const sameComplex =
+    !!target.complex_id &&
+    !!transaction.complex_id &&
+    target.complex_id === transaction.complex_id
+
+  // 같은 단지가 아니면 100% 유사도로 보이지 않게 제한
+  let score = sameComplex ? 100 : 85
 
   // 면적 차이 (10% 당 -10점)
   if (target.area && transaction.area_exclusive) {
     const areaDiff =
       Math.abs(target.area - transaction.area_exclusive) / target.area
-    score -= Math.min(areaDiff * 100, 30)
+    score -= Math.min(areaDiff * 120, 30)
   }
 
-  // 기타 요소 (랜덤 보정)
-  score -= Math.random() * 10
+  // 년식(준공) 차이
+  if (target.built_year && transaction.built_year) {
+    const yearDiff = Math.abs(target.built_year - transaction.built_year)
+    score -= Math.min(yearDiff * 1.5, 15)
+  }
+
+  // 동 힌트 (같은 단지가 아닌 경우에만 약하게 반영)
+  if (!sameComplex && target.eupmyeondong && transaction.dong) {
+    if (target.eupmyeondong === transaction.dong) score += 4
+    else score -= 6
+  }
+
+  // 같은 단지가 아니면 "초록(>=90)"으로 보이지 않게 캡
+  if (!sameComplex) score = Math.min(score, 89)
 
   return Math.max(Math.round(score), 50)
 }
@@ -65,16 +94,59 @@ export async function GET(
     let transactions = null
     let error = null
 
+    const strictAreaMin = property.area_exclusive
+      ? property.area_exclusive * 0.9
+      : 0
+    const strictAreaMax = property.area_exclusive
+      ? property.area_exclusive * 1.1
+      : 999
+
     // 1차: 같은 단지의 거래
     if (property.complex_id) {
       const result = await supabase
         .from('transactions')
         .select('*')
         .eq('complex_id', property.complex_id)
+        .gte('area_exclusive', strictAreaMin)
+        .lte('area_exclusive', strictAreaMax)
         .order('transaction_date', { ascending: false })
         .limit(limit)
       transactions = result.data
       error = result.error
+    }
+
+    // 1.5차: complex_id가 없거나 거래가 없으면 (apt_name + sigungu)로 같은 단지 거래를 먼저 시도
+    if (
+      (!transactions || transactions.length === 0) &&
+      property.sigungu &&
+      property.name
+    ) {
+      const exact = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('sigungu', property.sigungu)
+        .eq('apt_name', property.name)
+        .gte('area_exclusive', strictAreaMin)
+        .lte('area_exclusive', strictAreaMax)
+        .order('transaction_date', { ascending: false })
+        .limit(limit)
+      transactions = exact.data
+      error = exact.error
+
+      // 이름 표기가 조금 다른 경우를 대비한 부분일치 fallback
+      if ((!transactions || transactions.length === 0) && !error) {
+        const like = await supabase
+          .from('transactions')
+          .select('*')
+          .eq('sigungu', property.sigungu)
+          .ilike('apt_name', `%${property.name}%`)
+          .gte('area_exclusive', strictAreaMin)
+          .lte('area_exclusive', strictAreaMax)
+          .order('transaction_date', { ascending: false })
+          .limit(limit)
+        transactions = like.data
+        error = like.error
+      }
     }
 
     // 2차: 같은 시군구에서 유사 면적 거래
@@ -128,7 +200,12 @@ export async function GET(
     const transactionsWithSimilarity = transactions.map((tx) => ({
       ...tx,
       similarity: calculateSimilarity(
-        { area: property.area_exclusive, built_year: property.built_year },
+        {
+          area: property.area_exclusive,
+          built_year: property.built_year,
+          complex_id: property.complex_id,
+          eupmyeondong: property.eupmyeondong,
+        },
         tx
       ),
     }))

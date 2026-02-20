@@ -1,117 +1,170 @@
 # -*- coding: utf-8 -*-
-"""
-스케줄러 관리 API
+"""Scheduler control API."""
 
-자동 수집-학습 통합 스케줄러 제어
-- GET /api/scheduler/status: 스케줄러 상태
-- POST /api/scheduler/start: 스케줄러 시작
-- POST /api/scheduler/stop: 스케줄러 중지
-- POST /api/scheduler/run: 즉시 실행 (수집/학습)
-"""
+from __future__ import annotations
+
+import os
 from typing import Optional
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+
+from fastapi import APIRouter, BackgroundTasks, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from app.core.scheduler import data_scheduler
 
-
 router = APIRouter(prefix="/scheduler", tags=["Scheduler"])
 
-VALID_JOB_TYPES = ["daily", "weekly", "monthly", "collect_commercial", "train_business", "train_all"]
+VALID_JOB_TYPES = [
+    "daily",
+    "weekly",
+    "monthly",
+    "collect_commercial",
+    "collect_land_daily",
+    "link_complexes",
+    "fix_complex_names",
+    "train_business",
+    "train_all",
+    "chamgab_backfill_property_id",
+    "chamgab_audit_gap",
+    "chamgab_reanalyze_severe",
+    "chamgab_autofix_apply",
+    "collect_school_base_monthly",
+    "collect_school_metrics_monthly",
+    "collect_school_academy_weekly",
+    "build_school_marts_daily",
+    "check_school_data_quality",
+    "collect_school_official_data",
+]
 
 
 class SchedulerStatusResponse(BaseModel):
-    """스케줄러 상태"""
     is_running: bool
     jobs: list
     last_collection_job: Optional[str]
+    last_land_collection_job: Optional[str] = None
+    last_land_collection_ok: Optional[bool] = None
+    last_land_collection_error: Optional[str] = None
+    last_land_collection_finished_at: Optional[str] = None
     last_analysis_job: Optional[str]
     last_training_job: Optional[str]
+    current_job_running: Optional[bool] = None
+    current_job_type: Optional[str] = None
+    current_job_started_at: Optional[str] = None
+    current_job_finished_at: Optional[str] = None
+    current_job_ok: Optional[bool] = None
+    current_job_error: Optional[str] = None
+    current_job_result: Optional[dict] = None
+    last_chamgab_audit_summary: Optional[dict] = None
+    last_chamgab_reanalyze_summary: Optional[dict] = None
+    last_tx_property_backfill_summary: Optional[dict] = None
+    last_chamgab_autofix_summary: Optional[dict] = None
 
 
 class RunNowRequest(BaseModel):
-    """즉시 실행 요청"""
     job_type: str = Field(
         ...,
-        description="작업 유형 (daily/weekly/monthly/train_business/train_all)"
+        description=(
+            "job type "
+            "(daily/weekly/monthly/collect_commercial/collect_land_daily/"
+            "link_complexes/fix_complex_names/train_business/train_all/"
+            "chamgab_backfill_property_id/chamgab_audit_gap/chamgab_reanalyze_severe/"
+            "chamgab_autofix_apply/"
+            "collect_school_base_monthly/collect_school_metrics_monthly/"
+            "collect_school_academy_weekly/build_school_marts_daily/check_school_data_quality)"
+        ),
     )
 
 
+def _require_admin_token(x_admin_token: Optional[str]) -> None:
+    expected = os.getenv("ML_ADMIN_TOKEN") or os.getenv("SCHEDULER_ADMIN_TOKEN")
+    if not expected:
+        return
+    if x_admin_token != expected:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+
 @router.get("/status", response_model=SchedulerStatusResponse)
-async def get_scheduler_status():
-    """
-    스케줄러 상태 조회
-    """
+async def get_scheduler_status(
+    x_admin_token: Optional[str] = Header(default=None, alias="X-Admin-Token")
+):
+    _require_admin_token(x_admin_token)
     return SchedulerStatusResponse(
         is_running=data_scheduler.is_running,
         jobs=data_scheduler.get_jobs(),
         last_collection_job=data_scheduler.last_collection_job,
+        last_land_collection_job=getattr(data_scheduler, "last_land_collection_job", None),
+        last_land_collection_ok=getattr(data_scheduler, "last_land_collection_ok", None),
+        last_land_collection_error=getattr(data_scheduler, "last_land_collection_error", None),
+        last_land_collection_finished_at=getattr(
+            data_scheduler, "last_land_collection_finished_at", None
+        ),
         last_analysis_job=data_scheduler.last_analysis_job,
         last_training_job=data_scheduler.last_training_job,
+        current_job_running=getattr(data_scheduler, "current_job_running", None),
+        current_job_type=getattr(data_scheduler, "current_job_type", None),
+        current_job_started_at=getattr(data_scheduler, "current_job_started_at", None),
+        current_job_finished_at=getattr(data_scheduler, "current_job_finished_at", None),
+        current_job_ok=getattr(data_scheduler, "current_job_ok", None),
+        current_job_error=getattr(data_scheduler, "current_job_error", None),
+        current_job_result=getattr(data_scheduler, "current_job_result", None),
+        last_chamgab_audit_summary=getattr(
+            data_scheduler, "last_chamgab_audit_summary", None
+        ),
+        last_chamgab_reanalyze_summary=getattr(
+            data_scheduler, "last_chamgab_reanalyze_summary", None
+        ),
+        last_tx_property_backfill_summary=getattr(
+            data_scheduler, "last_tx_property_backfill_summary", None
+        ),
+        last_chamgab_autofix_summary=getattr(
+            data_scheduler, "last_chamgab_autofix_summary", None
+        ),
     )
 
 
 @router.post("/start")
-async def start_scheduler():
-    """
-    스케줄러 시작
-    """
+async def start_scheduler(
+    x_admin_token: Optional[str] = Header(default=None, alias="X-Admin-Token")
+):
+    _require_admin_token(x_admin_token)
     if data_scheduler.is_running:
-        return {"message": "스케줄러가 이미 실행 중입니다"}
+        return {"message": "scheduler is already running"}
 
     data_scheduler.start()
-    return {
-        "message": "스케줄러가 시작되었습니다",
-        "jobs": data_scheduler.get_jobs()
-    }
+    return {"message": "scheduler started", "jobs": data_scheduler.get_jobs()}
 
 
 @router.post("/stop")
-async def stop_scheduler():
-    """
-    스케줄러 중지
-    """
+async def stop_scheduler(
+    x_admin_token: Optional[str] = Header(default=None, alias="X-Admin-Token")
+):
+    _require_admin_token(x_admin_token)
     if not data_scheduler.is_running:
-        return {"message": "스케줄러가 이미 중지되어 있습니다"}
+        return {"message": "scheduler is already stopped"}
 
     data_scheduler.stop()
-    return {"message": "스케줄러가 중지되었습니다"}
+    return {"message": "scheduler stopped"}
 
 
 @router.post("/run")
 async def run_job_now(
     request: RunNowRequest,
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    x_admin_token: Optional[str] = Header(default=None, alias="X-Admin-Token"),
 ):
-    """
-    작업 즉시 실행
-
-    - daily: 일간 수집 (주요 도시)
-    - weekly: 주간 수집 (수도권) + 분석
-    - monthly: 월간 수집 (전국)
-    - train_business: 상권 모델 즉시 학습
-    - train_all: 전체 모델 즉시 학습 (아파트 + 상권)
-    """
+    _require_admin_token(x_admin_token)
     if request.job_type not in VALID_JOB_TYPES:
         raise HTTPException(
             status_code=400,
-            detail=f"job_type은 {', '.join(VALID_JOB_TYPES)} 중 하나여야 합니다"
+            detail=f"job_type must be one of: {', '.join(VALID_JOB_TYPES)}",
         )
 
     background_tasks.add_task(data_scheduler.run_now, request.job_type)
-
-    return {
-        "message": f"{request.job_type} 작업이 백그라운드에서 실행됩니다",
-        "job_type": request.job_type
-    }
+    return {"message": f"{request.job_type} queued", "job_type": request.job_type}
 
 
 @router.get("/jobs")
-async def list_scheduled_jobs():
-    """
-    예약된 작업 목록
-    """
-    return {
-        "jobs": data_scheduler.get_jobs(),
-        "is_running": data_scheduler.is_running
-    }
+async def list_scheduled_jobs(
+    x_admin_token: Optional[str] = Header(default=None, alias="X-Admin-Token")
+):
+    _require_admin_token(x_admin_token)
+    return {"jobs": data_scheduler.get_jobs(), "is_running": data_scheduler.is_running}

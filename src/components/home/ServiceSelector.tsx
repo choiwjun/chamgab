@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { Building2, Store, ArrowRight } from 'lucide-react'
+import { Building2, Store, MapPin, ArrowRight } from 'lucide-react'
 
 const services = [
   {
@@ -29,6 +29,18 @@ const services = [
     cta: '상권 분석하기',
     ctaColor: 'text-[#00C471]',
   },
+  {
+    id: 'land',
+    icon: MapPin,
+    iconColor: 'text-[#F59E0B]',
+    iconBg: 'bg-[#FFF7ED]',
+    title: '토지분석',
+    description:
+      '토지 실거래 데이터와 AI 분석으로 최적의 투자 기회를 찾으세요. 지역별 토지 시세와 최근 거래를 확인하세요.',
+    href: '/land',
+    cta: '토지 분석하기',
+    ctaColor: 'text-[#F59E0B]',
+  },
 ]
 
 export function ServiceSelector() {
@@ -50,8 +62,8 @@ export function ServiceSelector() {
           </p>
         </motion.div>
 
-        {/* 서비스 카드 - 2컬럼 그리드 */}
-        <div className="mt-10 grid gap-4 md:grid-cols-2">
+        {/* 서비스 카드 - 3컬럼 그리드 */}
+        <div className="mt-10 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {services.map((service, index) => {
             const Icon = service.icon
             return (

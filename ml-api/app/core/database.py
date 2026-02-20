@@ -3,6 +3,8 @@ Supabase 데이터베이스 연결 헬퍼
 """
 import os
 from supabase import create_client, Client
+from supabase.lib.client_options import SyncClientOptions
+import httpx
 from typing import Optional
 
 _supabase_client: Optional[Client] = None
@@ -13,13 +15,16 @@ def get_supabase_client() -> Client:
     global _supabase_client
 
     if _supabase_client is None:
-        url = os.getenv("SUPABASE_URL")
-        key = os.getenv("SUPABASE_SERVICE_KEY")
+        url = os.getenv("SUPABASE_URL") or os.getenv("NEXT_PUBLIC_SUPABASE_URL")
+        key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
         if not url or not key:
             raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set")
 
-        _supabase_client = create_client(url, key)
+        # Disable environment proxy usage to avoid accidental local proxy settings
+        # (e.g. WinError 10061) breaking DB access in jobs or local QA.
+        http = httpx.Client(trust_env=False)
+        _supabase_client = create_client(url, key, SyncClientOptions(httpx_client=http))
 
     return _supabase_client
 

@@ -38,6 +38,18 @@ from app.services.business_model_service import business_model_service
 router = APIRouter(prefix="/api/commercial", tags=["commercial"])
 limiter = Limiter(key_func=get_remote_address)
 
+# 비상업/시설 업종 (창업 분석 제외)
+EXCLUDED_INDUSTRY_CODES = {"L05", "L06", "L01", "L02", "L03", "L04", "I05", "I06"}
+
+
+def _compress_ml_probability(raw: float) -> float:
+    """ML 모델 과신 보정: 60% 이하 통과, 60% 초과 점진 압축 (최대 ~74%)."""
+    capped = min(max(raw, 0), 100)
+    if capped <= 60:
+        return round(capped, 1)
+    return round(60 + (capped - 60) * 0.35, 1)
+
+
 # 데이터 출처 및 면책 문구
 _DATA_SOURCE = "소상공인진흥공단(SBIZ) 실제 점포수 기반 AI 분석"
 _DISCLAIMER = "본 분석은 AI 모델 기반 추정치이며, 실제 결과와 다를 수 있습니다"
@@ -520,6 +532,8 @@ async def predict_business_success(
     competition_ratio: Optional[float] = None,
 ):
     """창업 성공 확률 예측 - 실데이터 기반 피처 자동 조회"""
+    if industry_code in EXCLUDED_INDUSTRY_CODES:
+        raise HTTPException(status_code=400, detail=f"{industry_code}은(는) 창업 분석 대상 업종이 아닙니다.")
     client = _try_get_supabase()
     district_name = district_code
     industry_name = industry_code
@@ -563,12 +577,12 @@ async def predict_business_success(
     weekend_ratio = (weekend_ft / (weekday_ft + weekend_ft) * 100) if (weekday_ft + weekend_ft) > 0 else 35.0
 
     feat = {
-        "survival_rate": survival_rate or 75.0,
-        "monthly_avg_sales": monthly_avg_sales or 40000000,
-        "sales_growth_rate": sales_growth_rate or 3.0,
-        "store_count": store_count or 120,
-        "franchise_ratio": franchise_ratio or 0.3,
-        "competition_ratio": competition_ratio or 1.2,
+        "survival_rate": survival_rate if survival_rate is not None else 50.0,
+        "monthly_avg_sales": monthly_avg_sales if monthly_avg_sales is not None else 20_000_000,
+        "sales_growth_rate": sales_growth_rate if sales_growth_rate is not None else 0.0,
+        "store_count": store_count if store_count is not None else 80,
+        "franchise_ratio": franchise_ratio if franchise_ratio is not None else 0.15,
+        "competition_ratio": competition_ratio if competition_ratio is not None else 1.0,
     }
 
     result = business_model_service.predict(
@@ -587,7 +601,7 @@ async def predict_business_success(
         industry_code=industry_code,
     )
 
-    success_probability = result["success_probability"]
+    success_probability = _compress_ml_probability(result["success_probability"])
     confidence = result["confidence"]
 
     factor_name_map = {

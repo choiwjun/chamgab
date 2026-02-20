@@ -83,6 +83,7 @@ function SearchMapContent() {
       const params = new URLSearchParams()
       params.set('map', 'true')
       if (q) params.set('keyword', q)
+      if (region) params.set('region', region)
       if (sido) params.set('sido', sido)
       if (sigungu) params.set('sigungu', sigungu)
 
@@ -101,7 +102,7 @@ function SearchMapContent() {
     } finally {
       setIsLoading(false)
     }
-  }, [q, sido, sigungu])
+  }, [q, region, sido, sigungu])
 
   // Kakao Maps SDK 동적 로드
   useEffect(() => {
