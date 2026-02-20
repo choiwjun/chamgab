@@ -55,16 +55,6 @@ const NAV_BUSINESS: NavCategory = {
   ],
 }
 
-const NAV_SCHOOL: NavCategory = {
-  id: 'school',
-  label: '학군분석',
-  icon: GraduationCap,
-  links: [
-    { href: '/school-analysis', label: '프리뷰' },
-    { href: '/school-analysis/result', label: '상세 리포트' },
-  ],
-}
-
 const NAV_LAND: NavCategory = {
   id: 'land',
   label: '토지분석',
@@ -194,9 +184,7 @@ export function Header() {
   const pathname = usePathname()
   const router = useRouter()
 
-  const desktopCategories = [NAV_APARTMENT, NAV_BUSINESS, NAV_SCHOOL, NAV_LAND]
-
-  const mobileCategories = desktopCategories
+  const desktopCategories = [NAV_APARTMENT, NAV_BUSINESS, NAV_LAND]
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
@@ -242,13 +230,28 @@ export function Header() {
           </Link>
 
           <nav className="hidden flex-1 items-center justify-center gap-2 md:flex">
-            {desktopCategories.map((category) => (
-              <NavDropdown
-                key={category.id}
-                category={category}
-                isActive={isCategoryActive(pathname, category.id)}
-              />
-            ))}
+            <NavDropdown
+              category={NAV_APARTMENT}
+              isActive={isCategoryActive(pathname, 'apartment')}
+            />
+            <NavDropdown
+              category={NAV_BUSINESS}
+              isActive={isCategoryActive(pathname, 'business')}
+            />
+            <Link
+              href={'/school-analysis' as never}
+              className={`px-4 py-2 text-sm font-medium transition-colors ${
+                pathname.startsWith('/school-analysis')
+                  ? 'text-[#191F28]'
+                  : 'text-[#4E5968] hover:text-[#191F28]'
+              }`}
+            >
+              학군분석
+            </Link>
+            <NavDropdown
+              category={NAV_LAND}
+              isActive={isCategoryActive(pathname, 'land')}
+            />
           </nav>
 
           <div className="flex flex-1 items-center justify-end gap-1 md:gap-2">
@@ -341,7 +344,7 @@ export function Header() {
                 홈
               </Link>
 
-              {mobileCategories.map((category) => {
+              {desktopCategories.map((category) => {
                 const Icon = category.icon
                 return (
                   <div
@@ -391,6 +394,17 @@ export function Header() {
                   </div>
                 )
               })}
+
+              <div className="border-t border-[#E5E8EB] pt-4">
+                <Link
+                  href={'/school-analysis' as never}
+                  className="flex items-center gap-2 px-4 py-2 text-[#4E5968] transition-colors hover:bg-[#F9FAFB] hover:text-[#191F28]"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                >
+                  <GraduationCap className="h-4 w-4 text-[#8B95A1]" />
+                  학군분석
+                </Link>
+              </div>
 
               {isAuthenticated ? (
                 <div className="border-t border-[#E5E8EB] pt-4">
