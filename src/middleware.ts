@@ -5,22 +5,69 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+const AUTH_REQUEST_TIMEOUT_MS = 8000
+
+async function withTimeout<T>(
+  operation: Promise<T>,
+  fallback: T,
+  label: string
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<T>((resolve) => {
+        timeoutId = setTimeout(() => {
+          console.warn(
+            `[middleware] ${label} timed out after ${AUTH_REQUEST_TIMEOUT_MS}ms`
+          )
+          resolve(fallback)
+        }, AUTH_REQUEST_TIMEOUT_MS)
+      }),
+    ])
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId)
+  }
+}
+
 /**
- * 보호된 라우트 목록
- * 인증이 필요한 경로들
+ * 공개 라우트 목록
+ * 인증이 필요하지 않은 경로
  */
-const PROTECTED_ROUTES = [
-  '/favorites',
-  '/notifications',
-  '/mypage',
-  '/reports',
-  '/subscriptions',
+const PUBLIC_EXACT_ROUTES = [
+  '/',
+  '/search',
+  '/business-analysis',
+  '/school-analysis',
+  '/manifest.webmanifest',
+  '/site.webmanifest',
+]
+const PUBLIC_PREFIX_ROUTES = [
+  '/auth',
+  '/terms',
+  '/complex',
+  '/property',
+  '/land',
+  '/school-analysis/share',
 ]
 
 /**
  * Auth 관련 라우트 (로그인된 상태에서 접근 시 리다이렉트)
  */
 const AUTH_ROUTES = ['/auth/login', '/auth/signup']
+
+function isRouteMatch(pathname: string, route: string) {
+  if (route === '/') return pathname === '/'
+  return pathname === route || pathname.startsWith(`${route}/`)
+}
+
+function isExactRouteMatch(pathname: string, route: string) {
+  return pathname === route
+}
+
+function isPrefixRouteMatch(pathname: string, route: string) {
+  return pathname === route || pathname.startsWith(`${route}/`)
+}
 
 /**
  * 미들웨어 - Supabase Auth 세션 관리
@@ -37,77 +84,70 @@ export async function middleware(request: NextRequest) {
     },
   })
 
-  // Supabase 서버 클라이언트 생성 (쿠키 갱신용)
+  // Supabase 서버 클라이언트 생성 (쿠키 갱신)
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get(name: string) {
-          return request.cookies.get(name)?.value
+        getAll() {
+          return request.cookies
+            .getAll()
+            .map((c) => ({ name: c.name, value: c.value }))
         },
-        set(name: string, value: string, options: CookieOptions) {
-          // 요청에 쿠키 설정
-          request.cookies.set({
-            name,
-            value,
-            ...options,
-          })
-          // 응답에 쿠키 설정
+        setAll(
+          cookiesToSet: {
+            name: string
+            value: string
+            options: CookieOptions
+          }[]
+        ) {
+          // Important: apply all cookie mutations to a single response instance.
           response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
+            request: { headers: request.headers },
           })
-          response.cookies.set({
-            name,
-            value,
-            ...options,
-          })
-        },
-        remove(name: string, options: CookieOptions) {
-          request.cookies.set({
-            name,
-            value: '',
-            ...options,
-          })
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
-          })
-          response.cookies.set({
-            name,
-            value: '',
-            ...options,
-          })
+          for (const { name, value, options } of cookiesToSet) {
+            request.cookies.set({ name, value, ...options })
+            response.cookies.set({ name, value, ...options })
+          }
         },
       },
     }
   )
 
-  // 세션 갱신 (중요: getUser()로 검증된 사용자 정보 가져오기)
+  // Session lookup with timeout to prevent route hangs.
   const {
-    data: { user },
-  } = await supabase.auth.getUser()
+    data: { session },
+  } = await withTimeout(
+    supabase.auth.getSession(),
+    { data: { session: null }, error: null },
+    'getSession'
+  )
+  const user = session?.user ?? null
 
   const pathname = request.nextUrl.pathname
 
   // 보호된 라우트 접근 제어
-  const isProtectedRoute = PROTECTED_ROUTES.some((route) =>
-    pathname.startsWith(route)
-  )
+  const isAuthRoute = AUTH_ROUTES.some((route) => isRouteMatch(pathname, route))
+  const isPublicRoute =
+    PUBLIC_EXACT_ROUTES.some((route) => isExactRouteMatch(pathname, route)) ||
+    PUBLIC_PREFIX_ROUTES.some((route) => isPrefixRouteMatch(pathname, route))
+  const requiresAuth = !isAuthRoute && !isPublicRoute
 
-  if (isProtectedRoute && !user) {
-    // 로그인 페이지로 리다이렉트 (원래 URL 저장)
+  if (requiresAuth && !user) {
+    // 로그인 페이지로 리다이렉트 (원래 URL 포함)
     const redirectUrl = new URL('/auth/login', request.url)
-    redirectUrl.searchParams.set('redirect', pathname)
+    redirectUrl.searchParams.set(
+      'redirect',
+      `${pathname}${request.nextUrl.search}`
+    )
     return NextResponse.redirect(redirectUrl)
   }
 
-  // 로그인된 상태에서 Auth 페이지 접근 시 홈으로 리다이렉트
-  const isAuthRoute = AUTH_ROUTES.some((route) => pathname.startsWith(route))
+  // Note: 정지/강제로그아웃 체크는 AuthProvider(클라이언트)에서 수행.
+  // 미들웨어에서 매 요청마다 user_profiles DB 쿼리를 하면 로딩 속도가 크게 저하됨.
 
+  // Redirect authenticated users away from auth pages
   if (isAuthRoute && user) {
     return NextResponse.redirect(new URL('/', request.url))
   }
@@ -128,6 +168,6 @@ export const config = {
      * - api (API 라우트는 각자 인증 처리)
      * - 정적 파일 확장자 (.svg, .png, .jpg, .jpeg, .gif, .webp)
      */
-    '/((?!_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt|api|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|site.webmanifest|sitemap.xml|robots.txt|api|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }
