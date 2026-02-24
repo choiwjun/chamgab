@@ -14,6 +14,17 @@ _supabase_client: Optional[Client] = None
 _env_loaded = False
 
 
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
 def _load_env_if_needed() -> None:
     """Load local env files for script execution contexts."""
     global _env_loaded
@@ -44,7 +55,12 @@ def get_supabase_client() -> Client:
             raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set")
 
         # Ignore system proxies so local proxy config does not break jobs.
-        http = httpx.Client(trust_env=False)
+        # Default timeout (5s) is too small for heavy paginated reads/uploads.
+        timeout = httpx.Timeout(
+            timeout=_env_float("SUPABASE_HTTP_TIMEOUT_SEC", 600.0),
+            connect=_env_float("SUPABASE_HTTP_CONNECT_TIMEOUT_SEC", 30.0),
+        )
+        http = httpx.Client(trust_env=False, timeout=timeout)
         _supabase_client = create_client(url, key, SyncClientOptions(httpx_client=http))
 
     return _supabase_client

@@ -20,6 +20,10 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
+from app.core.model_artifacts import (
+    download_apartment_model_artifacts,
+    upload_apartment_model_artifacts,
+)
 from app.services.analyzer_service import analyzer_service
 from app.services.business_model_service import business_model_service
 from app.services.collector_service import collector_service
@@ -373,6 +377,38 @@ class DataScheduler:
         if not missing_before:
             return
 
+        restore_enabled = self._env_bool(
+            "CHAMGAB_MODEL_ARTIFACTS_RESTORE_ENABLED", True
+        )
+        if restore_enabled:
+            try:
+                restore_summary = await asyncio.to_thread(
+                    download_apartment_model_artifacts
+                )
+                print(
+                    "[scheduler] apartment artifact restore attempt: "
+                    f"ok={restore_summary.get('ok')} "
+                    f"downloaded={len(restore_summary.get('downloaded_files', []))} "
+                    f"missing_after={restore_summary.get('missing_required_after_download')}"
+                )
+            except Exception as exc:
+                restore_summary = {
+                    "ok": False,
+                    "error": str(exc),
+                    "downloaded_files": [],
+                }
+                print(f"[scheduler] apartment artifact restore failed: {exc}")
+
+            if isinstance(self.current_job_result, dict):
+                self.current_job_result["model_artifact_restore"] = restore_summary
+            else:
+                self.current_job_result = {"model_artifact_restore": restore_summary}
+
+            missing_after_restore = self._missing_apartment_model_artifacts()
+            if not missing_after_restore:
+                await self._reload_models()
+                return
+
         auto_bootstrap = self._env_bool("CHAMGAB_FACTOR_BACKFILL_AUTO_BOOTSTRAP_MODEL", True)
         if not auto_bootstrap:
             raise RuntimeError(
@@ -382,7 +418,7 @@ class DataScheduler:
 
         bootstrap_timeout = self._env_int(
             "CHAMGAB_MODEL_BOOTSTRAP_TIMEOUT_SEC",
-            7200,
+            21600,
             min_value=60,
         )
         ok_train = await self._run_script(
@@ -391,6 +427,28 @@ class DataScheduler:
         )
         if not ok_train:
             raise RuntimeError("train_model failed while bootstrapping apartment model artifacts")
+
+        upload_after_bootstrap = self._env_bool(
+            "CHAMGAB_MODEL_ARTIFACTS_UPLOAD_AFTER_BOOTSTRAP", True
+        )
+        if upload_after_bootstrap:
+            try:
+                upload_summary = await asyncio.to_thread(
+                    upload_apartment_model_artifacts,
+                    True,
+                )
+                print(
+                    "[scheduler] apartment artifact upload completed: "
+                    f"files={upload_summary.get('uploaded_files')}"
+                )
+            except Exception as exc:
+                upload_summary = {"ok": False, "error": str(exc)}
+                print(f"[scheduler] apartment artifact upload failed: {exc}")
+
+            if isinstance(self.current_job_result, dict):
+                self.current_job_result["model_artifact_upload"] = upload_summary
+            else:
+                self.current_job_result = {"model_artifact_upload": upload_summary}
 
         await self._reload_models()
         missing_after = self._missing_apartment_model_artifacts()

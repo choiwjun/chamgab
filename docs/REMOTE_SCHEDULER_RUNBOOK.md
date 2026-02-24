@@ -62,6 +62,42 @@ Toggle:
 - `CHAMGAB_GAP_RECOVERY_CHAIN_SCHOOL_FULL_REBUILD=true|false`
 - default is `true`
 
+### Apartment model artifact hardening (required)
+
+Root cause of repeated `chamgab_gap_recovery_full` failure is usually:
+- missing apartment model artifacts (`xgboost_model.pkl`, `feature_artifacts.pkl`, `shap_explainer.pkl`)
+- bootstrap training timeout during `scripts.train_model`
+
+New scheduler behavior:
+- before bootstrap, it tries to restore artifacts from Supabase Storage
+- after successful bootstrap, it uploads artifacts back to storage
+
+Required env:
+- `CHAMGAB_MODEL_ARTIFACTS_RESTORE_ENABLED=true`
+- `CHAMGAB_MODEL_ARTIFACTS_UPLOAD_AFTER_BOOTSTRAP=true`
+- `ML_MODEL_ARTIFACT_BUCKET=ml-models`
+- `APARTMENT_MODEL_ARTIFACT_PREFIX=apartment/latest`
+- `MODEL_ARTIFACT_IO_RETRIES=3` (recommended)
+- `MODEL_ARTIFACT_IO_RETRY_DELAY_SEC=2` (recommended)
+- `SUPABASE_HTTP_TIMEOUT_SEC=600` (recommended for large model artifact download)
+- `SUPABASE_HTTP_CONNECT_TIMEOUT_SEC=30`
+- `CHAMGAB_MODEL_BOOTSTRAP_TIMEOUT_SEC=21600` (recommended)
+
+One-time seed (local):
+
+```bash
+cd ml-api
+python -m scripts.sync_apartment_model_artifacts --mode upload
+```
+
+Recovery check:
+
+```bash
+cd ml-api
+python -m scripts.sync_apartment_model_artifacts --mode status
+python -m scripts.sync_apartment_model_artifacts --mode download
+```
+
 ## 3.1) Server-side automatic schedule (no local PC dependency)
 
 The ML API scheduler can run the full sequence automatically on server cron:
