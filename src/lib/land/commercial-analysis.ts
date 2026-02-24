@@ -5,7 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { LandParcel } from '@/types/land'
 import {
   fetchBusinessStats,
-  fetchDistrictCharAggregated,
+  fetchDistrictChar,
   fetchFootTraffic,
   fetchSalesStats,
   fetchStoreStats,
@@ -361,7 +361,7 @@ export async function buildLandCommercialAnalysis(
       fetchSalesStats(supabase, districtCode),
       fetchStoreStats(supabase, districtCode),
       fetchFootTraffic(supabase, districtCode),
-      fetchDistrictCharAggregated(supabase, districtCode),
+      fetchDistrictChar(supabase, districtCode),
       fetchCompetitionWithin500m({
         supabase,
         parcel: input.parcel,
