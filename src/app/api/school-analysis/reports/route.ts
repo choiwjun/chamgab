@@ -1,4 +1,4 @@
-﻿export const dynamic = 'force-dynamic'
+export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 import crypto from 'crypto'
@@ -134,7 +134,10 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = createAdminClient()
-    const requestHash = createRequestHash({ districtCode, version: 'school_report_v2' })
+    const requestHash = createRequestHash({
+      districtCode,
+      version: 'school_report_v2',
+    })
 
     const { data: existingRow, error: existingError } = await supabase
       .from('school_analysis_reports')
@@ -186,13 +189,7 @@ export async function POST(request: NextRequest) {
     }
 
     const officialCoverage = extractCoverage(preview)
-    if (officialCoverage < 95) {
-      throw new SchoolApiException(
-        'insufficient_official_data',
-        `Official coverage is too low (${officialCoverage.toFixed(1)}%).`,
-        409
-      )
-    }
+    const hasLowOfficialCoverage = officialCoverage < 95
 
     const { data: schoolRows, error: schoolError } = await supabase
       .from('vw_school_quality_latest')
@@ -295,13 +292,7 @@ export async function POST(request: NextRequest) {
         totalSchools > 0 ? round((officialCount / totalSchools) * 100, 1) : 0,
     }
 
-    if (dataQuality.coverage_rate < 95) {
-      throw new SchoolApiException(
-        'insufficient_official_data',
-        `District official coverage too low (${dataQuality.coverage_rate.toFixed(1)}%).`,
-        409
-      )
-    }
+    const hasLowDistrictCoverage = dataQuality.coverage_rate < 95
 
     const avgAchievement = avg(schools, 'achievement_score')
     const avgProgression = avg(schools, 'progression_outcome_score')
@@ -384,18 +375,20 @@ export async function POST(request: NextRequest) {
       return {
         school_id: schoolId,
         school_name: String(s.school_name || `School ${schoolId}`),
-        school_level: (String(s.school_level || 'other') as
+        school_level: String(s.school_level || 'other') as
           | 'elementary'
           | 'middle'
           | 'high'
-          | 'other'),
+          | 'other',
         overall_score: mv(score, 'official'),
         data_status: getDataStatus(schoolId),
       }
     })
 
     const reportId = existingRow?.id || crypto.randomUUID()
-    const districtName = String(preview.district_name || `District ${districtCode}`)
+    const districtName = String(
+      preview.district_name || `District ${districtCode}`
+    )
 
     const report: SchoolAnalysisReport = {
       id: reportId,
@@ -419,6 +412,19 @@ export async function POST(request: NextRequest) {
       commute_safety: commuteSafety,
       schools: schoolList,
       data_quality: dataQuality,
+    }
+
+    // In open mode, low coverage is surfaced in quality metadata instead of
+    // hard-blocking report generation with HTTP 409.
+    if (hasLowOfficialCoverage || hasLowDistrictCoverage) {
+      report.confidence_score = round(
+        Math.min(
+          report.confidence_score,
+          Math.max(30, (officialCoverage + dataQuality.coverage_rate) / 2)
+        ),
+        1
+      )
+      report.confidence_breakdown.total_confidence = report.confidence_score
     }
 
     if (existingRow?.id) {

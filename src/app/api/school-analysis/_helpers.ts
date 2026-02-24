@@ -1,4 +1,4 @@
-﻿import 'server-only'
+import 'server-only'
 
 import crypto from 'crypto'
 import type { ApiErrorCode, SchoolAnalysisMode } from '@/types/school-analysis'
@@ -22,15 +22,27 @@ export function createRequestHash(payload: unknown): string {
 
 export function getSchoolAnalysisMode(): SchoolAnalysisMode {
   const raw = (process.env.SCHOOL_ANALYSIS_MODE || '').trim().toLowerCase()
-  if (raw === 'open') return 'open'
-  return 'preview_only'
+  if (raw === 'open' || raw === 'preview_only') {
+    return raw
+  }
+
+  const freeOpenMode = (process.env.FREE_OPEN_MODE || '').trim().toLowerCase()
+  if (freeOpenMode === 'true') return 'open'
+
+  // Default open to avoid accidental 409 lock when mode env is not set.
+  return 'open'
 }
 
 export function schoolApiError(
   code: ApiErrorCode,
   message: string,
   status: number
-): { error: string; code: ApiErrorCode; mode: SchoolAnalysisMode; status: number } {
+): {
+  error: string
+  code: ApiErrorCode
+  mode: SchoolAnalysisMode
+  status: number
+} {
   return {
     error: message,
     code,
