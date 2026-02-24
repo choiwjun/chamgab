@@ -1,31 +1,33 @@
-'use client'
+﻿'use client'
 
 import { motion } from 'framer-motion'
 import Link from 'next/link'
 import type { Route } from 'next'
 import {
-  MapPin,
-  Calendar,
-  Maximize2,
   ArrowLeft,
-  TrendingUp,
-  TrendingDown,
   BarChart3,
   Building2,
+  Calendar,
+  MapPin,
+  Maximize2,
   Store,
+  TrendingDown,
+  TrendingUp,
 } from 'lucide-react'
+import { LAND_CATEGORY_LABELS } from '@/types/land'
+import type { QualityGateStatus, QualityGrade } from '@/types/quality'
 import type {
-  LandParcel,
-  LandTransaction,
-  LandOfficialPrice,
   LandCharacteristics,
   LandMapPoint,
+  LandOfficialPrice,
+  LandParcel,
+  LandTransaction,
 } from '@/types/land'
-import { LAND_CATEGORY_LABELS } from '@/types/land'
 import { formatNumber } from '@/lib/format'
 import type { LandAnalysisSummary } from '@/lib/land/analysis'
 import type { LandValuationSummary } from '@/lib/land/valuation'
 import { LandNearbyMap } from '@/components/land/LandNearbyMap'
+import { QualityGateNotice } from '@/components/ui/QualityGateNotice'
 
 interface LandDetailClientProps {
   parcel: LandParcel
@@ -42,6 +44,11 @@ interface LandDetailClientProps {
   analysis: LandAnalysisSummary
   valuation: LandValuationSummary
   nearbyMapPoints: LandMapPoint[]
+  quality: {
+    quality_gate_status: QualityGateStatus
+    quality_grade: QualityGrade
+    quality_flags: string[]
+  }
 }
 
 function formatDate(dateStr: string) {
@@ -60,13 +67,55 @@ function formatPyeong(m2: number) {
 function formatPrice(price: number) {
   const eok = Math.floor(price / 10000)
   const man = price % 10000
-  if (eok > 0 && man > 0) {
+  if (eok > 0 && man > 0)
     return `${formatNumber(eok)}억 ${formatNumber(man)}만원`
-  }
-  if (eok > 0) {
-    return `${formatNumber(eok)}억원`
-  }
+  if (eok > 0) return `${formatNumber(eok)}억원`
   return `${formatNumber(man)}만원`
+}
+
+const ANALYSIS_LABEL_MAP: Record<
+  LandAnalysisSummary['investment_grade'],
+  string
+> = {
+  strong: '진입 우세',
+  watch: '관찰 권장',
+  cautious: '보수 접근',
+  insufficient: '표본 부족',
+}
+
+const ANALYSIS_TONE_MAP: Record<
+  LandAnalysisSummary['investment_grade'],
+  string
+> = {
+  strong: 'text-[#00C471]',
+  watch: 'text-[#2F80ED]',
+  cautious: 'text-[#F59E0B]',
+  insufficient: 'text-[#8B95A1]',
+}
+
+const VALUATION_LABEL_MAP: Record<
+  LandValuationSummary['valuation_grade'],
+  string
+> = {
+  undervalued: '저평가 구간',
+  fair: '적정 구간',
+  overvalued: '고평가 구간',
+  insufficient: '추정 불가',
+}
+
+const VALUATION_TONE_MAP: Record<
+  LandValuationSummary['valuation_grade'],
+  string
+> = {
+  undervalued: 'text-[#00C471]',
+  fair: 'text-[#2F80ED]',
+  overvalued: 'text-[#F04452]',
+  insufficient: 'text-[#8B95A1]',
+}
+
+function PricePerM2Text({ value }: { value: number | null | undefined }) {
+  if (!value || value <= 0) return <>-</>
+  return <>{formatNumber(Math.floor(value / 10000))}만원/m²</>
 }
 
 export function LandDetailClient({
@@ -81,6 +130,7 @@ export function LandDetailClient({
   analysis,
   valuation,
   nearbyMapPoints,
+  quality,
 }: LandDetailClientProps) {
   const pricesOverTime = transactions
     .filter((tx) => tx.price_per_m2)
@@ -115,34 +165,6 @@ export function LandDetailClient({
       ? ((recentAvg - olderAvg) / olderAvg) * 100
       : null
 
-  const analysisLabelMap: Record<LandAnalysisSummary['investment_grade'], string> = {
-    strong: '진입 우세',
-    watch: '관찰 권장',
-    cautious: '보수 접근',
-    insufficient: '표본 부족',
-  }
-
-  const analysisToneMap: Record<LandAnalysisSummary['investment_grade'], string> = {
-    strong: 'text-[#00C471]',
-    watch: 'text-[#2F80ED]',
-    cautious: 'text-[#F59E0B]',
-    insufficient: 'text-[#8B95A1]',
-  }
-
-  const valuationLabelMap: Record<LandValuationSummary['valuation_grade'], string> = {
-    undervalued: '저평가 구간',
-    fair: '적정 구간',
-    overvalued: '고평가 구간',
-    insufficient: '추정 불가',
-  }
-
-  const valuationToneMap: Record<LandValuationSummary['valuation_grade'], string> = {
-    undervalued: 'text-[#00C471]',
-    fair: 'text-[#2F80ED]',
-    overvalued: 'text-[#F04452]',
-    insufficient: 'text-[#8B95A1]',
-  }
-
   return (
     <div className="mx-auto max-w-5xl px-6 py-8">
       <motion.div
@@ -165,7 +187,7 @@ export function LandDetailClient({
         transition={{ duration: 0.4, delay: 0.1 }}
         className="mt-6"
       >
-        <div className="flex items-start justify-between">
+        <div className="flex items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
               <MapPin className="h-5 w-5 text-[#F59E0B]" strokeWidth={2} />
@@ -173,12 +195,15 @@ export function LandDetailClient({
                 {parcel.sido} {parcel.sigungu} {parcel.eupmyeondong}
               </h1>
             </div>
-            {parcel.jibun && <p className="ml-7 mt-1 text-[#4E5968]">{parcel.jibun}</p>}
+            {parcel.jibun && (
+              <p className="ml-7 mt-1 text-[#4E5968]">{parcel.jibun}</p>
+            )}
           </div>
 
           {parcel.land_category && (
             <span className="rounded-xl bg-[#FFF7ED] px-4 py-2 text-sm font-semibold text-[#F59E0B]">
-              {LAND_CATEGORY_LABELS[parcel.land_category] || parcel.land_category}
+              {LAND_CATEGORY_LABELS[parcel.land_category] ||
+                parcel.land_category}
             </span>
           )}
         </div>
@@ -198,7 +223,11 @@ export function LandDetailClient({
           <p className="mt-2 text-xl font-bold text-[#191F28]">
             {parcel.area_m2 ? `${formatNumber(parcel.area_m2)}m²` : '-'}
           </p>
-          {parcel.area_m2 && <p className="text-xs text-[#8B95A1]">({formatPyeong(parcel.area_m2)}평)</p>}
+          {parcel.area_m2 && (
+            <p className="text-xs text-[#8B95A1]">
+              ({formatPyeong(parcel.area_m2)}평)
+            </p>
+          )}
         </div>
 
         <div className="rounded-2xl border border-[#E5E8EB] bg-white p-5">
@@ -207,21 +236,22 @@ export function LandDetailClient({
             최신 거래가
           </div>
           <p className="mt-2 text-xl font-bold text-[#191F28]">
-            {parcel.latest_transaction_price ? formatPrice(parcel.latest_transaction_price) : '-'}
+            {parcel.latest_transaction_price
+              ? formatPrice(parcel.latest_transaction_price)
+              : '-'}
           </p>
           {parcel.latest_transaction_date && (
-            <p className="text-xs text-[#8B95A1]">{formatDate(parcel.latest_transaction_date)}</p>
+            <p className="text-xs text-[#8B95A1]">
+              {formatDate(parcel.latest_transaction_date)}
+            </p>
           )}
         </div>
 
         <div className="rounded-2xl border border-[#E5E8EB] bg-white p-5">
           <div className="text-xs text-[#8B95A1]">단가 (원/m²)</div>
           <p className="mt-2 text-xl font-bold text-[#F59E0B]">
-            {parcel.latest_price_per_m2
-              ? `${formatNumber(Math.floor(parcel.latest_price_per_m2 / 10000))}만원`
-              : '-'}
+            <PricePerM2Text value={parcel.latest_price_per_m2} />
           </p>
-          <p className="text-xs text-[#8B95A1]">/m²</p>
         </div>
 
         <div className="rounded-2xl border border-[#E5E8EB] bg-white p-5">
@@ -254,23 +284,33 @@ export function LandDetailClient({
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.28 }}
+        transition={{ duration: 0.4, delay: 0.26 }}
         className="mt-6 rounded-2xl border border-[#E5E8EB] bg-white p-6"
       >
+        <QualityGateNotice
+          status={quality.quality_gate_status}
+          grade={quality.quality_grade}
+          flags={quality.quality_flags}
+        />
+
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h2 className="text-lg font-bold text-[#191F28]">토지 분석 요약</h2>
             <p className="mt-1 text-sm text-[#8B95A1]">
-              실거래 기반 점수 (주변 거래 + 최근 흐름 + 변동성)
+              실거래 기반 점수(가격 구간 + 거래 유동성 + 변동성)
             </p>
           </div>
           <div className="text-right">
             <p className="text-sm text-[#8B95A1]">종합 점수</p>
             <p className="text-2xl font-bold text-[#191F28]">
-              {analysis.overall_score != null ? `${analysis.overall_score}점` : '-'}
+              {analysis.overall_score != null
+                ? `${analysis.overall_score}점`
+                : '-'}
             </p>
-            <p className={`text-sm font-semibold ${analysisToneMap[analysis.investment_grade]}`}>
-              {analysisLabelMap[analysis.investment_grade]}
+            <p
+              className={`text-sm font-semibold ${ANALYSIS_TONE_MAP[analysis.investment_grade]}`}
+            >
+              {ANALYSIS_LABEL_MAP[analysis.investment_grade]}
             </p>
           </div>
         </div>
@@ -279,13 +319,17 @@ export function LandDetailClient({
           <div className="rounded-xl bg-[#F9FAFB] p-3">
             <p className="text-xs text-[#8B95A1]">가격 포지션</p>
             <p className="mt-1 text-sm font-semibold text-[#191F28]">
-              {analysis.price_position_pct != null ? `${analysis.price_position_pct}%` : '-'}
+              {analysis.price_position_pct != null
+                ? `${analysis.price_position_pct}%`
+                : '-'}
             </p>
             <p className="text-xs text-[#8B95A1]">중앙값 대비</p>
           </div>
           <div className="rounded-xl bg-[#F9FAFB] p-3">
             <p className="text-xs text-[#8B95A1]">유동성 (12개월)</p>
-            <p className="mt-1 text-sm font-semibold text-[#191F28]">{analysis.liquidity_12m}건</p>
+            <p className="mt-1 text-sm font-semibold text-[#191F28]">
+              {analysis.liquidity_12m}건
+            </p>
             <p className="text-xs text-[#8B95A1]">거래 표본</p>
           </div>
           <div className="rounded-xl bg-[#F9FAFB] p-3">
@@ -295,12 +339,14 @@ export function LandDetailClient({
                 ? `${analysis.momentum_6m_pct > 0 ? '+' : ''}${analysis.momentum_6m_pct}%`
                 : '-'}
             </p>
-            <p className="text-xs text-[#8B95A1]">주변 단가 추세</p>
+            <p className="text-xs text-[#8B95A1]">단가 추세</p>
           </div>
           <div className="rounded-xl bg-[#F9FAFB] p-3">
             <p className="text-xs text-[#8B95A1]">변동성</p>
             <p className="mt-1 text-sm font-semibold text-[#191F28]">
-              {analysis.volatility_pct != null ? `${analysis.volatility_pct}%` : '-'}
+              {analysis.volatility_pct != null
+                ? `${analysis.volatility_pct}%`
+                : '-'}
             </p>
             <p className="text-xs text-[#8B95A1]">표본 분산</p>
           </div>
@@ -311,12 +357,13 @@ export function LandDetailClient({
           <div className="mt-2 space-y-1">
             {analysis.signals.map((signal, idx) => (
               <p key={`${signal}-${idx}`} className="text-sm text-[#4E5968]">
-                • {signal}
+                - {signal}
               </p>
             ))}
           </div>
           <p className="mt-3 text-xs text-[#8B95A1]">
-            샘플 수: 총 {analysis.sample_size}건 (인근 {analysis.nearby_sample_size}건)
+            총 표본 {analysis.sample_size}건 (인근 {analysis.nearby_sample_size}
+            건)
           </p>
         </div>
       </motion.div>
@@ -324,7 +371,86 @@ export function LandDetailClient({
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.31 }}
+        transition={{ duration: 0.4, delay: 0.28 }}
+        className="mt-6 rounded-2xl border border-[#E5E8EB] bg-white p-6"
+      >
+        <h2 className="text-lg font-bold text-[#191F28]">토지 AI 추정가</h2>
+        <p className="mt-1 text-sm text-[#8B95A1]">
+          실거래/공시지가 기반 추정 결과입니다.
+        </p>
+
+        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+          <div className="rounded-xl bg-[#F9FAFB] p-3">
+            <p className="text-xs text-[#8B95A1]">추정 단가</p>
+            <p className="mt-1 text-sm font-semibold text-[#191F28]">
+              {valuation.estimated_price_per_m2 ? (
+                <PricePerM2Text value={valuation.estimated_price_per_m2} />
+              ) : (
+                '-'
+              )}
+            </p>
+          </div>
+          <div className="rounded-xl bg-[#F9FAFB] p-3">
+            <p className="text-xs text-[#8B95A1]">추정 총액</p>
+            <p className="mt-1 text-sm font-semibold text-[#191F28]">
+              {valuation.estimated_total_price
+                ? formatPrice(valuation.estimated_total_price)
+                : '-'}
+            </p>
+          </div>
+          <div className="rounded-xl bg-[#F9FAFB] p-3">
+            <p className="text-xs text-[#8B95A1]">분석 신뢰도</p>
+            <p className="mt-1 text-sm font-semibold text-[#191F28]">
+              {valuation.confidence_score}%
+            </p>
+          </div>
+          <div className="rounded-xl bg-[#F9FAFB] p-3">
+            <p className="text-xs text-[#8B95A1]">평가 구간</p>
+            <p
+              className={`mt-1 text-sm font-semibold ${VALUATION_TONE_MAP[valuation.valuation_grade]}`}
+            >
+              {VALUATION_LABEL_MAP[valuation.valuation_grade]}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-xl border border-[#E5E8EB] bg-[#FCFCFD] p-4">
+          <p className="text-xs text-[#8B95A1]">추정 범위</p>
+          <p className="mt-1 text-sm font-semibold text-[#191F28]">
+            {valuation.lower_bound_price != null &&
+            valuation.upper_bound_price != null
+              ? `${formatPrice(valuation.lower_bound_price)} ~ ${formatPrice(valuation.upper_bound_price)}`
+              : '-'}
+          </p>
+          <p className="mt-2 text-xs text-[#8B95A1]">{valuation.disclaimer}</p>
+          <p className="text-xs text-[#8B95A1]">
+            모델 버전: {valuation.model_version}
+          </p>
+        </div>
+
+        {valuation.factors.length > 0 && (
+          <div className="mt-4 rounded-xl border border-[#E5E8EB] bg-[#FCFCFD] p-4">
+            <p className="text-xs font-semibold text-[#4E5968]">
+              주요 반영 요인
+            </p>
+            <div className="mt-2 space-y-1">
+              {valuation.factors.map((factor, idx) => (
+                <p
+                  key={`${factor.label}-${idx}`}
+                  className="text-sm text-[#4E5968]"
+                >
+                  - {factor.label}: {factor.description}
+                </p>
+              ))}
+            </div>
+          </div>
+        )}
+      </motion.div>
+
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.3 }}
         className="mt-6 rounded-2xl border border-[#E5E8EB] bg-white p-6"
       >
         <div className="flex items-center gap-2">
@@ -336,16 +462,20 @@ export function LandDetailClient({
           <div className="mt-4 rounded-xl border border-[#E5E8EB] bg-[#FCFCFD] p-4">
             <p className="text-xs text-[#8B95A1]">최신 공시지가</p>
             <div className="mt-1 flex items-center justify-between">
-              <span className="text-sm font-medium text-[#4E5968]">{officialPrice.price_year}년</span>
+              <span className="text-sm font-medium text-[#4E5968]">
+                {officialPrice.price_year}년
+              </span>
               <span className="text-sm font-semibold text-[#191F28]">
-                {formatNumber(Math.floor(officialPrice.official_price_per_m2 / 10000))}만원/m²
+                <PricePerM2Text value={officialPrice.official_price_per_m2} />
               </span>
             </div>
           </div>
         )}
 
         {officialPrices.length === 0 ? (
-          <p className="mt-4 text-sm text-[#8B95A1]">공시지가 이력이 아직 없습니다.</p>
+          <p className="mt-4 text-sm text-[#8B95A1]">
+            공시지가 이력이 없습니다.
+          </p>
         ) : (
           <div className="mt-4 space-y-2">
             {officialPrices.map((row) => (
@@ -353,9 +483,11 @@ export function LandDetailClient({
                 key={row.id}
                 className="flex items-center justify-between rounded-xl bg-[#F9FAFB] px-4 py-3"
               >
-                <span className="text-sm font-medium text-[#4E5968]">{row.price_year}년</span>
+                <span className="text-sm font-medium text-[#4E5968]">
+                  {row.price_year}년
+                </span>
                 <span className="text-sm font-semibold text-[#191F28]">
-                  {formatNumber(Math.floor(row.official_price_per_m2 / 10000))}만원/m²
+                  <PricePerM2Text value={row.official_price_per_m2} />
                 </span>
               </div>
             ))}
@@ -371,7 +503,9 @@ export function LandDetailClient({
       >
         <h2 className="text-lg font-bold text-[#191F28]">연도별 단가 추이</h2>
         {priceTrend.length === 0 ? (
-          <p className="mt-3 text-sm text-[#8B95A1]">연도별 단가 추이 데이터가 없습니다.</p>
+          <p className="mt-3 text-sm text-[#8B95A1]">
+            연도별 추이 데이터가 없습니다.
+          </p>
         ) : (
           <div className="mt-4 space-y-2">
             {priceTrend.map((row) => (
@@ -379,9 +513,11 @@ export function LandDetailClient({
                 key={row.year}
                 className="flex items-center justify-between rounded-xl bg-[#F9FAFB] px-4 py-3"
               >
-                <span className="text-sm font-medium text-[#4E5968]">{row.year}년</span>
+                <span className="text-sm font-medium text-[#4E5968]">
+                  {row.year}년
+                </span>
                 <span className="text-sm font-semibold text-[#191F28]">
-                  {formatNumber(Math.floor(row.avg_price_per_m2 / 10000))}만원/m²
+                  <PricePerM2Text value={row.avg_price_per_m2} />
                 </span>
               </div>
             ))}
@@ -392,17 +528,21 @@ export function LandDetailClient({
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.33 }}
+        transition={{ duration: 0.4, delay: 0.34 }}
         className="mt-6 rounded-2xl border border-[#E5E8EB] bg-white p-6"
       >
         <h2 className="text-lg font-bold text-[#191F28]">토지 특성</h2>
         {!characteristics ? (
-          <p className="mt-4 text-sm text-[#8B95A1]">토지 특성 정보가 아직 없습니다.</p>
+          <p className="mt-4 text-sm text-[#8B95A1]">
+            토지 특성 정보가 아직 없습니다.
+          </p>
         ) : (
           <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
             <div className="rounded-xl bg-[#F9FAFB] p-3">
-              <p className="text-xs text-[#8B95A1]">토지이용상황</p>
-              <p className="mt-1 text-sm font-semibold text-[#191F28]">{characteristics.land_use || '-'}</p>
+              <p className="text-xs text-[#8B95A1]">토지 이용상황</p>
+              <p className="mt-1 text-sm font-semibold text-[#191F28]">
+                {characteristics.land_use || '-'}
+              </p>
             </div>
             <div className="rounded-xl bg-[#F9FAFB] p-3">
               <p className="text-xs text-[#8B95A1]">용도지역</p>
@@ -419,7 +559,7 @@ export function LandDetailClient({
               </p>
             </div>
             <div className="rounded-xl bg-[#F9FAFB] p-3">
-              <p className="text-xs text-[#8B95A1]">도로접면</p>
+              <p className="text-xs text-[#8B95A1]">도로 접면</p>
               <p className="mt-1 text-sm font-semibold text-[#191F28]">
                 {[characteristics.road_access, characteristics.road_distance]
                   .filter(Boolean)
@@ -449,17 +589,19 @@ export function LandDetailClient({
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.35 }}
+        transition={{ duration: 0.4, delay: 0.36 }}
         className="mt-6 rounded-2xl border border-[#DDE8FF] bg-[#F6F9FF] p-6"
       >
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
               <Store className="h-4 w-4 text-[#2F80ED]" />
-              <h3 className="text-base font-bold text-[#191F28]">이 토지에서 창업한다면?</h3>
+              <h3 className="text-base font-bold text-[#191F28]">
+                이 토지에서 창업한다면?
+              </h3>
             </div>
             <p className="mt-1 text-sm text-[#4E5968]">
-              토지 위치 기반으로 상업 적합도와 추천 업종을 확인하세요.
+              토지 위치 기반으로 상권 적합도와 추천 업종을 확인할 수 있습니다.
             </p>
           </div>
           <Link
@@ -471,75 +613,6 @@ export function LandDetailClient({
         </div>
       </motion.div>
 
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.37 }}
-        className="mt-6 rounded-2xl border border-[#E5E8EB] bg-white p-6"
-      >
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h2 className="text-lg font-bold text-[#191F28]">토지 AI 추정가</h2>
-            <p className="mt-1 text-sm text-[#8B95A1]">
-              실거래/공시지가 기반 추정값입니다.
-            </p>
-          </div>
-          <div className="text-right">
-            <p className="text-sm text-[#8B95A1]">추정 단가</p>
-            <p className="text-2xl font-bold text-[#191F28]">
-              {valuation.estimated_price_per_m2
-                ? `${formatNumber(Math.floor(valuation.estimated_price_per_m2 / 10000))}만원/m²`
-                : '-'}
-            </p>
-            <p className={`text-sm font-semibold ${valuationToneMap[valuation.valuation_grade]}`}>
-              {valuationLabelMap[valuation.valuation_grade]}
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
-          <div className="rounded-xl bg-[#F9FAFB] p-3">
-            <p className="text-xs text-[#8B95A1]">추정 총액</p>
-            <p className="mt-1 text-sm font-semibold text-[#191F28]">
-              {valuation.estimated_total_price ? formatPrice(valuation.estimated_total_price) : '-'}
-            </p>
-          </div>
-          <div className="rounded-xl bg-[#F9FAFB] p-3">
-            <p className="text-xs text-[#8B95A1]">추정 범위</p>
-            <p className="mt-1 text-sm font-semibold text-[#191F28]">
-              {valuation.lower_bound_price != null && valuation.upper_bound_price != null
-                ? `${formatPrice(valuation.lower_bound_price)} ~ ${formatPrice(valuation.upper_bound_price)}`
-                : '-'}
-            </p>
-          </div>
-          <div className="rounded-xl bg-[#F9FAFB] p-3">
-            <p className="text-xs text-[#8B95A1]">분석 신뢰도</p>
-            <p className="mt-1 text-sm font-semibold text-[#191F28]">{valuation.confidence_score}%</p>
-          </div>
-          <div className="rounded-xl bg-[#F9FAFB] p-3">
-            <p className="text-xs text-[#8B95A1]">표본 수</p>
-            <p className="mt-1 text-sm font-semibold text-[#191F28]">{valuation.sample_size}건</p>
-          </div>
-        </div>
-
-        {valuation.factors.length > 0 && (
-          <div className="mt-4 rounded-xl border border-[#E5E8EB] bg-[#FCFCFD] p-4">
-            <p className="text-xs font-semibold text-[#4E5968]">주요 반영 요인</p>
-            <div className="mt-2 space-y-1">
-              {valuation.factors.map((factor, idx) => (
-                <p key={`${factor.label}-${idx}`} className="text-sm text-[#4E5968]">
-                  • {factor.label}: {factor.description}
-                </p>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <p className="mt-3 text-xs text-[#8B95A1]">
-          {valuation.disclaimer} (모델 버전: {valuation.model_version})
-        </p>
-      </motion.div>
-
       {nearbyMapPoints.length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 10 }}
@@ -547,7 +620,9 @@ export function LandDetailClient({
           transition={{ duration: 0.4, delay: 0.38 }}
           className="mt-6"
         >
-          <h2 className="mb-3 text-lg font-bold text-[#191F28]">인근 토지 지도</h2>
+          <h2 className="mb-3 text-lg font-bold text-[#191F28]">
+            인근 토지 지도
+          </h2>
           <LandNearbyMap points={nearbyMapPoints} />
         </motion.div>
       )}
@@ -560,7 +635,9 @@ export function LandDetailClient({
       >
         <h2 className="text-lg font-bold text-[#191F28]">
           거래 이력
-          <span className="ml-2 text-sm font-normal text-[#8B95A1]">{transactions.length}건</span>
+          <span className="ml-2 text-sm font-normal text-[#8B95A1]">
+            {transactions.length}건
+          </span>
         </h2>
 
         {transactions.length === 0 ? (
@@ -577,10 +654,12 @@ export function LandDetailClient({
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="flex items-center gap-3">
-                      <span className="text-lg font-bold text-[#191F28]">{formatPrice(tx.price)}</span>
+                      <span className="text-lg font-bold text-[#191F28]">
+                        {formatPrice(tx.price)}
+                      </span>
                       {tx.price_per_m2 && (
                         <span className="text-sm text-[#F59E0B]">
-                          {formatNumber(Math.floor(tx.price_per_m2 / 10000))}만원/m²
+                          <PricePerM2Text value={tx.price_per_m2} />
                         </span>
                       )}
                     </div>
@@ -591,7 +670,8 @@ export function LandDetailClient({
                       </span>
                       <span className="flex items-center gap-1">
                         <Maximize2 className="h-3 w-3" strokeWidth={2} />
-                        {formatNumber(tx.area_m2)}m² ({formatPyeong(tx.area_m2)}평)
+                        {formatNumber(tx.area_m2)}m² ({formatPyeong(tx.area_m2)}
+                        평)
                       </span>
                       {tx.transaction_type && (
                         <span className="rounded-md bg-[#F2F4F6] px-2 py-0.5 text-xs">
@@ -637,24 +717,32 @@ export function LandDetailClient({
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
-                      <MapPin className="h-3.5 w-3.5 text-[#8B95A1]" strokeWidth={2} />
+                      <MapPin
+                        className="h-3.5 w-3.5 text-[#8B95A1]"
+                        strokeWidth={2}
+                      />
                       <span className="text-sm font-medium text-[#4E5968]">
                         {tx.eupmyeondong} {tx.jibun}
                       </span>
                       {tx.land_category && (
                         <span className="rounded-md bg-[#FFF7ED] px-2 py-0.5 text-xs text-[#F59E0B]">
-                          {LAND_CATEGORY_LABELS[tx.land_category] || tx.land_category}
+                          {LAND_CATEGORY_LABELS[tx.land_category] ||
+                            tx.land_category}
                         </span>
                       )}
                     </div>
                     <div className="mt-2 flex items-center gap-3">
-                      <span className="font-bold text-[#191F28]">{formatPrice(tx.price)}</span>
+                      <span className="font-bold text-[#191F28]">
+                        {formatPrice(tx.price)}
+                      </span>
                       {tx.price_per_m2 && (
                         <span className="text-sm text-[#8B95A1]">
-                          {formatNumber(Math.floor(tx.price_per_m2 / 10000))}만원/m²
+                          <PricePerM2Text value={tx.price_per_m2} />
                         </span>
                       )}
-                      <span className="text-xs text-[#8B95A1]">{formatDate(tx.transaction_date)}</span>
+                      <span className="text-xs text-[#8B95A1]">
+                        {formatDate(tx.transaction_date)}
+                      </span>
                     </div>
                   </div>
                 </div>
