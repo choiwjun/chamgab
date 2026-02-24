@@ -12,10 +12,7 @@ import {
   Search,
 } from 'lucide-react'
 import { APIError, getSchoolPreview } from '@/lib/api/school-analysis'
-import type {
-  SchoolDistrictSummary,
-  SchoolReadinessMeta,
-} from '@/types/school-analysis'
+import type { SchoolDistrictSummary } from '@/types/school-analysis'
 
 const PER_PAGE = 24
 
@@ -30,10 +27,10 @@ const SIDO_OPTIONS: { code: string; label: string }[] = [
   { code: '31', label: '울산' },
   { code: '36', label: '세종' },
   { code: '41', label: '경기' },
-  { code: '42', label: '강원' },
+  { code: '51', label: '강원' },
   { code: '43', label: '충북' },
   { code: '44', label: '충남' },
-  { code: '45', label: '전북' },
+  { code: '52', label: '전북' },
   { code: '46', label: '전남' },
   { code: '47', label: '경북' },
   { code: '48', label: '경남' },
@@ -43,7 +40,6 @@ const SIDO_OPTIONS: { code: string; label: string }[] = [
 export default function SchoolAnalysisPreviewPage() {
   const router = useRouter()
   const [allItems, setAllItems] = useState<SchoolDistrictSummary[]>([])
-  const [meta, setMeta] = useState<SchoolReadinessMeta | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedSido, setSelectedSido] = useState('')
@@ -56,12 +52,11 @@ export default function SchoolAnalysisPreviewPage() {
       setError(null)
       const response = await getSchoolPreview({ limit: 300 })
       setAllItems(response.items)
-      setMeta(response.meta)
     } catch (err) {
       const message =
         err instanceof APIError
           ? err.message
-          : 'Failed to load school analysis preview.'
+          : '학군 프리뷰 데이터를 불러오지 못했습니다.'
       setError(message)
     } finally {
       setIsLoading(false)
@@ -105,20 +100,10 @@ export default function SchoolAnalysisPreviewPage() {
           </div>
           <h1 className="text-2xl font-bold text-[#191F28]">학군분석</h1>
           <p className="mt-2 text-sm text-[#4E5968]">
-            지역별 학교 수준, 진학 경로, 학원 생태계를 프리뷰로 빠르게 비교할 수 있습니다.
+            전국 {allItems.length > 0 ? `${allItems.length}개` : ''} 학군의 학교
+            수준, 진학 경로, 학원 생태계를 비교해보세요.
           </p>
         </div>
-
-        {meta?.mode === 'preview_only' && (
-          <div className="mb-6 rounded-2xl border border-[#FDE68A] bg-[#FFFBEB] p-4">
-            <p className="text-sm font-semibold text-[#92400E]">
-              현재 학군분석은 프리뷰만 운영 중입니다.
-            </p>
-            <p className="mt-1 text-xs text-[#B45309]">
-              데이터 재구축 완료 후 상세 리포트를 순차 오픈합니다.
-            </p>
-          </div>
-        )}
 
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start">
           <div className="flex flex-wrap gap-1.5">
@@ -143,7 +128,7 @@ export default function SchoolAnalysisPreviewPage() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="구/군 검색"
+              placeholder="학군명/코드 검색"
               className="w-full rounded-xl border border-[#E5E8EB] bg-white py-2 pl-9 pr-3 text-sm text-[#191F28] placeholder-[#8B95A1] outline-none focus:border-[#3182F6]"
             />
           </div>
@@ -161,7 +146,9 @@ export default function SchoolAnalysisPreviewPage() {
           <div className="flex min-h-[240px] items-center justify-center rounded-2xl border border-[#E5E8EB] bg-white">
             <div className="text-center">
               <Loader2 className="mx-auto h-8 w-8 animate-spin text-[#3182F6]" />
-              <p className="mt-3 text-sm text-[#8B95A1]">학군 프리뷰 로딩 중...</p>
+              <p className="mt-3 text-sm text-[#8B95A1]">
+                학군 데이터를 불러오는 중입니다...
+              </p>
             </div>
           </div>
         )}
@@ -212,30 +199,24 @@ export default function SchoolAnalysisPreviewPage() {
                         </dd>
                       </div>
                       <div className="flex items-center justify-between">
-                        <dt className="text-[#8B95A1]">공식 커버리지</dt>
+                        <dt className="text-[#8B95A1]">학교 수</dt>
                         <dd className="font-medium text-[#191F28]">
-                          {item.quality?.official_coverage_pct?.toFixed(1) ?? '-'}%
+                          {item.school_count}
                         </dd>
                       </div>
                     </dl>
 
-                    {meta?.mode === 'preview_only' ? (
-                      <p className="mt-4 text-sm font-medium text-[#8B95A1]">
-                        상세 리포트 준비중
-                      </p>
-                    ) : (
-                      <button
-                        onClick={() =>
-                          router.push(
-                            `/school-analysis/result?district=${item.district_code}` as never
-                          )
-                        }
-                        className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-[#3182F6]"
-                      >
-                        상세 분석 보기
-                        <ArrowRight className="h-4 w-4" />
-                      </button>
-                    )}
+                    <button
+                      onClick={() =>
+                        router.push(
+                          `/school-analysis/result?district=${item.district_code}` as never
+                        )
+                      }
+                      className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-[#3182F6]"
+                    >
+                      상세 분석 보기
+                      <ArrowRight className="h-4 w-4" />
+                    </button>
                   </article>
                 ))}
               </div>
@@ -258,9 +239,8 @@ export default function SchoolAnalysisPreviewPage() {
                     return Math.abs(p - page) <= 1
                   })
                   .reduce<(number | 'gap')[]>((acc, p, idx, arr) => {
-                    if (idx > 0 && p - (arr[idx - 1] as number) > 1) {
+                    if (idx > 0 && p - (arr[idx - 1] as number) > 1)
                       acc.push('gap')
-                    }
                     acc.push(p)
                     return acc
                   }, [])

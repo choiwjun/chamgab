@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   LandParcel,
   LandTransaction,
   LandOfficialPrice,
@@ -124,12 +124,14 @@ function pickZoningAdjustment(zoning: string | null): number {
 
 function pickLandCategoryAdjustment(landCategory: string): number {
   if (landCategory === '대') return 0.03
-  if (landCategory === '임') return -0.05
-  if (landCategory === '잡') return -0.01
+  if (landCategory === '임야') return -0.05
+  if (landCategory === '전' || landCategory === '답') return -0.01
   return 0
 }
 
-function calcMomentum(localRows: { price: number; ts: number }[]): number | null {
+function calcMomentum(
+  localRows: { price: number; ts: number }[]
+): number | null {
   if (localRows.length < 4) return null
 
   const now = Date.now()
@@ -178,8 +180,14 @@ function buildFallbackSummary(
   input: BuildLandValuationInput,
   derived: DerivedMetrics
 ): LandValuationSummary {
-  const { localMedian, localMean, localStd, momentumPct, sampleSize, officialLatest } =
-    derived
+  const {
+    localMedian,
+    localMean,
+    localStd,
+    momentumPct,
+    sampleSize,
+    officialLatest,
+  } = derived
 
   const marketBased = localMedian
   const officialBased = officialLatest
@@ -202,7 +210,9 @@ function buildFallbackSummary(
   const totalAdjustment = zoningAdj + categoryAdj + momentumAdj
 
   const adjustedEstimate =
-    baseEstimate != null ? Math.round(baseEstimate * (1 + totalAdjustment)) : null
+    baseEstimate != null
+      ? Math.round(baseEstimate * (1 + totalAdjustment))
+      : null
 
   const area = Number(input.parcel.area_m2 || 0)
   const estimatedTotal =
@@ -220,10 +230,15 @@ function buildFallbackSummary(
     10,
     35
   )
+
   const lower =
-    estimatedTotal != null ? Math.round(estimatedTotal * (1 - rangeBandPct / 100)) : null
+    estimatedTotal != null
+      ? Math.round(estimatedTotal * (1 - rangeBandPct / 100))
+      : null
   const upper =
-    estimatedTotal != null ? Math.round(estimatedTotal * (1 + rangeBandPct / 100)) : null
+    estimatedTotal != null
+      ? Math.round(estimatedTotal * (1 + rangeBandPct / 100))
+      : null
 
   const confidence = round1(
     clamp(
@@ -237,7 +252,10 @@ function buildFallbackSummary(
   )
 
   let grade: LandValuationGrade = 'insufficient'
-  if (adjustedEstimate != null && Number(input.parcel.latest_price_per_m2) > 0) {
+  if (
+    adjustedEstimate != null &&
+    Number(input.parcel.latest_price_per_m2) > 0
+  ) {
     const latest = Number(input.parcel.latest_price_per_m2)
     if (latest <= adjustedEstimate * 0.9) grade = 'undervalued'
     else if (latest >= adjustedEstimate * 1.1) grade = 'overvalued'
@@ -249,36 +267,41 @@ function buildFallbackSummary(
   const factors: LandValuationFactor[] = []
   if (localMedian != null) {
     factors.push({
-      label: '주변 실거래 중앙값',
+      label: '인근 실거래 중앙값',
       impact: 'positive',
-      description: `최근 주변 거래 ${sampleSize}건을 반영했습니다.`,
+      description: `최근 인근 거래 ${sampleSize}건을 반영했습니다.`,
     })
   }
+
   if (officialLatest) {
     factors.push({
-      label: '개별공시지가',
+      label: '공시지가 보정',
       impact: 'neutral',
-      description: `${officialLatest.price_year}년 공시지가를 보조지표로 반영했습니다.`,
+      description: `${officialLatest.price_year}년 공시지가를 보조 지표로 반영했습니다.`,
     })
   }
+
   if (totalAdjustment > 0.02) {
     factors.push({
       label: '용도/지목 가중치',
       impact: 'positive',
-      description: '용도지역·지목 특성이 추정가를 상향 조정했습니다.',
+      description:
+        '용도지역과 지목 특성 반영으로 추정가가 상향 조정되었습니다.',
     })
   } else if (totalAdjustment < -0.02) {
     factors.push({
       label: '용도/지목 가중치',
       impact: 'negative',
-      description: '용도지역·지목 특성이 추정가를 하향 조정했습니다.',
+      description:
+        '용도지역과 지목 특성 반영으로 추정가가 하향 조정되었습니다.',
     })
   }
+
   if (volatilityPct != null && volatilityPct > 30) {
     factors.push({
       label: '거래 변동성',
       impact: 'negative',
-      description: `변동성 ${round1(volatilityPct)}%로 추정 범위를 넓혔습니다.`,
+      description: `변동성 ${round1(volatilityPct)}%로 추정 범위를 넓게 산정했습니다.`,
     })
   }
 
@@ -294,7 +317,7 @@ function buildFallbackSummary(
     factors: factors.slice(0, 4),
     model_version: 'land-beta-v0',
     disclaimer:
-      '베타 추정값입니다. 거래 표본 및 지형/용도 정보에 따라 오차가 있을 수 있습니다.',
+      '베타 추정값입니다. 거래 표본과 지목/용도 정보에 따라 오차가 있을 수 있습니다.',
   }
 }
 
@@ -315,7 +338,9 @@ function toLandMlRequest(
       : null,
     momentum_6m_pct: derived.momentumPct,
     volatility_pct:
-      derived.localStd != null && derived.localMean != null && derived.localMean > 0
+      derived.localStd != null &&
+      derived.localMean != null &&
+      derived.localMean > 0
         ? round1((derived.localStd / derived.localMean) * 100)
         : null,
     sample_size: derived.sampleSize,
@@ -347,7 +372,10 @@ function normalizeFactors(
           ? factor.impact
           : 'neutral'
 
-      if (typeof factor.label !== 'string' || typeof factor.description !== 'string') {
+      if (
+        typeof factor.label !== 'string' ||
+        typeof factor.description !== 'string'
+      ) {
         return null
       }
 
@@ -361,9 +389,7 @@ function normalizeFactors(
     .slice(0, 5)
 }
 
-function isValidMlResponse(
-  data: unknown
-): data is LandMlPredictResponse {
+function isValidMlResponse(data: unknown): data is LandMlPredictResponse {
   if (!data || typeof data !== 'object') return false
   const row = data as Record<string, unknown>
   return (
@@ -386,9 +412,7 @@ export async function buildLandValuationSummaryWithMl(
   const derived = buildDerivedMetrics(input)
   const fallback = buildFallbackSummary(input, derived)
 
-  if (!LAND_ML_API_URL) {
-    return fallback
-  }
+  if (!LAND_ML_API_URL) return fallback
 
   const payload = toLandMlRequest(input, derived)
 
@@ -408,29 +432,28 @@ export async function buildLandValuationSummaryWithMl(
 
     clearTimeout(timeout)
 
-    if (!response.ok) {
-      return fallback
-    }
+    if (!response.ok) return fallback
 
     const data = (await response.json()) as unknown
-    if (!isValidMlResponse(data)) {
-      return fallback
-    }
+    if (!isValidMlResponse(data)) return fallback
 
     const ml = data as LandMlPredictResponse
     const factors = normalizeFactors(ml.factors)
 
     return {
       estimated_price_per_m2:
-        asNullableNumber(ml.estimated_price_per_m2) ?? fallback.estimated_price_per_m2,
+        asNullableNumber(ml.estimated_price_per_m2) ??
+        fallback.estimated_price_per_m2,
       estimated_total_price:
-        asNullableNumber(ml.estimated_total_price) ?? fallback.estimated_total_price,
+        asNullableNumber(ml.estimated_total_price) ??
+        fallback.estimated_total_price,
       lower_bound_price:
         asNullableNumber(ml.lower_bound_price) ?? fallback.lower_bound_price,
       upper_bound_price:
         asNullableNumber(ml.upper_bound_price) ?? fallback.upper_bound_price,
       confidence_score:
-        typeof ml.confidence_score === 'number' && Number.isFinite(ml.confidence_score)
+        typeof ml.confidence_score === 'number' &&
+        Number.isFinite(ml.confidence_score)
           ? round1(clamp(ml.confidence_score, 0, 100))
           : fallback.confidence_score,
       valuation_grade: normalizeGrade(ml.valuation_grade),

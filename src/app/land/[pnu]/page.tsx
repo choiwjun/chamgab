@@ -11,6 +11,7 @@ import type {
   LandCharacteristics,
   LandMapPoint,
 } from '@/types/land'
+import type { QualityGateStatus, QualityGrade } from '@/types/quality'
 import { buildLandAnalysisSummary } from '@/lib/land/analysis'
 import { buildLandValuationSummaryWithMl } from '@/lib/land/valuation'
 
@@ -114,7 +115,10 @@ async function fetchTransactionsByParcel(
       .limit(200)
 
     if (byParcelIdError) {
-      console.error('[LandDetail] Transactions by parcel_id error:', byParcelIdError.message)
+      console.error(
+        '[LandDetail] Transactions by parcel_id error:',
+        byParcelIdError.message
+      )
     } else if ((byParcelId || []).length > 0) {
       return byParcelId as LandTransaction[]
     }
@@ -139,7 +143,10 @@ async function fetchTransactionsByParcel(
   const { data: exactData, error: exactError } = await exactQuery
 
   if (exactError) {
-    console.error('[LandDetail] Transactions exact match error:', exactError.message)
+    console.error(
+      '[LandDetail] Transactions exact match error:',
+      exactError.message
+    )
     return []
   }
 
@@ -159,7 +166,10 @@ async function fetchTransactionsByParcel(
       .limit(100)
 
     if (relaxedError) {
-      console.error('[LandDetail] Transactions relaxed fallback error:', relaxedError.message)
+      console.error(
+        '[LandDetail] Transactions relaxed fallback error:',
+        relaxedError.message
+      )
       return []
     }
 
@@ -196,7 +206,10 @@ async function fetchNearbyTransactions(
 
     const { data, error } = await query
     if (error) {
-      console.error('[LandDetail] Nearby transactions (radius) error:', error.message)
+      console.error(
+        '[LandDetail] Nearby transactions (radius) error:',
+        error.message
+      )
       return { rows: [], mode: 'fallback' }
     }
     return { rows: (data || []) as LandTransaction[], mode: 'radius' }
@@ -223,13 +236,18 @@ async function fetchNearbyTransactions(
 
   const { data, error } = await fallbackQuery
   if (error) {
-    console.error('[LandDetail] Nearby transactions (fallback) error:', error.message)
+    console.error(
+      '[LandDetail] Nearby transactions (fallback) error:',
+      error.message
+    )
     return { rows: [], mode: 'fallback' }
   }
   return { rows: (data || []) as LandTransaction[], mode: 'fallback' }
 }
 
-async function fetchOfficialPrices(parcelId: string): Promise<LandOfficialPrice[]> {
+async function fetchOfficialPrices(
+  parcelId: string
+): Promise<LandOfficialPrice[]> {
   const supabase = getSupabase()
   const { data, error } = await supabase
     .from('land_prices')
@@ -384,14 +402,18 @@ async function fetchNearbyParcelsWithinRadius(
   return rows.slice(0, limit)
 }
 
-async function fetchNearbyMapPoints(parcel: LandParcel): Promise<LandMapPoint[]> {
+async function fetchNearbyMapPoints(
+  parcel: LandParcel
+): Promise<LandMapPoint[]> {
   const subjectPoint = parsePointFromGeometry(parcel.location)
   const points: LandMapPoint[] = []
 
   if (subjectPoint) {
     points.push({
       id: parcel.id,
-      title: `${parcel.eupmyeondong || ''} ${parcel.jibun || ''}`.trim() || parcel.pnu,
+      title:
+        `${parcel.eupmyeondong || ''} ${parcel.jibun || ''}`.trim() ||
+        parcel.pnu,
       lat: subjectPoint.lat,
       lng: subjectPoint.lng,
       kind: 'subject',
@@ -410,7 +432,8 @@ async function fetchNearbyMapPoints(parcel: LandParcel): Promise<LandMapPoint[]>
       id: row.id || row.pnu || `nearby-${points.length + 1}`,
       title:
         `${row.eupmyeondong || ''} ${row.jibun || ''}`.trim() ||
-        (row.pnu || 'Nearby parcel'),
+        row.pnu ||
+        'Nearby parcel',
       lat: point.lat,
       lng: point.lng,
       kind: 'nearby',
@@ -453,6 +476,74 @@ function buildYearlyPriceTrend(transactions: LandTransaction[]) {
     }))
 }
 
+function monthsSince(dateValue: string | null | undefined): number | null {
+  if (!dateValue) return null
+  const parsed = Date.parse(dateValue)
+  if (!Number.isFinite(parsed)) return null
+  const now = new Date()
+  const date = new Date(parsed)
+  return (
+    (now.getFullYear() - date.getFullYear()) * 12 +
+    (now.getMonth() - date.getMonth())
+  )
+}
+
+function deriveLandQualityMeta(args: {
+  parcel: LandParcel
+  snapshot: {
+    sample_size: number
+    parcel_transaction_count: number
+    nearby_transaction_count: number
+  }
+  confidenceHint: number | null
+}): {
+  quality_gate_status: QualityGateStatus
+  quality_grade: QualityGrade
+  quality_flags: string[]
+} {
+  const flags: string[] = []
+  if (!args.parcel.location) flags.push('missing_parcel_location')
+  if (args.parcel.latest_official_price_per_m2 == null) {
+    flags.push('missing_official_price')
+  }
+  if (args.snapshot.nearby_transaction_count < 5) {
+    flags.push('low_nearby_samples')
+  }
+  if (args.snapshot.sample_size < 10) {
+    flags.push('low_total_samples')
+  }
+  const staleMonths = monthsSince(args.parcel.latest_transaction_date)
+  if (staleMonths != null && staleMonths > 12) {
+    flags.push('stale_transaction_data')
+  }
+
+  const hasFail =
+    args.snapshot.sample_size < 5 ||
+    (args.snapshot.parcel_transaction_count === 0 &&
+      args.snapshot.nearby_transaction_count < 5)
+
+  const quality_gate_status: QualityGateStatus = hasFail
+    ? 'fail'
+    : flags.length > 0
+      ? 'warn'
+      : 'pass'
+
+  const quality_grade: QualityGrade =
+    quality_gate_status === 'fail'
+      ? 'D'
+      : quality_gate_status === 'warn'
+        ? 'C'
+        : (args.confidenceHint ?? 0) >= 75
+          ? 'A'
+          : 'B'
+
+  return {
+    quality_gate_status,
+    quality_grade,
+    quality_flags: flags,
+  }
+}
+
 interface PageProps {
   params: Promise<{ pnu: string }>
 }
@@ -483,18 +574,17 @@ export default async function LandDetailPage({ params }: PageProps) {
     officialPrices,
     characteristics,
     nearbyMapPoints,
-  ] =
-    await Promise.all([
-      fetchTransactionsByParcel(parcel),
-      fetchNearbyTransactions(parcel, seedTransactionId),
-      parcel.id.startsWith('tx-')
-        ? Promise.resolve([])
-        : fetchOfficialPrices(parcel.id),
-      parcel.id.startsWith('tx-')
-        ? Promise.resolve(null)
-        : fetchLandCharacteristics(parcel.id),
-      fetchNearbyMapPoints(parcel),
-    ])
+  ] = await Promise.all([
+    fetchTransactionsByParcel(parcel),
+    fetchNearbyTransactions(parcel, seedTransactionId),
+    parcel.id.startsWith('tx-')
+      ? Promise.resolve([])
+      : fetchOfficialPrices(parcel.id),
+    parcel.id.startsWith('tx-')
+      ? Promise.resolve(null)
+      : fetchLandCharacteristics(parcel.id),
+    fetchNearbyMapPoints(parcel),
+  ])
   const hydratedParcel = hydrateParcelWithLatestTransaction(
     parcel,
     transactions
@@ -503,6 +593,16 @@ export default async function LandDetailPage({ params }: PageProps) {
     parcel: hydratedParcel,
     transactions,
     nearbyTransactions: nearbyResult.rows,
+  })
+  const snapshot = {
+    sample_size: transactions.length + nearbyResult.rows.length,
+    parcel_transaction_count: transactions.length,
+    nearby_transaction_count: nearbyResult.rows.length,
+  }
+  const quality = deriveLandQualityMeta({
+    parcel: hydratedParcel,
+    snapshot,
+    confidenceHint: analysis.overall_score,
   })
   const valuation = await buildLandValuationSummaryWithMl({
     parcel: hydratedParcel,
@@ -527,8 +627,8 @@ export default async function LandDetailPage({ params }: PageProps) {
         analysis={analysis}
         valuation={valuation}
         nearbyMapPoints={nearbyMapPoints}
+        quality={quality}
       />
     </main>
   )
 }
-

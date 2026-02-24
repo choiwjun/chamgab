@@ -1,4 +1,4 @@
-// @TASK P4-S5 - 결제/플랜 선택 페이지
+﻿// @TASK P4-S5 - 결제/플랜 선택 페이지
 import { Metadata } from 'next'
 import Link from 'next/link'
 import { PlanSelector } from '@/components/checkout/PlanSelector'
@@ -6,7 +6,7 @@ import { ENABLE_FREE_OPEN_MODE, ENABLE_LAND } from '@/lib/features'
 
 export const metadata: Metadata = {
   title: '플랜 선택 | 참값',
-  description: '내 사용 패턴에 맞는 크레딧 플랜을 선택하세요.',
+  description: '사용 패턴에 맞는 크레딧 플랜을 선택하세요.',
 }
 
 export default function CheckoutPlansPage() {
@@ -15,7 +15,9 @@ export default function CheckoutPlansPage() {
       <div className="min-h-screen bg-gray-50">
         <div className="mx-auto max-w-3xl px-4 py-16">
           <div className="rounded-2xl border border-gray-200 bg-white p-8 text-center">
-            <h1 className="text-3xl font-bold text-gray-900">전체 무료 오픈 중</h1>
+            <h1 className="text-3xl font-bold text-gray-900">
+              전체 무료 운영 중
+            </h1>
             <p className="mt-3 text-gray-600">
               현재는 결제 없이 모든 주요 분석 기능을 이용할 수 있습니다.
             </p>
@@ -40,8 +42,8 @@ export default function CheckoutPlansPage() {
           <h1 className="text-3xl font-bold text-gray-900">플랜 선택</h1>
           <p className="mt-2 text-gray-600">
             {ENABLE_LAND
-              ? '상권/집값/토지 분석을 크레딧으로 이용합니다. 내 사용량에 맞는 플랜을 선택하세요.'
-              : '상권/집값 분석을 크레딧으로 이용합니다. 내 사용량에 맞는 플랜을 선택하세요.'}
+              ? '아파트/상권/학군/토지 분석을 크레딧으로 이용합니다. 사용량에 맞는 플랜을 선택하세요.'
+              : '아파트/상권/학군 분석을 크레딧으로 이용합니다. 사용량에 맞는 플랜을 선택하세요.'}
           </p>
         </div>
         <PlanSelector />

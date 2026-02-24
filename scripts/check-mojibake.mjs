@@ -9,6 +9,12 @@ const TARGETS = [
   'src/app/api/commercial',
   'src/components/business',
   'src/app/business-analysis',
+  'src/app/school-analysis',
+  'src/app/checkout',
+  'src/components/checkout',
+  'src/components/land',
+  'src/lib/land',
+  'src/types/land.ts',
   'src/app/api/admin/commercial/quality',
   'src/lib/api/commercial.ts',
   'ml-api/scripts/collect_business_statistics.py',
@@ -108,4 +114,3 @@ main().catch((error) => {
   console.error('mojibake-check: failed', error)
   process.exit(1)
 })
-

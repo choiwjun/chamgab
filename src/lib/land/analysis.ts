@@ -73,11 +73,11 @@ function gradeFromScore(
 function scoreLabel(grade: LandInvestmentGrade): string {
   switch (grade) {
     case 'strong':
-      return '거래 유동성과 가격 구간이 우호적입니다.'
+      return '거래 유동성과 가격 구간이 양호합니다.'
     case 'watch':
-      return '진입 가능 구간이지만 추가 확인이 필요합니다.'
+      return '진입 가능 구간이지만 추가 검토가 필요합니다.'
     case 'cautious':
-      return '가격 또는 변동성이 불리해 보수 접근이 필요합니다.'
+      return '가격 또는 변동성 리스크가 있어 보수 접근이 필요합니다.'
     default:
       return '표본이 부족해 신뢰도 있는 판정이 어렵습니다.'
   }
@@ -120,12 +120,13 @@ export function buildLandAnalysisSummary(
 
   const now = Date.now()
   const oneYearAgo = now - 365 * 24 * 60 * 60 * 1000
-  const liquidity12m = [...input.transactions, ...input.nearbyTransactions].filter(
-    (tx) => {
-      const ts = Date.parse(tx.transaction_date)
-      return Number.isFinite(ts) && ts >= oneYearAgo
-    }
-  ).length
+  const liquidity12m = [
+    ...input.transactions,
+    ...input.nearbyTransactions,
+  ].filter((tx) => {
+    const ts = Date.parse(tx.transaction_date)
+    return Number.isFinite(ts) && ts >= oneYearAgo
+  }).length
 
   const recentCutoff = now - 180 * 24 * 60 * 60 * 1000
   const previousCutoff = now - 360 * 24 * 60 * 60 * 1000
