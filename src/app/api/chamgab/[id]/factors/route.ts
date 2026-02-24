@@ -1,36 +1,40 @@
 // @TASK P3-R2-T2 - Price Factors API
 
-// 동적 렌더링 강제 (Supabase 사용)
 export const dynamic = 'force-dynamic'
 
-import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
-function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-  )
-}
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 /**
  * GET /api/chamgab/:id/factors
- * 가격 요인 목록 조회 (id = analysisId)
+ * Returns ranked factors for an analysis id.
  */
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = getSupabase()
     const { id: analysisId } = await params
-    const searchParams = request.nextUrl.searchParams
-    const limit = Math.min(parseInt(searchParams.get('limit') || '5'), 10)
+    if (!UUID_REGEX.test(analysisId)) {
+      return NextResponse.json(
+        { error: 'invalid_analysis_id' },
+        { status: 400 }
+      )
+    }
 
-    // DB에서 요인 조회
-    const { data: factors, error } = await supabase
+    const searchParams = request.nextUrl.searchParams
+    const parsedLimit = Number(searchParams.get('limit') || 5)
+    const limit = Number.isFinite(parsedLimit)
+      ? Math.min(Math.max(Math.trunc(parsedLimit), 1), 10)
+      : 5
+
+    const admin = createAdminClient()
+    const { data: factors, error } = await admin
       .from('price_factors')
-      .select('*')
+      .select('id,analysis_id,rank,factor_name,factor_name_ko,contribution,direction')
       .eq('analysis_id', analysisId)
       .order('rank', { ascending: true })
       .limit(limit)
@@ -56,3 +60,4 @@ export async function GET(
     )
   }
 }
+

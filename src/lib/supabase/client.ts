@@ -155,6 +155,18 @@ function repairSupabaseAuthCookie() {
   }
 }
 
+/** Forcefully remove all Supabase auth cookies (used as logout fallback). */
+export function clearSupabaseAuthCookies() {
+  if (typeof document === 'undefined') return
+  const ref = getProjectRefFromUrl(process.env.NEXT_PUBLIC_SUPABASE_URL || '')
+  if (!ref) return
+  const key = `sb-${ref}-auth-token`
+  const cookies = getCookieMap()
+  cookies.forEach((_, name) => {
+    if (name === key || name.startsWith(key + '.')) deleteCookie(name)
+  })
+}
+
 export function createClient() {
   if (typeof window !== 'undefined') {
     // Must run before Supabase client initializes and tries to recover session.

@@ -1,26 +1,25 @@
 'use client'
 
-import { useEffect, useState, Suspense } from 'react'
-import { useSearchParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Share2, Download } from 'lucide-react'
+import { useEffect, useRef, useState, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
+import { ArrowLeft, Download, Share2 } from 'lucide-react'
 import {
-  predictBusinessSuccess,
+  APIError,
   getDistrictCharacteristics,
   getDistrictDetail,
   getDistricts,
   getIndustries,
-  APIError,
+  predictBusinessSuccess,
 } from '@/lib/api/commercial'
 import type {
   BusinessPredictionResult,
+  DistrictBasic,
   DistrictCharacteristics,
   DistrictDetail,
-  DistrictBasic,
   Industry,
 } from '@/types/commercial'
 
-// 코드 스플리팅: 큰 컴포넌트들을 lazy load
 const SuccessProbabilityCard = dynamic(
   () =>
     import('@/components/business/SuccessProbabilityCard').then(
@@ -38,41 +37,28 @@ const DistrictCharacteristicsCard = dynamic(
 )
 
 const MetricsCard = dynamic(
-  () =>
-    import('@/components/business/MetricsCard').then((mod) => mod.MetricsCard),
+  () => import('@/components/business/MetricsCard').then((mod) => mod.MetricsCard),
   { loading: () => <div className="h-32 animate-pulse rounded bg-gray-100" /> }
 )
 
-const PeakHoursAnalysis = dynamic(
-  () => import('@/components/business/PeakHoursAnalysis'),
-  { loading: () => <div className="h-96 animate-pulse rounded bg-gray-100" /> }
-)
-
-const DemographicsAnalysis = dynamic(
-  () => import('@/components/business/DemographicsAnalysis'),
-  { loading: () => <div className="h-96 animate-pulse rounded bg-gray-100" /> }
-)
-
-const WeekendAnalysis = dynamic(
-  () => import('@/components/business/WeekendAnalysis'),
-  { loading: () => <div className="h-80 animate-pulse rounded bg-gray-100" /> }
-)
-
-const ProfileAnalysis = dynamic(
-  () => import('@/components/business/ProfileAnalysis'),
-  { loading: () => <div className="h-96 animate-pulse rounded bg-gray-100" /> }
-)
-
-const CompetitionAnalysis = dynamic(
-  () => import('@/components/business/CompetitionAnalysis'),
-  { loading: () => <div className="h-96 animate-pulse rounded bg-gray-100" /> }
-)
-
-const GrowthPotential = dynamic(
-  () => import('@/components/business/GrowthPotential'),
-  { loading: () => <div className="h-96 animate-pulse rounded bg-gray-100" /> }
-)
-
+const PeakHoursAnalysis = dynamic(() => import('@/components/business/PeakHoursAnalysis'), {
+  loading: () => <div className="h-96 animate-pulse rounded bg-gray-100" />,
+})
+const DemographicsAnalysis = dynamic(() => import('@/components/business/DemographicsAnalysis'), {
+  loading: () => <div className="h-96 animate-pulse rounded bg-gray-100" />,
+})
+const WeekendAnalysis = dynamic(() => import('@/components/business/WeekendAnalysis'), {
+  loading: () => <div className="h-80 animate-pulse rounded bg-gray-100" />,
+})
+const ProfileAnalysis = dynamic(() => import('@/components/business/ProfileAnalysis'), {
+  loading: () => <div className="h-96 animate-pulse rounded bg-gray-100" />,
+})
+const CompetitionAnalysis = dynamic(() => import('@/components/business/CompetitionAnalysis'), {
+  loading: () => <div className="h-96 animate-pulse rounded bg-gray-100" />,
+})
+const GrowthPotential = dynamic(() => import('@/components/business/GrowthPotential'), {
+  loading: () => <div className="h-96 animate-pulse rounded bg-gray-100" />,
+})
 const IndustryRecommendation = dynamic(
   () =>
     import('@/components/business/IndustryRecommendation').then(
@@ -86,19 +72,17 @@ function BusinessAnalysisResultContent() {
   const searchParams = useSearchParams()
   const districtCode = searchParams.get('district')
   const industryCode = searchParams.get('industry')
+  const reportRef = useRef<HTMLDivElement | null>(null)
 
-  const [prediction, setPrediction] = useState<BusinessPredictionResult | null>(
-    null
-  )
-  const [characteristics, setCharacteristics] =
-    useState<DistrictCharacteristics | null>(null)
-  const [districtDetail, setDistrictDetail] = useState<DistrictDetail | null>(
-    null
-  )
+  const [prediction, setPrediction] = useState<BusinessPredictionResult | null>(null)
+  const [characteristics, setCharacteristics] = useState<DistrictCharacteristics | null>(null)
+  const [districtDetail, setDistrictDetail] = useState<DistrictDetail | null>(null)
   const [district, setDistrict] = useState<DistrictBasic | null>(null)
   const [industry, setIndustry] = useState<Industry | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [isSharing, setIsSharing] = useState(false)
+  const [isSavingPdf, setIsSavingPdf] = useState(false)
 
   useEffect(() => {
     if (!districtCode || !industryCode) {
@@ -111,61 +95,32 @@ function BusinessAnalysisResultContent() {
         setIsLoading(true)
         setError(null)
 
-        // 병렬로 모든 데이터 로드 (일부 실패해도 나머지 표시)
-        const results = await Promise.allSettled([
-          predictBusinessSuccess({
-            district_code: districtCode,
-            industry_code: industryCode,
-          }),
-          getDistrictCharacteristics(districtCode),
-          getDistrictDetail(districtCode, industryCode),
-          getDistricts(),
-          getIndustries(),
-        ])
+        const [predictionRes, characteristicsRes, detailRes, districtsRes, industriesRes] =
+          await Promise.allSettled([
+            predictBusinessSuccess({
+              district_code: districtCode,
+              industry_code: industryCode,
+            }),
+            getDistrictCharacteristics(districtCode),
+            getDistrictDetail(districtCode, industryCode),
+            getDistricts(),
+            getIndustries(),
+          ])
 
-        const [predResult, charResult, detailResult, distResult, indResult] =
-          results
+        if (predictionRes.status === 'fulfilled') setPrediction(predictionRes.value)
+        else throw predictionRes.reason
 
-        if (predResult.status === 'fulfilled') {
-          setPrediction(predResult.value)
+        if (characteristicsRes.status === 'fulfilled') setCharacteristics(characteristicsRes.value)
+        if (detailRes.status === 'fulfilled') setDistrictDetail(detailRes.value)
+        if (districtsRes.status === 'fulfilled') {
+          setDistrict(districtsRes.value.find((item) => item.code === districtCode) || null)
         }
-        if (charResult.status === 'fulfilled') {
-          setCharacteristics(charResult.value)
+        if (industriesRes.status === 'fulfilled') {
+          setIndustry(industriesRes.value.find((item) => item.code === industryCode) || null)
         }
-        if (detailResult.status === 'fulfilled') {
-          setDistrictDetail(detailResult.value)
-        }
-        if (distResult.status === 'fulfilled') {
-          setDistrict(
-            distResult.value.find(
-              (d: DistrictBasic) => d.code === districtCode
-            ) || null
-          )
-        }
-        if (indResult.status === 'fulfilled') {
-          setIndustry(
-            indResult.value.find((i: Industry) => i.code === industryCode) ||
-              null
-          )
-        }
-
-        // 핵심 데이터(예측)도 실패하면 에러 표시
-        if (predResult.status === 'rejected') {
-          const err = predResult.reason
-          console.error('예측 실패:', err)
-          if (err instanceof APIError) {
-            setError(err.message)
-          } else {
-            setError('분석 결과를 불러오는데 실패했습니다. 다시 시도해주세요.')
-          }
-        }
-      } catch (err) {
-        console.error('데이터 로드 실패:', err)
-        if (err instanceof APIError) {
-          setError(err.message)
-        } else {
-          setError('분석 결과를 불러오는데 실패했습니다. 다시 시도해주세요.')
-        }
+      } catch (loadError) {
+        if (loadError instanceof APIError) setError(loadError.message)
+        else setError('분석 결과를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.')
       } finally {
         setIsLoading(false)
       }
@@ -173,6 +128,75 @@ function BusinessAnalysisResultContent() {
 
     loadData()
   }, [districtCode, industryCode, router])
+
+  const districtName = district?.name || districtCode || '선택한 지역'
+  const industryName = industry?.name || industryCode || '선택한 업종'
+  const shareTitle = `${districtName} / ${industryName} 상권 분석 결과`
+
+  const handleShare = async () => {
+    if (isSharing) return
+    setIsSharing(true)
+    try {
+      const shareUrl = window.location.href
+      const text = `${districtName} / ${industryName} 상권 분석 결과를 확인해 보세요.`
+      if (navigator.share) {
+        try {
+          await navigator.share({ title: shareTitle, text, url: shareUrl })
+          return
+        } catch (shareError) {
+          if (shareError instanceof DOMException && shareError.name === 'AbortError') return
+        }
+      }
+      await navigator.clipboard.writeText(shareUrl)
+      window.alert('링크를 복사했습니다.')
+    } finally {
+      setIsSharing(false)
+    }
+  }
+
+  const handleSavePdf = () => {
+    if (isSavingPdf) return
+    const reportElement = reportRef.current
+    if (!reportElement) return
+    setIsSavingPdf(true)
+
+    try {
+      const popup = window.open('', '_blank', 'noopener,noreferrer,width=1280,height=900')
+      if (!popup) {
+        window.print()
+        return
+      }
+
+      const styles = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
+        .map((node) => node.outerHTML)
+        .join('\n')
+
+      popup.document.write(`<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${shareTitle}</title>
+    ${styles}
+    <style>
+      body { margin: 0; padding: 24px; background: #fff; }
+      [data-print-hide="true"] { display: none !important; }
+      @page { size: A4; margin: 12mm; }
+      * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    </style>
+  </head>
+  <body>${reportElement.innerHTML}</body>
+</html>`)
+      popup.document.close()
+      popup.focus()
+      setTimeout(() => {
+        popup.print()
+        popup.close()
+      }, 500)
+    } finally {
+      setIsSavingPdf(false)
+    }
+  }
 
   if (isLoading) {
     return (
@@ -185,28 +209,17 @@ function BusinessAnalysisResultContent() {
     )
   }
 
-  // 지역/업종 이름 (district 객체가 없어도 코드로 표시)
-  const districtName = district?.name || districtCode || '선택한 지역'
-  const industryName = industry?.name || industryCode || '선택한 업종'
-
-  if (error && !prediction) {
+  if (error || !prediction) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gray-50">
         <div className="max-w-md px-4 text-center">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-red-100">
-            <span className="text-2xl text-red-600">!</span>
-          </div>
-          <h2 className="mb-2 text-xl font-bold text-gray-900">
-            오류가 발생했습니다
-          </h2>
-          <p className="mb-6 text-gray-600">
-            {error || '데이터를 불러올 수 없습니다.'}
-          </p>
+          <h2 className="mb-2 text-xl font-bold text-gray-900">오류가 발생했습니다</h2>
+          <p className="mb-6 text-gray-600">{error || '결과를 불러오지 못했습니다.'}</p>
           <button
             onClick={() => router.push('/business-analysis')}
             className="rounded-lg bg-blue-500 px-6 py-3 text-white hover:bg-blue-600"
           >
-            다시 시도하기
+            다시 검색하기
           </button>
         </div>
       </div>
@@ -215,11 +228,11 @@ function BusinessAnalysisResultContent() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="mx-auto max-w-7xl px-4 py-8">
-        {/* 헤더 */}
+      <div ref={reportRef} className="mx-auto max-w-7xl px-4 py-8">
         <div className="mb-8">
           <button
             onClick={() => router.push('/business-analysis')}
+            data-print-hide="true"
             className="mb-4 flex items-center gap-2 text-gray-600 hover:text-gray-900"
           >
             <ArrowLeft className="h-5 w-5" />
@@ -228,20 +241,26 @@ function BusinessAnalysisResultContent() {
 
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="mb-2 text-3xl font-bold text-gray-900">
-                상권 분석 결과
-              </h1>
+              <h1 className="mb-2 text-3xl font-bold text-gray-900">상권 분석 결과</h1>
               <p className="text-gray-600">
                 {districtName} × {industryName}
               </p>
             </div>
 
-            <div className="flex gap-3">
-              <button className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 transition-colors hover:bg-gray-50">
+            <div className="flex gap-3" data-print-hide="true">
+              <button
+                onClick={handleShare}
+                disabled={isSharing}
+                className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
                 <Share2 className="h-4 w-4" />
                 <span>공유하기</span>
               </button>
-              <button className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 transition-colors hover:bg-gray-50">
+              <button
+                onClick={handleSavePdf}
+                disabled={isSavingPdf}
+                className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
                 <Download className="h-4 w-4" />
                 <span>PDF 저장</span>
               </button>
@@ -249,17 +268,13 @@ function BusinessAnalysisResultContent() {
           </div>
         </div>
 
-        {/* 메인 콘텐츠 */}
         <div className="space-y-8">
-          {/* 첫 번째 행: 성공 확률 + 상세 지표 */}
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-            {prediction && (
-              <SuccessProbabilityCard
-                result={prediction}
-                districtName={districtName}
-                industryName={industryName}
-              />
-            )}
+            <SuccessProbabilityCard
+              result={prediction}
+              districtName={districtName}
+              industryName={industryName}
+            />
             {districtDetail && (
               <MetricsCard
                 statistics={districtDetail.statistics}
@@ -268,64 +283,19 @@ function BusinessAnalysisResultContent() {
             )}
           </div>
 
-          {/* 두 번째 행: 상권 특성 (전체 너비) */}
-          {characteristics && (
-            <div>
-              <DistrictCharacteristicsCard characteristics={characteristics} />
-            </div>
+          {characteristics && <DistrictCharacteristicsCard characteristics={characteristics} />}
+
+          {districtCode && (
+            <>
+              <PeakHoursAnalysis districtCode={districtCode} />
+              <DemographicsAnalysis districtCode={districtCode} />
+              <WeekendAnalysis districtCode={districtCode} />
+              <ProfileAnalysis districtCode={districtCode} />
+              <CompetitionAnalysis districtCode={districtCode} />
+              <GrowthPotential districtCode={districtCode} />
+              <IndustryRecommendation districtCode={districtCode} />
+            </>
           )}
-
-          {/* Phase 6: 상권 분석 고도화 */}
-          <div className="space-y-8">
-            <h2 className="text-2xl font-bold text-gray-900">상세 분석</h2>
-
-            {/* 시간대별 분석 */}
-            <PeakHoursAnalysis districtCode={districtCode!} />
-
-            {/* 연령대별 분석 */}
-            <DemographicsAnalysis districtCode={districtCode!} />
-
-            {/* 주말/평일 비교 */}
-            <WeekendAnalysis districtCode={districtCode!} />
-
-            {/* 상권 프로필 */}
-            <ProfileAnalysis districtCode={districtCode!} />
-
-            {/* 경쟁 분석 */}
-            <CompetitionAnalysis districtCode={districtCode!} />
-
-            {/* 성장 가능성 */}
-            <GrowthPotential districtCode={districtCode!} />
-
-            {/* AI 업종 추천 */}
-            <IndustryRecommendation districtCode={districtCode!} />
-          </div>
-        </div>
-
-        {/* 하단 CTA */}
-        <div className="mt-8 rounded-xl border border-gray-200 bg-white p-6 text-center">
-          <h3 className="mb-2 font-semibold text-gray-900">
-            더 자세한 분석이 필요하신가요?
-          </h3>
-          <p className="mb-4 text-gray-600">
-            여러 지역을 비교하거나 업종별 통계를 확인해보세요.
-          </p>
-          <div className="flex justify-center gap-4">
-            <button
-              onClick={() => router.push('/business-analysis/compare')}
-              className="rounded-lg border border-gray-300 bg-white px-6 py-3 hover:bg-gray-50"
-            >
-              지역 비교하기
-            </button>
-            <button
-              onClick={() =>
-                router.push(`/business-analysis/industry/${industryCode}`)
-              }
-              className="rounded-lg bg-blue-500 px-6 py-3 text-white hover:bg-blue-600"
-            >
-              업종 통계 보기
-            </button>
-          </div>
         </div>
       </div>
     </div>
@@ -337,10 +307,7 @@ export default function BusinessAnalysisResultPage() {
     <Suspense
       fallback={
         <div className="flex min-h-screen items-center justify-center bg-gray-50">
-          <div className="text-center">
-            <div className="mx-auto mb-4 h-16 w-16 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" />
-            <p className="text-gray-600">분석 중입니다...</p>
-          </div>
+          <div className="h-16 w-16 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" />
         </div>
       }
     >

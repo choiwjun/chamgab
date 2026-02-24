@@ -7,6 +7,7 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { requireApiUser } from '@/app/api/_auth'
 import {
   getSupabase,
   getDistrictName,
@@ -20,6 +21,9 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ code: string }> }
 ) {
+  const auth = await requireApiUser()
+  if ('response' in auth) return auth.response
+
   try {
     const { code } = await params
     const limit = parseInt(request.nextUrl.searchParams.get('limit') || '5', 10)

@@ -21,8 +21,16 @@ interface LoginFormProps {
   redirectUrl?: string
 }
 
+function sanitizeRedirectPath(raw: string): string {
+  const value = raw.trim()
+  if (!value.startsWith('/')) return '/'
+  if (value.startsWith('//')) return '/'
+  return value
+}
+
 export function LoginForm({ redirectUrl = '/' }: LoginFormProps) {
   const router = useRouter()
+  const safeRedirect = sanitizeRedirectPath(redirectUrl)
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -66,7 +74,7 @@ export function LoginForm({ redirectUrl = '/' }: LoginFormProps) {
       if (authData.user) {
         // AuthProvider의 onAuthStateChange가 자동으로 상태 업데이트
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        router.push(redirectUrl as any)
+        router.push(safeRedirect as any)
         router.refresh()
       }
     } catch {
@@ -84,7 +92,7 @@ export function LoginForm({ redirectUrl = '/' }: LoginFormProps) {
     try {
       // 네이버는 Supabase 미지원으로 직접 구현한 API 사용
       if (provider === 'naver') {
-        window.location.href = `/api/auth/naver?redirect=${encodeURIComponent(redirectUrl)}`
+        window.location.href = `/api/auth/naver?redirect=${encodeURIComponent(safeRedirect)}`
         return
       }
 
@@ -92,7 +100,7 @@ export function LoginForm({ redirectUrl = '/' }: LoginFormProps) {
       const { error: authError } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
-          redirectTo: `${window.location.origin}/auth/callback?redirect=${encodeURIComponent(redirectUrl)}`,
+          redirectTo: `${window.location.origin}/auth/callback?redirect=${encodeURIComponent(safeRedirect)}`,
         },
       })
 

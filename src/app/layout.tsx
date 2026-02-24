@@ -1,8 +1,12 @@
 import type { Metadata } from 'next'
+import Script from 'next/script'
 import './globals.css'
 import { Providers } from '@/components/providers'
 import { Header } from '@/components/layout/Header'
 import { BottomTabBar } from '@/components/layout/BottomTabBar'
+import { ENABLE_LAND } from '@/lib/features'
+
+const GA_ID = 'G-SBXYYWDTTG'
 
 const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL || 'https://chamgab.vercel.app'
@@ -14,7 +18,9 @@ export const metadata: Metadata = {
     template: '%s | 참값',
   },
   description:
-    'AI가 분석한 정확한 부동산 참값을 확인하세요. 아파트 적정가격, 실거래가 분석, 상권분석, 토지 시세를 한 곳에서 비교하세요.',
+    ENABLE_LAND
+      ? 'AI가 분석한 정확한 부동산 참값을 확인하세요. 아파트 적정가격, 실거래가 분석, 상권분석, 토지 시세를 한 곳에서 비교하세요.'
+      : 'AI가 분석한 정확한 부동산 참값을 확인하세요. 아파트 적정가격, 실거래가 분석, 상권분석을 한 곳에서 비교하세요.',
   keywords: [
     '부동산',
     '아파트 시세',
@@ -22,7 +28,7 @@ export const metadata: Metadata = {
     'AI 부동산 분석',
     '실거래가 조회',
     '상권분석',
-    '토지 시세',
+    ...(ENABLE_LAND ? ['토지 시세'] : []),
     '참값',
     '아파트 가격 예측',
     '부동산 투자',
@@ -37,7 +43,9 @@ export const metadata: Metadata = {
     siteName: '참값',
     title: '참값 - AI 부동산 가격 분석',
     description:
-      'AI가 분석한 정확한 부동산 참값. 아파트 적정가격, 실거래가, 상권분석, 토지 시세를 확인하세요.',
+      ENABLE_LAND
+        ? 'AI가 분석한 정확한 부동산 참값. 아파트 적정가격, 실거래가, 상권분석, 토지 시세를 확인하세요.'
+        : 'AI가 분석한 정확한 부동산 참값. 아파트 적정가격, 실거래가, 상권분석을 확인하세요.',
     images: [
       {
         url: '/og-image.png',
@@ -51,7 +59,9 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: '참값 - AI 부동산 가격 분석',
     description:
-      'AI가 분석한 정확한 부동산 참값. 아파트 적정가격, 상권분석, 토지 시세.',
+      ENABLE_LAND
+        ? 'AI가 분석한 정확한 부동산 참값. 아파트 적정가격, 상권분석, 토지 시세.'
+        : 'AI가 분석한 정확한 부동산 참값. 아파트 적정가격, 상권분석.',
     images: ['/og-image.png'],
   },
   robots: {
@@ -100,6 +110,19 @@ export default function RootLayout({
           crossOrigin="anonymous"
           href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css"
         />
+        {/* Google Analytics */}
+        <Script
+          src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`}
+          strategy="afterInteractive"
+        />
+        <Script id="gtag-init" strategy="afterInteractive">
+          {`
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);}
+            gtag('js', new Date());
+            gtag('config', '${GA_ID}');
+          `}
+        </Script>
       </head>
       <body className="font-sans antialiased">
         <Providers>

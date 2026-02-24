@@ -10,7 +10,7 @@ ML 모델 예측 서비스 (v2 - 고도화)
 """
 import pickle
 from pathlib import Path
-from typing import Optional, Tuple, Dict
+from typing import Any, Optional, Tuple, Dict
 from uuid import UUID
 from datetime import datetime
 
@@ -62,7 +62,11 @@ class ModelService:
 
         return cls(model, artifacts, residual_info, lgbm_model)
 
-    def predict(self, property_id: UUID) -> dict:
+    def predict(
+        self,
+        property_id: UUID,
+        feature_overrides: Optional[Dict[str, Any]] = None,
+    ) -> dict:
         """
         매물 가격 예측
 
@@ -79,6 +83,10 @@ class ModelService:
         property_data = self._get_property_data(property_id)
         if property_data is None:
             raise ValueError(f"매물을 찾을 수 없습니다: {property_id}")
+
+        property_data = self._apply_feature_overrides(
+            property_data, feature_overrides
+        )
 
         # 2. 피처 준비
         features = self._prepare_features(property_data)
@@ -108,6 +116,94 @@ class ModelService:
             "confidence": confidence,
             "confidence_level": confidence_level,
         }
+
+    @staticmethod
+    def _coerce_positive_float(value: Any) -> Optional[float]:
+        try:
+            n = float(value)
+        except (TypeError, ValueError):
+            return None
+        if not np.isfinite(n) or n <= 0:
+            return None
+        return n
+
+    @staticmethod
+    def _coerce_int(
+        value: Any,
+        min_value: int = 1,
+        max_value: int = 300,
+    ) -> Optional[int]:
+        try:
+            n = int(float(value))
+        except (TypeError, ValueError):
+            return None
+        if n < min_value or n > max_value:
+            return None
+        return n
+
+    @staticmethod
+    def _normalize_direction(value: Any) -> Optional[str]:
+        if value is None:
+            return None
+
+        s = str(value).strip().lower()
+        if not s:
+            return None
+
+        aliases = {
+            "south": "south",
+            "s": "south",
+            "남향": "south",
+            "southeast": "southeast",
+            "se": "southeast",
+            "남동향": "southeast",
+            "southwest": "southwest",
+            "sw": "southwest",
+            "남서향": "southwest",
+            "east": "east",
+            "e": "east",
+            "동향": "east",
+            "west": "west",
+            "w": "west",
+            "서향": "west",
+            "north": "north",
+            "n": "north",
+            "북향": "north",
+        }
+        return aliases.get(s)
+
+    def _apply_feature_overrides(
+        self,
+        property_data: dict,
+        feature_overrides: Optional[Dict[str, Any]],
+    ) -> dict:
+        if not feature_overrides:
+            return property_data
+
+        updated = dict(property_data)
+
+        area_raw = feature_overrides.get("area_exclusive")
+        if area_raw is None:
+            area_raw = feature_overrides.get("area_type")
+        area = self._coerce_positive_float(area_raw)
+        if area is not None:
+            updated["area_exclusive"] = area
+
+        floor = self._coerce_int(
+            feature_overrides.get("floor"), min_value=1, max_value=200
+        )
+        if floor is not None:
+            updated["floor"] = floor
+
+        dong = feature_overrides.get("dong")
+        if isinstance(dong, str) and dong.strip():
+            updated["prop_eupmyeondong"] = dong.strip()
+
+        direction = self._normalize_direction(feature_overrides.get("direction"))
+        if direction:
+            updated["_direction"] = direction
+
+        return updated
 
     def _get_property_data(self, property_id: UUID) -> Optional[dict]:
         """Supabase에서 매물 정보 조회"""
@@ -194,7 +290,11 @@ class ModelService:
         )
 
         # 매물 추가 피처
-        property_extra_features = self._get_property_extra_features(built_year, sigungu)
+        property_extra_features = self._get_property_extra_features(
+            built_year,
+            sigungu,
+            direction=property_data.get("_direction"),
+        )
 
         # Temporal lag 피처 (v2 신규)
         area = property_data.get("area_exclusive") or 84
@@ -467,7 +567,12 @@ class ModelService:
             "reb_rent_index": 100.0,
         }
 
-    def _get_property_extra_features(self, built_year: int, sigungu: str) -> dict:
+    def _get_property_extra_features(
+        self,
+        built_year: int,
+        sigungu: str,
+        direction: Optional[str] = None,
+    ) -> dict:
         """매물 추가 피처 (재건축, 학군, 향/뷰/리모델링)"""
         from datetime import datetime
         current_year = datetime.now().year
@@ -493,6 +598,16 @@ class ModelService:
         school_district_grade = school_grades.get(sigungu, 2)
         is_premium_school_district = 1 if school_district_grade >= 4 else 0
 
+        direction_premium_map = {
+            "south": 1.03,
+            "southeast": 1.02,
+            "southwest": 1.015,
+            "east": 1.005,
+            "west": 0.995,
+            "north": 0.98,
+        }
+        direction_premium = direction_premium_map.get(direction, 1.0)
+
         return {
             "is_old_building": is_old_building,
             "is_reconstruction_target": is_reconstruction_target,
@@ -502,7 +617,7 @@ class ModelService:
             "price_vs_previous": 1.0,
             "price_vs_complex_avg": 1.0,
             "price_vs_area_avg": 1.0,
-            "direction_premium": 1.0,
+            "direction_premium": direction_premium,
             "view_premium": 1.0,
             "is_remodeled": 0,
             "remodel_premium": 0.0,

@@ -1,0 +1,10 @@
+.git
+.pytest_cache
+.tmp-pytest
+__pycache__
+logs
+reports
+models
+data
+tests
+*.log

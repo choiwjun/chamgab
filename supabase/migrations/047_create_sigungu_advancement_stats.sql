@@ -31,7 +31,13 @@ CREATE POLICY "sas_select_public" ON public.sigungu_advancement_stats
   FOR SELECT USING (true);
 
 CREATE POLICY "sas_insert_service" ON public.sigungu_advancement_stats
-  FOR INSERT WITH CHECK (true);
+  FOR INSERT WITH CHECK (
+    auth.role() = 'service_role' OR auth.jwt()->>'role' = 'service_role'
+  );
 
 CREATE POLICY "sas_update_service" ON public.sigungu_advancement_stats
-  FOR UPDATE USING (true);
+  FOR UPDATE
+  USING (auth.role() = 'service_role' OR auth.jwt()->>'role' = 'service_role')
+  WITH CHECK (
+    auth.role() = 'service_role' OR auth.jwt()->>'role' = 'service_role'
+  );

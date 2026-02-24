@@ -1,13 +1,12 @@
 /**
  * GET /api/commercial/districts
- *
- * 전국 시군구 목록 조회 - Supabase regions 테이블 기반
- * ML API 대신 직접 Supabase 조회 (배포 의존성 제거)
+ * Commercial districts list by regions table + business coverage.
  */
 
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { enforceRateLimit } from '@/lib/server/request-rate-limit'
 import { getSupabase } from '../_helpers'
 
 interface DistrictBasic {
@@ -18,45 +17,63 @@ interface DistrictBasic {
   has_data: boolean
 }
 
+function getClientIp(req: NextRequest): string {
+  const xf = req.headers.get('x-forwarded-for')
+  if (xf) return xf.split(',')[0]?.trim() || 'unknown'
+  return (
+    req.headers.get('x-real-ip') ||
+    req.headers.get('cf-connecting-ip') ||
+    req.headers.get('x-vercel-forwarded-for') ||
+    'unknown'
+  )
+}
+
 export async function GET(request: NextRequest) {
+  const ip = getClientIp(request)
+  const rl = enforceRateLimit({
+    key: `commercial:districts:${ip}`,
+    limit: 60,
+    windowMs: 60_000,
+  })
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: 'rate_limit_exceeded' },
+      {
+        status: 429,
+        headers: {
+          'Retry-After': String(rl.retryAfterSeconds),
+        },
+      }
+    )
+  }
+
   try {
     const supabase = getSupabase()
     const searchParams = request.nextUrl.searchParams
     const sidoCode = searchParams.get('sido_code')
     const sigunguCode = searchParams.get('sigungu_code')
 
-    // 1. 상권 데이터가 있는 시군구 코드 수집 (페이지네이션)
-    const dataCodes = new Set<string>()
-    let bizOffset = 0
-    while (true) {
-      const { data: bizData } = await supabase
-        .from('business_statistics')
-        .select('sigungu_code')
-        .range(bizOffset, bizOffset + 999)
-      if (!bizData || bizData.length === 0) break
-      for (const r of bizData) {
-        if (r.sigungu_code) dataCodes.add(r.sigungu_code)
-      }
-      if (bizData.length < 1000) break
-      bizOffset += 1000
-      if (bizOffset > 200000) break
-    }
+    const { data: sigunguRows } = await supabase.rpc(
+      'get_commercial_sigungu_codes'
+    )
+    const sigunguList = (sigunguRows || []) as Array<{
+      sigungu_code: string | null
+    }>
+    const dataCodes = new Set(
+      sigunguList
+        .map((row) => String(row.sigungu_code || '').trim())
+        .filter(Boolean)
+    )
 
-    // 2. 전국 시군구 (level=2) 조회
     let query = supabase
       .from('regions')
       .select('code, name, parent_code')
       .eq('level', 2)
       .order('code')
 
-    if (sidoCode) {
-      query = query.like('code', `${sidoCode}%`)
-    }
-    if (sigunguCode) {
-      query = query.like('code', `${sigunguCode}%`)
-    }
+    if (sidoCode) query = query.like('code', `${sidoCode}%`)
+    if (sigunguCode) query = query.like('code', `${sigunguCode}%`)
 
-    // 페이지네이션으로 전체 조회
     const allRegions: { code: string; name: string; parent_code: string }[] = []
     let offset = 0
     while (true) {
@@ -71,42 +88,40 @@ export async function GET(request: NextRequest) {
       offset += 1000
     }
 
-    // 3. 시도명 캐시
-    const sidoCache: Record<string, string> = {}
+    const parentCodes = Array.from(
+      new Set(
+        allRegions
+          .map((row) => String(row.parent_code || '').trim())
+          .filter(Boolean)
+      )
+    )
 
-    // 4. DistrictBasic 목록 생성
-    const districts: DistrictBasic[] = []
-
-    for (const region of allRegions) {
-      const code10 = region.code // 10자리 법정동코드
-      const code5 = code10.slice(0, 5) // 5자리 시군구코드
-      const name = region.name
-      const parentCode = region.parent_code || ''
-
-      // 시도명 조회 (캐시)
-      if (parentCode && !sidoCache[parentCode]) {
-        const { data: sidoData } = await supabase
-          .from('regions')
-          .select('name')
-          .eq('code', parentCode)
-          .limit(1)
-
-        sidoCache[parentCode] = sidoData?.[0]?.name || ''
+    const sidoMap = new Map<string, string>()
+    if (parentCodes.length > 0) {
+      const { data: sidoRows } = await supabase
+        .from('regions')
+        .select('code,name')
+        .in('code', parentCodes)
+      for (const row of sidoRows || []) {
+        sidoMap.set(String(row.code), String(row.name || ''))
       }
-      const sidoName = sidoCache[parentCode] || null
-
-      const hasData = dataCodes.has(code5)
-
-      districts.push({
-        code: code5,
-        name,
-        description: hasData ? '상권 데이터 보유' : '분석 가능',
-        sido: sidoName,
-        has_data: hasData,
-      })
     }
 
-    // 데이터 있는 지역 우선, 시도→이름 순 정렬
+    const districts: DistrictBasic[] = allRegions.map((region) => {
+      const code10 = region.code
+      const code5 = code10.slice(0, 5)
+      const hasData = dataCodes.has(code5)
+      const parentCode = String(region.parent_code || '').trim()
+
+      return {
+        code: code5,
+        name: region.name,
+        description: hasData ? '상권 데이터 보유' : '분석 가능',
+        sido: parentCode ? sidoMap.get(parentCode) || null : null,
+        has_data: hasData,
+      }
+    })
+
     districts.sort((a, b) => {
       if (a.has_data !== b.has_data) return a.has_data ? -1 : 1
       const sidoCmp = (a.sido || '').localeCompare(b.sido || '')
@@ -114,7 +129,11 @@ export async function GET(request: NextRequest) {
       return a.name.localeCompare(b.name)
     })
 
-    return NextResponse.json(districts)
+    return NextResponse.json(districts, {
+      headers: {
+        'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
+      },
+    })
   } catch (err) {
     console.error('[Commercial Districts] Exception:', err)
     return NextResponse.json([], { status: 500 })

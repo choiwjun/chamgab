@@ -27,3 +27,6 @@ jobs:
 
       - name: Run TypeScript check
         run: npm run type-check
+
+      - name: Run mojibake check
+        run: npm run check:mojibake

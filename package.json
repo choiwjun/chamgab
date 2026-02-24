@@ -8,6 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "type-check": "tsc --noEmit",
+    "check:mojibake": "node scripts/check-mojibake.mjs",
+    "check:land-visibility": "node scripts/check_land_detail_visibility.mjs",
     "format": "prettier --write .",
     "test": "vitest",
     "test:ui": "vitest --ui",

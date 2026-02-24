@@ -9,6 +9,7 @@ Uses BusinessFeatureEngineer for advanced 32-feature pipeline.
 """
 import os
 import sys
+import argparse
 from pathlib import Path
 from datetime import datetime
 
@@ -50,7 +51,7 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 
 
 def fetch_all_rows(supabase: Client, table_name: str) -> pd.DataFrame:
-    """Supabase 1000-row 제한 우회: 페이지네이션으로 전체 행 가져오기"""
+    """Supabase 1000-row 제한 우회: 페이지네이션으로 전체 행 가져오기 (legacy)"""
     all_data = []
     page_size = 1000
     offset = 0
@@ -68,20 +69,97 @@ def fetch_all_rows(supabase: Client, table_name: str) -> pd.DataFrame:
     return pd.DataFrame(all_data) if all_data else pd.DataFrame()
 
 
-def fetch_statistics(supabase: Client) -> tuple:
-    """Fetch all statistics from Supabase (with pagination)"""
+def _yyyymm_months_ago(months: int) -> str:
+    now = datetime.now()
+    y = now.year
+    m = now.month
+    total = y * 12 + (m - 1) - months
+    yy = total // 12
+    mm = total % 12 + 1
+    return f"{yy:04d}{mm:02d}"
+
+
+def _yyyyqq_quarters_ago(quarters: int) -> str:
+    now = datetime.now()
+    q = (now.month - 1) // 3 + 1
+    total = now.year * 4 + (q - 1) - quarters
+    yy = total // 4
+    qq = total % 4 + 1
+    return f"{yy:04d}{qq:02d}"
+
+
+def fetch_rows(
+    supabase: Client,
+    table_name: str,
+    columns: str,
+    base_year_month_gte: str | None = None,
+    base_year_quarter_gte: str | None = None,
+) -> pd.DataFrame:
+    """
+    Fetch rows with pagination but keep volume bounded for Railway training.
+
+    - For monthly tables, filter by base_year_month >= threshold (YYYYMM string).
+    - For quarterly tables, filter by base_year_quarter >= threshold (YYYYQQ string).
+    """
+    all_data = []
+    page_size = 1000
+    offset = 0
+
+    while True:
+        q = supabase.table(table_name).select(columns)
+        if base_year_month_gte:
+            q = q.gte("base_year_month", base_year_month_gte)
+        if base_year_quarter_gte:
+            q = q.gte("base_year_quarter", base_year_quarter_gte)
+        q = q.range(offset, offset + page_size - 1)
+        resp = q.execute()
+        if not resp.data:
+            break
+        all_data.extend(resp.data)
+        if len(resp.data) < page_size:
+            break
+        offset += page_size
+
+    return pd.DataFrame(all_data) if all_data else pd.DataFrame()
+
+
+def fetch_statistics(supabase: Client, months: int = 24, quarters: int = 8) -> tuple:
+    """Fetch statistics from Supabase (bounded for training speed)"""
     print("\nFetching statistics from Supabase...")
 
-    business_df = fetch_all_rows(supabase, 'business_statistics')
+    min_ym = _yyyymm_months_ago(months)
+    min_q = _yyyyqq_quarters_ago(quarters)
+
+    business_df = fetch_rows(
+        supabase,
+        "business_statistics",
+        "sigungu_code,sido_code,industry_small_code,industry_name,base_year_month,survival_rate,operating_count",
+        base_year_month_gte=min_ym,
+    )
     print(f"  Business statistics: {len(business_df)} records")
 
-    sales_df = fetch_all_rows(supabase, 'sales_statistics')
+    sales_df = fetch_rows(
+        supabase,
+        "sales_statistics",
+        "sigungu_code,sido_code,industry_small_code,industry_name,base_year_month,monthly_avg_sales,sales_growth_rate,monthly_sales_count",
+        base_year_month_gte=min_ym,
+    )
     print(f"  Sales statistics: {len(sales_df)} records")
 
-    store_df = fetch_all_rows(supabase, 'store_statistics')
+    store_df = fetch_rows(
+        supabase,
+        "store_statistics",
+        "sigungu_code,sido_code,industry_small_code,industry_name,base_year_month,store_count,franchise_count",
+        base_year_month_gte=min_ym,
+    )
     print(f"  Store statistics: {len(store_df)} records")
 
-    foot_df = fetch_all_rows(supabase, 'foot_traffic_statistics')
+    foot_df = fetch_rows(
+        supabase,
+        "foot_traffic_statistics",
+        "sigungu_code,base_year_quarter,total_foot_traffic,weekday_avg,weekend_avg,time_06_11,time_11_14,time_14_17,time_17_21,time_21_24,age_10s,age_20s,age_30s,age_40s,age_50s,age_60s_plus",
+        base_year_quarter_gte=min_q,
+    )
     print(f"  Foot traffic statistics: {len(foot_df)} records")
 
     return business_df, sales_df, store_df, foot_df
@@ -100,26 +178,59 @@ def combine_statistics(
         print("Warning: One or more core tables are empty. Cannot combine.")
         return pd.DataFrame()
 
-    # Merge on commercial_district_code, industry_small_code, base_year_month
-    merge_keys = ['commercial_district_code', 'industry_small_code', 'base_year_month']
+    # Aggregate to sigungu-level so training data matches serving inputs.
+    merge_keys = ["sigungu_code", "industry_small_code", "base_year_month"]
 
-    # First merge: business + sales
-    combined = pd.merge(
-        business_df,
-        sales_df,
-        on=merge_keys,
-        how='inner',
-        suffixes=('_business', '_sales')
+    def _num(df: pd.DataFrame, col: str) -> pd.Series:
+        return pd.to_numeric(df.get(col), errors="coerce").fillna(0)
+
+    def _wmean(v: pd.Series, w: pd.Series) -> float:
+        ww = w.fillna(0)
+        vv = v.fillna(0)
+        denom = float(ww.sum())
+        return float((vv * ww).sum() / denom) if denom > 0 else float(vv.mean() if len(vv) > 0 else 0)
+
+    # business: survival_rate weighted by operating_count
+    b = business_df.copy()
+    b["survival_rate"] = _num(b, "survival_rate")
+    b["operating_count"] = _num(b, "operating_count")
+    b_agg = (
+        b.groupby(merge_keys, as_index=False)
+        .apply(lambda g: pd.Series({
+            "sido_code": str(g["sido_code"].dropna().iloc[0]) if "sido_code" in g.columns and g["sido_code"].notna().any() else None,
+            "industry_name": str(g["industry_name"].dropna().iloc[0]) if "industry_name" in g.columns and g["industry_name"].notna().any() else None,
+            "operating_count": float(g["operating_count"].sum()),
+            "survival_rate": _wmean(g["survival_rate"], g["operating_count"]),
+        }))
+        .reset_index(drop=True)
     )
 
-    # Second merge: + store
-    combined = pd.merge(
-        combined,
-        store_df,
-        on=merge_keys,
-        how='inner',
-        suffixes=('', '_store')
+    # sales: monthly_avg_sales weighted by monthly_sales_count
+    s = sales_df.copy()
+    s["monthly_avg_sales"] = _num(s, "monthly_avg_sales")
+    s["sales_growth_rate"] = pd.to_numeric(s.get("sales_growth_rate"), errors="coerce")
+    s["monthly_sales_count"] = _num(s, "monthly_sales_count")
+    s_agg = (
+        s.groupby(merge_keys, as_index=False)
+        .apply(lambda g: pd.Series({
+            "monthly_sales_count": float(_num(g, "monthly_sales_count").sum()),
+            "monthly_avg_sales": _wmean(_num(g, "monthly_avg_sales"), _num(g, "monthly_sales_count")),
+            "sales_growth_rate": float(pd.to_numeric(g.get("sales_growth_rate"), errors="coerce").dropna().mean()) if "sales_growth_rate" in g.columns else 0.0,
+        }))
+        .reset_index(drop=True)
     )
+
+    # store: sum counts
+    st = store_df.copy()
+    st["store_count"] = _num(st, "store_count")
+    st["franchise_count"] = _num(st, "franchise_count")
+    st_agg = (
+        st.groupby(merge_keys, as_index=False)
+        .agg(store_count=("store_count", "sum"), franchise_count=("franchise_count", "sum"))
+    )
+
+    combined = pd.merge(b_agg, s_agg, on=merge_keys, how="inner")
+    combined = pd.merge(combined, st_agg, on=merge_keys, how="inner")
 
     print(f"  Combined (biz+sales+store): {len(combined)}")
 
@@ -159,14 +270,6 @@ def combine_statistics(
                 age_cols_sel.append(c)
 
         ft_merge = foot_latest[age_cols_sel].copy()
-
-        # sigungu_code 확보 (combined에 없을 수 있음)
-        if 'sigungu_code' not in combined.columns:
-            # commercial_district_code의 앞 5자리가 sigungu_code
-            if 'sigungu_code_business' in combined.columns:
-                combined['sigungu_code'] = combined['sigungu_code_business']
-            else:
-                combined['sigungu_code'] = combined['commercial_district_code'].str[:5]
 
         combined = pd.merge(combined, ft_merge, on='sigungu_code', how='left')
         print(f"  After foot_traffic merge: {len(combined)}")
@@ -233,6 +336,11 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
 
 def main():
     """Main execution"""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--months", type=int, default=24, help="최근 N개월만 사용 (기본 24)")
+    parser.add_argument("--quarters", type=int, default=8, help="최근 N분기만 사용 (기본 8)")
+    args = parser.parse_args()
+
     print("=" * 60)
     print("Preparing Business Success Training Data (v2)")
     print("=" * 60)
@@ -248,7 +356,9 @@ def main():
     )
 
     # Fetch data
-    business_df, sales_df, store_df, foot_df = fetch_statistics(supabase)
+    business_df, sales_df, store_df, foot_df = fetch_statistics(
+        supabase, months=args.months, quarters=args.quarters
+    )
 
     if business_df.empty or sales_df.empty or store_df.empty:
         print("\nError: No data found in one or more tables.")

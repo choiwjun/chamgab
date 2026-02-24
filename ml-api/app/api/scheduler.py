@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hmac
 import os
 from typing import Optional
 
@@ -18,7 +19,11 @@ VALID_JOB_TYPES = [
     "weekly",
     "monthly",
     "collect_commercial",
+    "build_commercial_quality_snapshot",
+    "check_commercial_data_quality",
+    "check_launch_readiness_gate",
     "collect_land_daily",
+    "collect_land_locations",
     "link_complexes",
     "fix_complex_names",
     "train_business",
@@ -26,13 +31,16 @@ VALID_JOB_TYPES = [
     "chamgab_backfill_property_id",
     "chamgab_audit_gap",
     "chamgab_reanalyze_severe",
+    "chamgab_factor_backfill",
     "chamgab_autofix_apply",
+    "chamgab_gap_recovery_full",
     "collect_school_base_monthly",
     "collect_school_metrics_monthly",
     "collect_school_academy_weekly",
     "build_school_marts_daily",
     "check_school_data_quality",
     "collect_school_official_data",
+    "school_full_rebuild",
 ]
 
 
@@ -56,7 +64,13 @@ class SchedulerStatusResponse(BaseModel):
     last_chamgab_audit_summary: Optional[dict] = None
     last_chamgab_reanalyze_summary: Optional[dict] = None
     last_tx_property_backfill_summary: Optional[dict] = None
+    last_chamgab_factor_backfill_summary: Optional[dict] = None
     last_chamgab_autofix_summary: Optional[dict] = None
+    last_chamgab_gap_recovery_summary: Optional[dict] = None
+    last_launch_readiness_gate_summary: Optional[dict] = None
+    last_job_status_by_type: Optional[dict] = None
+    last_watchdog_run_at: Optional[str] = None
+    last_watchdog_action: Optional[dict] = None
 
 
 class RunNowRequest(BaseModel):
@@ -64,12 +78,14 @@ class RunNowRequest(BaseModel):
         ...,
         description=(
             "job type "
-            "(daily/weekly/monthly/collect_commercial/collect_land_daily/"
+            "(daily/weekly/monthly/collect_commercial/build_commercial_quality_snapshot/check_commercial_data_quality/check_launch_readiness_gate/collect_land_daily/"
+            "collect_land_locations/"
             "link_complexes/fix_complex_names/train_business/train_all/"
             "chamgab_backfill_property_id/chamgab_audit_gap/chamgab_reanalyze_severe/"
-            "chamgab_autofix_apply/"
+            "chamgab_factor_backfill/chamgab_autofix_apply/chamgab_gap_recovery_full/"
             "collect_school_base_monthly/collect_school_metrics_monthly/"
-            "collect_school_academy_weekly/build_school_marts_daily/check_school_data_quality)"
+            "collect_school_academy_weekly/build_school_marts_daily/check_school_data_quality/"
+            "school_full_rebuild)"
         ),
     )
 
@@ -77,8 +93,8 @@ class RunNowRequest(BaseModel):
 def _require_admin_token(x_admin_token: Optional[str]) -> None:
     expected = os.getenv("ML_ADMIN_TOKEN") or os.getenv("SCHEDULER_ADMIN_TOKEN")
     if not expected:
-        return
-    if x_admin_token != expected:
+        raise HTTPException(status_code=503, detail="Admin token not configured")
+    if not x_admin_token or not hmac.compare_digest(x_admin_token, expected):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
@@ -115,8 +131,26 @@ async def get_scheduler_status(
         last_tx_property_backfill_summary=getattr(
             data_scheduler, "last_tx_property_backfill_summary", None
         ),
+        last_chamgab_factor_backfill_summary=getattr(
+            data_scheduler, "last_chamgab_factor_backfill_summary", None
+        ),
         last_chamgab_autofix_summary=getattr(
             data_scheduler, "last_chamgab_autofix_summary", None
+        ),
+        last_chamgab_gap_recovery_summary=getattr(
+            data_scheduler, "last_chamgab_gap_recovery_summary", None
+        ),
+        last_launch_readiness_gate_summary=getattr(
+            data_scheduler, "last_launch_readiness_gate_summary", None
+        ),
+        last_job_status_by_type=getattr(
+            data_scheduler, "last_job_status_by_type", None
+        ),
+        last_watchdog_run_at=getattr(
+            data_scheduler, "last_watchdog_run_at", None
+        ),
+        last_watchdog_action=getattr(
+            data_scheduler, "last_watchdog_action", None
         ),
     )
 

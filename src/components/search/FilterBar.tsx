@@ -9,6 +9,7 @@ import { SlidersHorizontal, X } from 'lucide-react'
 import { RegionFilter } from './RegionFilter'
 import { PriceRangeSlider } from './PriceRangeSlider'
 import type { PropertyQueryParams } from '@/types/property'
+import { ENABLE_LAND } from '@/lib/features'
 
 interface FilterBarProps {
   initialFilters: PropertyQueryParams
@@ -106,7 +107,7 @@ export function FilterBar({ initialFilters }: FilterBarProps) {
             <option value="officetel">오피스텔</option>
             <option value="villa">빌라</option>
             <option value="store">상가</option>
-            <option value="land">토지</option>
+            {ENABLE_LAND && <option value="land">토지</option>}
             <option value="building">건물</option>
           </select>
         </div>

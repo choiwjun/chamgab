@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
@@ -40,7 +40,7 @@ const NAV_APARTMENT: NavCategory = {
   icon: Building2,
   links: [
     { href: '/search', label: '매물 검색' },
-    { href: '/compare', label: '비교하기' },
+    { href: '/compare', label: '鍮꾧탳?섍린' },
     { href: '/favorites', label: '관심목록', requiresAuth: true },
   ],
 }
@@ -59,10 +59,9 @@ const NAV_LAND: NavCategory = {
   id: 'land',
   label: '토지분석',
   icon: MapPin,
-  comingSoon: true,
   links: [
-    { href: '/land', label: '토지 분석', comingSoon: true },
-    { href: '/land/search', label: '토지 검색', comingSoon: true },
+    { href: '/land', label: '토지 분석' },
+    { href: '/land/search', label: '토지 검색' },
   ],
 }
 
@@ -93,7 +92,7 @@ function NavDropdown({
 
   const handleComingSoon = (e: React.MouseEvent) => {
     e.preventDefault()
-    alert('곧 오픈 예정입니다!')
+    alert('怨??ㅽ뵂 ?덉젙?낅땲??')
     setIsOpen(false)
   }
 
@@ -226,7 +225,7 @@ export function Header() {
             href="/"
             className="absolute left-1/2 -translate-x-1/2 md:static md:flex-none md:translate-x-0"
           >
-            <span className="text-lg font-bold text-[#191F28]">참값</span>
+            <span className="text-lg font-bold text-[#191F28]">李멸컪</span>
           </Link>
 
           <nav className="hidden flex-1 items-center justify-center gap-2 md:flex">
@@ -246,7 +245,7 @@ export function Header() {
                   : 'text-[#4E5968] hover:text-[#191F28]'
               }`}
             >
-              학군분석
+              ?숆뎔遺꾩꽍
             </Link>
             <NavDropdown
               category={NAV_LAND}
@@ -289,7 +288,7 @@ export function Header() {
                 href="/auth/login"
                 className="hidden rounded-lg bg-[#3182F6] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1B64DA] md:inline-flex"
               >
-                로그인
+                濡쒓렇??
               </Link>
             )}
           </div>
@@ -341,7 +340,7 @@ export function Header() {
                 className="block px-4 py-2 font-medium text-[#191F28] transition-colors hover:bg-[#F9FAFB]"
                 onClick={() => setIsMobileMenuOpen(false)}
               >
-                홈
+                ??
               </Link>
 
               {desktopCategories.map((category) => {
@@ -371,7 +370,7 @@ export function Header() {
                               key={link.href}
                               className="block w-full px-4 py-2 text-left text-[#8B95A1] transition-colors hover:bg-[#F9FAFB]"
                               onClick={() => {
-                                alert('곧 오픈 예정입니다!')
+                                alert('怨??ㅽ뵂 ?덉젙?낅땲??')
                                 setIsMobileMenuOpen(false)
                               }}
                             >
@@ -402,7 +401,7 @@ export function Header() {
                   onClick={() => setIsMobileMenuOpen(false)}
                 >
                   <GraduationCap className="h-4 w-4 text-[#8B95A1]" />
-                  학군분석
+                  ?숆뎔遺꾩꽍
                 </Link>
               </div>
 
@@ -413,7 +412,7 @@ export function Header() {
                     className="block px-4 py-2 font-medium text-[#191F28] transition-colors hover:bg-[#F9FAFB]"
                     onClick={() => setIsMobileMenuOpen(false)}
                   >
-                    마이페이지
+                    留덉씠?섏씠吏
                   </Link>
                 </div>
               ) : (
@@ -423,7 +422,7 @@ export function Header() {
                     className="block rounded-lg bg-[#3182F6] px-4 py-2.5 text-center font-medium text-white transition-colors hover:bg-[#1B64DA]"
                     onClick={() => setIsMobileMenuOpen(false)}
                   >
-                    로그인
+                    濡쒓렇??
                   </Link>
                 </div>
               )}
@@ -434,3 +433,5 @@ export function Header() {
     </header>
   )
 }
+
+

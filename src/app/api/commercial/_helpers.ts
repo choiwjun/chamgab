@@ -1,35 +1,15 @@
-/**
- * 상권분석 API 공통 Supabase 헬퍼
- *
- * ML API(HuggingFace) 의존성을 제거하고 Supabase 직접 조회로 전환.
- * Python commercial.py의 헬퍼 함수들을 TypeScript로 포팅.
- */
-
 import 'server-only'
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
-// ============================================================================
-// Supabase 클라이언트
-// ============================================================================
-
 export function getSupabase(): SupabaseClient {
-  // Use service role on server routes if available to avoid any RLS drift
-  // causing "silent empty data" (we intentionally catch/return [] in helpers).
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-  const key =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    ''
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 
   return createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   })
 }
-
-// ============================================================================
-// 시군구 이름 조회
-// ============================================================================
 
 export async function getDistrictName(
   supabase: SupabaseClient,
@@ -39,22 +19,24 @@ export async function getDistrictName(
     const { data } = await supabase
       .from('regions')
       .select('name, parent_code')
-      .like('code', `${sigunguCode}%`)
       .eq('level', 2)
+      .like('code', `${sigunguCode}%`)
       .limit(1)
 
     if (!data?.[0]) return { name: sigunguCode, sido: '' }
 
     const { name, parent_code } = data[0]
     let sido = ''
+
     if (parent_code) {
-      const { data: sidoData } = await supabase
+      const { data: parent } = await supabase
         .from('regions')
         .select('name')
         .eq('code', parent_code)
         .limit(1)
-      sido = sidoData?.[0]?.name || ''
+      sido = parent?.[0]?.name || ''
     }
+
     return { name, sido }
   } catch {
     return { name: sigunguCode, sido: '' }
@@ -64,10 +46,6 @@ export async function getDistrictName(
 export function fullName(name: string, sido: string): string {
   return sido ? `${sido} ${name}` : name
 }
-
-// ============================================================================
-// 테이블별 데이터 조회
-// ============================================================================
 
 async function paginatedSelect(
   supabase: SupabaseClient,
@@ -79,20 +57,23 @@ async function paginatedSelect(
   try {
     const all: Record<string, unknown>[] = []
     let offset = 0
+
     while (offset < maxRows) {
       let query = supabase.from(table).select('*')
-      for (const [col, val] of Object.entries(filters)) {
-        query = query.eq(col, val)
+      for (const [column, value] of Object.entries(filters)) {
+        query = query.eq(column, value)
       }
-      query = query
+
+      const { data } = await query
         .order(orderBy, { ascending: false })
         .range(offset, offset + 999)
-      const { data } = await query
+
       if (!data || data.length === 0) break
       all.push(...data)
       if (data.length < 1000) break
       offset += 1000
     }
+
     return all
   } catch {
     return []
@@ -143,7 +124,6 @@ export async function fetchFootTraffic(
     if (!data || data.length === 0) return {}
     if (data.length === 1) return data[0]
 
-    // 여러 상권이면 합산
     const fields = [
       'time_00_06',
       'time_06_11',
@@ -163,11 +143,12 @@ export async function fetchFootTraffic(
       'male_count',
       'female_count',
     ]
-    const agg: Record<string, number> = {}
+
+    const aggregated: Record<string, number> = {}
     for (const field of fields) {
-      agg[field] = data.reduce((sum, row) => sum + (Number(row[field]) || 0), 0)
+      aggregated[field] = data.reduce((sum, row) => sum + (Number(row[field]) || 0), 0)
     }
-    return agg
+    return aggregated
   } catch {
     return {}
   }
@@ -199,17 +180,20 @@ function weightedMean(
   field: string,
   weightBy: (row: Record<string, unknown>) => number
 ): number {
-  let wsum = 0
-  let vsum = 0
-  for (const r of rows) {
-    const v = num(r[field], NaN)
-    if (!isFinite(v)) continue
-    const w = weightBy(r)
-    if (!isFinite(w) || w <= 0) continue
-    wsum += w
-    vsum += w * v
+  let weightedSum = 0
+  let weightSum = 0
+
+  for (const row of rows) {
+    const value = num(row[field], NaN)
+    if (!Number.isFinite(value)) continue
+    const weight = weightBy(row)
+    if (!Number.isFinite(weight) || weight <= 0) continue
+
+    weightedSum += value * weight
+    weightSum += weight
   }
-  return wsum > 0 ? vsum / wsum : 0
+
+  return weightSum > 0 ? weightedSum / weightSum : 0
 }
 
 function weightedMode(
@@ -217,40 +201,32 @@ function weightedMode(
   field: string,
   weightBy: (row: Record<string, unknown>) => number
 ): string {
-  const map = new Map<string, number>()
-  for (const r of rows) {
-    const key = String(r[field] || '').trim()
+  const score = new Map<string, number>()
+  for (const row of rows) {
+    const key = String(row[field] || '').trim()
     if (!key) continue
-    const w = weightBy(r)
-    if (!isFinite(w) || w <= 0) continue
-    map.set(key, (map.get(key) || 0) + w)
+    const weight = weightBy(row)
+    if (!Number.isFinite(weight) || weight <= 0) continue
+    score.set(key, (score.get(key) || 0) + weight)
   }
+
   let best = ''
-  let bestW = -1
-  map.forEach((w, k) => {
-    if (w > bestW) {
-      bestW = w
-      best = k
+  let bestScore = -1
+  score.forEach((value, key) => {
+    if (value > bestScore) {
+      bestScore = value
+      best = key
     }
   })
   return best
 }
 
-/**
- * 시군구 코드(5자리) 기준으로 district_characteristics를 "최신 분기"로 모아 집계.
- * - 숫자: 유동인구(total_foot_traffic) 가중 평균
- * - 범주: 유동인구 가중 최빈값
- *
- * 목적: 시군구 단위 화면에서 임의 1개 상권 샘플이 대표처럼 보이는 문제를 완화.
- */
 export async function fetchDistrictCharAggregated(
   supabase: SupabaseClient,
   sigunguCode: string,
   maxRows = 3000
 ): Promise<Record<string, unknown>> {
   try {
-    // 1) 최신 분기 찾기 (문자열 내림차순이 최신으로 동작한다는 가정: YYYYQQ)
-    // district_characteristics가 비어있을 수 있으니 다른 테이블로 fallback.
     const findLatestQuarter = async (table: string): Promise<string> => {
       try {
         const { data } = await supabase
@@ -259,32 +235,27 @@ export async function fetchDistrictCharAggregated(
           .like('commercial_district_code', `${sigunguCode}%`)
           .order('base_year_quarter', { ascending: false })
           .limit(1)
-        return (data?.[0]?.base_year_quarter as string) || ''
+        return String(data?.[0]?.base_year_quarter || '')
       } catch {
         return ''
       }
     }
 
     let latestQuarter = await findLatestQuarter('district_characteristics')
-    if (!latestQuarter)
-      latestQuarter = await findLatestQuarter('work_population')
-    if (!latestQuarter)
-      latestQuarter = await findLatestQuarter('residential_population')
-    if (!latestQuarter)
-      latestQuarter = await findLatestQuarter('foot_traffic_statistics')
+    if (!latestQuarter) latestQuarter = await findLatestQuarter('work_population')
+    if (!latestQuarter) latestQuarter = await findLatestQuarter('residential_population')
+    if (!latestQuarter) latestQuarter = await findLatestQuarter('foot_traffic_statistics')
     if (!latestQuarter) return {}
 
-    // 2) 최신 분기의 모든 상권 특성 행
-    const { data: rows } = await supabase
+    const { data: characteristicRows } = await supabase
       .from('district_characteristics')
       .select('*')
       .like('commercial_district_code', `${sigunguCode}%`)
       .eq('base_year_quarter', latestQuarter)
       .range(0, maxRows - 1)
 
-    const charRows = (rows || []) as Record<string, unknown>[]
+    const rows = (characteristicRows || []) as Record<string, unknown>[]
 
-    // 3) 같은 분기의 유동인구 행을 weight로 사용
     const { data: footRows } = await supabase
       .from('foot_traffic_statistics')
       .select('commercial_district_code,total_foot_traffic')
@@ -293,43 +264,30 @@ export async function fetchDistrictCharAggregated(
       .range(0, maxRows - 1)
 
     const weightMap = new Map<string, number>()
-    for (const r of (footRows || []) as Record<string, unknown>[]) {
-      const cd = String(r.commercial_district_code || '')
-      if (!cd) continue
-      const w = num(r.total_foot_traffic, 0)
-      if (w > 0) weightMap.set(cd, w)
+    for (const row of (footRows || []) as Record<string, unknown>[]) {
+      const code = String(row.commercial_district_code || '')
+      if (!code) continue
+      const weight = num(row.total_foot_traffic, 0)
+      if (weight > 0) weightMap.set(code, weight)
     }
 
-    const weightBy = (r: Record<string, unknown>) => {
-      const cd = String(r.commercial_district_code || '')
-      return weightMap.get(cd) || 1
+    const weightBy = (row: Record<string, unknown>) => {
+      const code = String(row.commercial_district_code || '')
+      return weightMap.get(code) || 1
     }
 
-    const districtType = charRows.length
-      ? weightedMode(charRows, 'district_type', weightBy)
-      : ''
-    const primaryAgeGroup = charRows.length
-      ? weightedMode(charRows, 'primary_age_group', weightBy)
-      : ''
-    const peakStart = charRows.length
-      ? weightedMode(charRows, 'peak_time_start', weightBy)
-      : ''
-    const peakEnd = charRows.length
-      ? weightedMode(charRows, 'peak_time_end', weightBy)
-      : ''
-    const consumptionLevel = charRows.length
-      ? weightedMode(charRows, 'consumption_level', weightBy)
-      : ''
+    const districtType = rows.length ? weightedMode(rows, 'district_type', weightBy) : ''
+    const primaryAgeGroup = rows.length ? weightedMode(rows, 'primary_age_group', weightBy) : ''
+    const peakStart = rows.length ? weightedMode(rows, 'peak_time_start', weightBy) : ''
+    const peakEnd = rows.length ? weightedMode(rows, 'peak_time_end', weightBy) : ''
+    const consumptionLevel = rows.length ? weightedMode(rows, 'consumption_level', weightBy) : ''
 
-    // student_ratio는 별도 실측 테이블이 없으므로 district_characteristics 기반(있으면)만 사용.
-    // office/resident는 work/residential 실측이 있으면 그 비율을 사용하고, 없으면 char 기반으로 fallback.
     const studentRatio = clamp(
-      charRows.length ? weightedMean(charRows, 'student_ratio', weightBy) : 0,
+      rows.length ? weightedMean(rows, 'student_ratio', weightBy) : 0,
       0,
       100
     )
 
-    // 3.5) 실측 인구(직장/주거) 집계
     const { data: workRows } = await supabase
       .from('work_population')
       .select('commercial_district_code,total_workers')
@@ -337,7 +295,7 @@ export async function fetchDistrictCharAggregated(
       .eq('base_year_quarter', latestQuarter)
       .range(0, maxRows - 1)
 
-    const { data: resRows } = await supabase
+    const { data: residentialRows } = await supabase
       .from('residential_population')
       .select('commercial_district_code,total_population')
       .like('commercial_district_code', `${sigunguCode}%`)
@@ -345,95 +303,71 @@ export async function fetchDistrictCharAggregated(
       .range(0, maxRows - 1)
 
     const totalWorkers = (workRows || []).reduce(
-      (s: number, r: Record<string, unknown>) => s + num(r.total_workers),
+      (sum, row: Record<string, unknown>) => sum + num(row.total_workers),
       0
     )
-    const totalResidents = (resRows || []).reduce(
-      (s: number, r: Record<string, unknown>) => s + num(r.total_population),
+    const totalResidents = (residentialRows || []).reduce(
+      (sum, row: Record<string, unknown>) => sum + num(row.total_population),
       0
     )
 
     let officeWorkerRatio = 0
     let residentRatio = 0
-
     if (totalWorkers > 0 || totalResidents > 0) {
-      // 실측 비율(직장/주거)을 (100 - student) 안에서 비례 배분해서 합이 100이 되게 맞춤
-      const denom = totalWorkers + totalResidents || 1
-      const officeShare = totalWorkers / denom
-      const residentShare = totalResidents / denom
+      const denominator = totalWorkers + totalResidents || 1
+      const officeShare = totalWorkers / denominator
+      const residentShare = totalResidents / denominator
       const remaining = clamp(100 - studentRatio, 0, 100)
       officeWorkerRatio = remaining * officeShare
       residentRatio = remaining * residentShare
     } else {
-      const officeFromChar = clamp(
-        charRows.length
-          ? weightedMean(charRows, 'office_worker_ratio', weightBy)
-          : 0,
+      officeWorkerRatio = clamp(
+        rows.length ? weightedMean(rows, 'office_worker_ratio', weightBy) : 0,
         0,
         100
       )
-      officeWorkerRatio = officeFromChar
       residentRatio = clamp(100 - officeWorkerRatio - studentRatio, 0, 100)
     }
 
     const weekendSalesRatio = clamp(
-      charRows.length
-        ? weightedMean(charRows, 'weekend_sales_ratio', weightBy)
-        : 0,
+      rows.length ? weightedMean(rows, 'weekend_sales_ratio', weightBy) : 0,
       0,
       100
     )
-
     const avgTicketPrice = Math.round(
-      clamp(
-        charRows.length
-          ? weightedMean(charRows, 'avg_ticket_price', weightBy)
-          : 0,
-        0,
-        1_000_000
-      )
+      clamp(rows.length ? weightedMean(rows, 'avg_ticket_price', weightBy) : 0, 0, 1_000_000)
     )
-
     const peakTraffic = Math.round(
-      clamp(
-        charRows.length
-          ? weightedMean(charRows, 'peak_time_traffic', weightBy)
-          : 0,
-        0,
-        10_000_000
-      )
+      clamp(rows.length ? weightedMean(rows, 'peak_time_traffic', weightBy) : 0, 0, 10_000_000)
     )
 
-    // 가중 최빈값으로 주중 우세 여부도 결정 (동률이면 false)
     const weekdayDominant =
-      (charRows.length
+      rows.length > 0
         ? (() => {
-            let t = 0
-            let f = 0
-            for (const r of charRows) {
-              const v = r.weekday_dominant
-              if (v == null) continue
-              const w = weightBy(r)
-              if (!isFinite(w) || w <= 0) continue
-              if (Boolean(v)) t += w
-              else f += w
+            let trueScore = 0
+            let falseScore = 0
+            for (const row of rows) {
+              const weight = weightBy(row)
+              if (!Number.isFinite(weight) || weight <= 0) continue
+              if (Boolean(row.weekday_dominant)) trueScore += weight
+              else falseScore += weight
             }
-            return t > f
+            return trueScore > falseScore
           })()
-        : false) || false
+        : false
 
-    // primary_age_ratio: 선택된 primary_age_group의 가중 비중(%) 추정
     let primaryAgeRatio = 0
     if (primaryAgeGroup) {
-      let wAll = 0
-      let wHit = 0
-      for (const r of charRows) {
-        const w = weightBy(r)
-        wAll += w
-        if (String(r.primary_age_group || '').trim() === primaryAgeGroup)
-          wHit += w
+      let totalWeight = 0
+      let matchedWeight = 0
+      for (const row of rows) {
+        const weight = weightBy(row)
+        totalWeight += weight
+        if (String(row.primary_age_group || '').trim() === primaryAgeGroup) {
+          matchedWeight += weight
+        }
       }
-      primaryAgeRatio = wAll > 0 ? (wHit / wAll) * 100 : 0
+      primaryAgeRatio = totalWeight > 0 ? (matchedWeight / totalWeight) * 100 : 0
     }
 
     return {
@@ -457,75 +391,53 @@ export async function fetchDistrictCharAggregated(
   }
 }
 
-// ============================================================================
-// 유틸리티
-// ============================================================================
-
-/** 안전한 숫자 변환 */
-export function num(val: unknown, fallback = 0): number {
-  const n = Number(val)
-  return isNaN(n) ? fallback : n
+export function num(value: unknown, fallback = 0): number {
+  const n = Number(value)
+  return Number.isNaN(n) ? fallback : n
 }
 
-/** Number or null — 파라미터 미설정 시 null 반환 (0은 유효값으로 보존) */
-export function numOrNull(val: unknown): number | null {
-  if (val == null || val === '') return null
-  const n = Number(val)
-  return isNaN(n) ? null : n
+export function numOrNull(value: unknown): number | null {
+  if (value == null || value === '') return null
+  const n = Number(value)
+  return Number.isNaN(n) ? null : n
 }
 
-/** 안전한 평균 */
 export function avg(
   rows: Record<string, unknown>[],
   field: string,
   fallback = 0
 ): number {
   if (!rows.length) return fallback
-  const sum = rows.reduce((s, r) => s + num(r[field]), 0)
-  return sum / rows.length
+  const total = rows.reduce((sum, row) => sum + num(row[field]), 0)
+  return total / rows.length
 }
 
-/** 안전한 합계 */
 export function sum(rows: Record<string, unknown>[], field: string): number {
-  return rows.reduce((s, r) => s + num(r[field]), 0)
+  return rows.reduce((acc, row) => acc + num(row[field]), 0)
 }
 
-/** 업종별 최신 월 데이터만 추출 (24개월 중복 제거) */
-export function latestByIndustry(
-  rows: Record<string, unknown>[]
-): Record<string, unknown>[] {
+export function latestByIndustry(rows: Record<string, unknown>[]): Record<string, unknown>[] {
   const map = new Map<string, Record<string, unknown>>()
-  for (const r of rows) {
-    const ic = String(r.industry_small_code || '')
-    if (!ic) continue
-    const existing = map.get(ic)
-    if (
-      !existing ||
-      String(r.base_year_month || '') > String(existing.base_year_month || '')
-    ) {
-      map.set(ic, r)
+  for (const row of rows) {
+    const industryCode = String(row.industry_small_code || '')
+    if (!industryCode) continue
+    const existing = map.get(industryCode)
+    if (!existing || String(row.base_year_month || '') > String(existing.base_year_month || '')) {
+      map.set(industryCode, row)
     }
   }
   return Array.from(map.values())
 }
 
-/** 최신 월 데이터만 필터 (전체 행에서 최신 base_year_month만) */
-export function latestMonth(
-  rows: Record<string, unknown>[]
-): Record<string, unknown>[] {
+export function latestMonth(rows: Record<string, unknown>[]): Record<string, unknown>[] {
   if (!rows.length) return rows
-  const latest = rows.reduce((max, r) => {
-    const ym = String(r.base_year_month || '')
+  const latest = rows.reduce((max, row) => {
+    const ym = String(row.base_year_month || '')
     return ym > max ? ym : max
   }, '')
-  return latest
-    ? rows.filter((r) => String(r.base_year_month) === latest)
-    : rows
+  if (!latest) return rows
+  return rows.filter((row) => String(row.base_year_month || '') === latest)
 }
-
-// ============================================================================
-// 업종 카테고리 매핑
-// ============================================================================
 
 const INDUSTRY_CATEGORY: Record<string, string> = {
   Q: '음식',
@@ -542,40 +454,39 @@ export function getIndustryCategory(code: string): string {
   return INDUSTRY_CATEGORY[code[0]] || '기타'
 }
 
-/** 업종코드 → 한글명 (static fallback) */
 export const INDUSTRY_NAMES: Record<string, string> = {
-  Q01: '한식음식점',
-  Q02: '중식음식점',
-  Q03: '일식음식점',
-  Q04: '서양식음식점',
-  Q05: '기타외국식음식점',
-  Q06: '치킨전문점',
+  Q01: '한식 음식점',
+  Q02: '중식 음식점',
+  Q03: '일식 음식점',
+  Q04: '양식 음식점',
+  Q05: '기타 외국식 음식점',
+  Q06: '치킨 전문점',
   Q07: '패스트푸드점',
-  Q08: '분식전문점',
-  Q09: '호프/간이주점',
-  Q10: '제과점',
-  Q11: '피자/햄버거/샌드위치',
-  Q12: '커피전문점',
-  Q13: '카페',
+  Q08: '분식 전문점',
+  Q09: '호프/주점',
+  Q10: '카페',
+  Q11: '제과/베이커리',
+  Q12: '커피 전문점',
+  Q13: '디저트 카페',
   Q14: '아이스크림/빙수',
-  Q15: '도시락/밥집',
+  Q15: '도시락/간편식',
   D01: '슈퍼마켓',
   D02: '편의점',
-  D03: '농수산물',
-  D04: '정육점',
+  D03: '정육점',
+  D04: '수산물',
   D05: '반찬가게',
   R01: '의류/패션',
   R02: '신발/가방',
   R03: '화장품',
   R04: '꽃집/화원',
-  R05: '문구/팬시',
+  R05: '문구/서점',
   N01: '약국',
   N02: '안경/콘택트렌즈',
   N03: '건강식품',
   I01: '미용실',
-  I02: '네일아트/피부관리',
+  I02: '네일/피부관리',
   I03: '세탁소',
-  I04: '사진스튜디오',
+  I04: '사진 스튜디오',
   I05: '인테리어/건축',
   I06: '부동산중개',
   S01: '학원/교습소',
@@ -591,10 +502,6 @@ export const INDUSTRY_NAMES: Record<string, string> = {
   L05: '장례식장',
   L06: '주유소',
 }
-
-// ============================================================================
-// 규칙 기반 예측 (ML 모델 없이)
-// ============================================================================
 
 export function fallbackPredict(features: {
   survival_rate: number
@@ -612,48 +519,39 @@ export function fallbackPredict(features: {
     direction: string
   }[]
 } {
-  // 0. Base score: 모든 사업체의 기본 생존 가능성 (+10)
   const base = 10
-
-  // 1. Survival component: 0-35 (주요 요인, 0-100% 정규화)
-  const survComp = (features.survival_rate / 100) * 35
-
-  // 2. Sales component: 0-20 (로그 스케일, 매출 수준 차별화)
+  const survivalComp = (features.survival_rate / 100) * 35
   const salesComp = Math.min(
-    Math.log10(Math.max(features.monthly_avg_sales, 5_000_000) / 5_000_000) *
-      12.5,
+    Math.log10(Math.max(features.monthly_avg_sales, 5_000_000) / 5_000_000) * 12.5,
     20
   )
-
-  // 3. Growth component: -5 ~ +15
-  const growthComp = Math.min(
-    Math.max(features.sales_growth_rate * 2.5, -5),
-    15
-  )
-
-  // 4. Competition penalty: -10 ~ +5 (ratio > 1이면 패널티)
-  const compComp = Math.min(
-    Math.max((1 - features.competition_ratio) * 10, -10),
-    5
-  )
-
-  // 5. Franchise bonus: 0-8
-  const franchComp = Math.min(features.franchise_ratio * 25, 8)
-
-  // 6. Store density signal: 3-8 (대도시 특성 반영, 300개까지 적정)
-  const sc = features.store_count
-  const storeComp = sc < 10 ? 3 : sc < 30 ? 5 : sc <= 300 ? 8 : 6
+  const growthComp = Math.min(Math.max(features.sales_growth_rate * 2.5, -5), 15)
+  const competitionComp = Math.min(Math.max((1 - features.competition_ratio) * 10, -10), 5)
+  const franchiseComp = Math.min(features.franchise_ratio * 25, 8)
+  const storeComp =
+    features.store_count < 10
+      ? 3
+      : features.store_count < 30
+        ? 5
+        : features.store_count <= 300
+          ? 8
+          : 6
 
   const score =
-    base + survComp + salesComp + growthComp + compComp + franchComp + storeComp
-  const success_probability = Math.min(Math.max(score, 5), 95)
+    base +
+    survivalComp +
+    salesComp +
+    growthComp +
+    competitionComp +
+    franchiseComp +
+    storeComp
+  const successProbability = Math.min(Math.max(score, 5), 95)
 
-  // 기여도는 실제 컴포넌트 크기 기반
-  const contribs = [
+  const contributions = [
     {
       name: 'survival_rate',
-      importance: Math.abs(survComp) / 100,
-      direction: survComp >= 0 ? 'positive' : 'negative',
+      importance: Math.abs(survivalComp) / 100,
+      direction: survivalComp >= 0 ? 'positive' : 'negative',
     },
     {
       name: 'monthly_avg_sales',
@@ -667,12 +565,12 @@ export function fallbackPredict(features: {
     },
     {
       name: 'competition_ratio',
-      importance: Math.abs(compComp) / 100,
-      direction: compComp >= 0 ? 'positive' : 'negative',
+      importance: Math.abs(competitionComp) / 100,
+      direction: competitionComp >= 0 ? 'positive' : 'negative',
     },
     {
       name: 'franchise_ratio',
-      importance: Math.abs(franchComp) / 100,
+      importance: Math.abs(franchiseComp) / 100,
       direction: 'positive',
     },
     {
@@ -681,43 +579,41 @@ export function fallbackPredict(features: {
       direction: 'positive',
     },
   ]
-  contribs.sort((a, b) => b.importance - a.importance)
+  contributions.sort((a, b) => b.importance - a.importance)
 
   return {
-    success_probability: Math.round(success_probability * 10) / 10,
+    success_probability: Math.round(successProbability * 10) / 10,
     confidence: 55.0,
-    feature_contributions: contribs.slice(0, 5),
+    feature_contributions: contributions.slice(0, 5),
   }
 }
 
-/**
- * ML 모델 출력 압축 — 합성 데이터 학습 과신(overconfidence) 보정.
- * 60% 이하는 그대로, 60% 초과는 점진 압축 (최대 ~74%).
- */
 export function compressMlProbability(raw: number): number {
   const capped = Math.min(Math.max(raw, 0), 100)
+
   if (capped < 40) {
-    return Math.round((40 - (40 - capped) * 0.6) * 10) / 10
+    return Math.round((40 - (40 - capped) * 0.75) * 10) / 10
   }
-  if (capped > 60) {
-    return Math.round((60 + (capped - 60) * 0.55) * 10) / 10
+  if (capped < 70) {
+    return Math.round((40 + (capped - 40) * 0.95) * 10) / 10
   }
-  return Math.round(capped * 10) / 10
+  if (capped < 85) {
+    return Math.round((68.5 + (capped - 70) * 0.7) * 10) / 10
+  }
+  return Math.round((79 + (capped - 85) * 0.6) * 10) / 10
 }
 
-/** 창업 추천에서 제외할 업종 (비상업/시설 업종) */
 export const EXCLUDED_INDUSTRY_CODES = [
-  'L05', // 장례식장
-  'L06', // 주유소
-  'L01', // 병원/의원
-  'L02', // 치과
-  'L03', // 한의원
-  'L04', // 어린이집/유치원
-  'I05', // 인테리어/건축
-  'I06', // 부동산중개
+  'L05',
+  'L06',
+  'L01',
+  'L02',
+  'L03',
+  'L04',
+  'I05',
+  'I06',
 ]
 
-/** 이름 기반 백업 필터 (코드 매칭 실패 시 방어) */
 export const EXCLUDED_INDUSTRY_NAMES = [
   '장례식장',
   '주유소',
@@ -732,30 +628,28 @@ export const EXCLUDED_INDUSTRY_NAMES = [
   '건축',
 ]
 
-/** 업종이 창업 추천에서 제외 대상인지 확인 (코드 + 이름 이중 필터) */
 export function isExcludedIndustry(code: string, name: string): boolean {
   if (EXCLUDED_INDUSTRY_CODES.includes(code)) return true
-  return EXCLUDED_INDUSTRY_NAMES.some((n) => name.includes(n))
+  return EXCLUDED_INDUSTRY_NAMES.some((excluded) => name.includes(excluded))
 }
 
-/** 피처 이름 → 한글 매핑 */
 export const FACTOR_NAME_MAP: Record<string, string> = {
-  survival_rate: '생존율',
-  survival_rate_normalized: '생존율(정규화)',
+  survival_rate: '업종 평균 생존율',
+  survival_rate_normalized: '업종 평균 생존율(정규화)',
   monthly_avg_sales: '월평균 매출',
   monthly_avg_sales_log: '월평균 매출(로그)',
-  sales_growth_rate: '매출 증가율',
+  sales_growth_rate: '매출 성장률',
   sales_per_store: '점포당 매출',
   sales_volatility: '매출 변동성',
   store_count: '점포 수',
   store_count_log: '점포 수(로그)',
   density_level: '밀집도',
   franchise_ratio: '프랜차이즈 비율',
-  competition_ratio: '경쟁도',
+  competition_ratio: '경쟁 강도',
   market_saturation: '시장 포화도',
-  viability_index: '사업 생존 가능성',
+  viability_index: '사업 지속 가능성',
   growth_potential: '성장 잠재력',
   foot_traffic_score: '유동인구 점수',
   peak_hour_ratio: '피크 시간 비율',
-  weekend_ratio: '주말 비율',
+  weekend_ratio: '주말 매출 비중',
 }

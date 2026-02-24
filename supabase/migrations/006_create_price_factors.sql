@@ -19,11 +19,10 @@ CREATE INDEX IF NOT EXISTS idx_factors_rank ON price_factors(analysis_id, rank);
 -- RLS 정책
 ALTER TABLE price_factors ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Anyone can read price factors" ON price_factors
-  FOR SELECT USING (true);
-
-CREATE POLICY "System can insert price factors" ON price_factors
-  FOR INSERT WITH CHECK (true);
+CREATE POLICY "Service role manage price factors" ON price_factors
+  FOR ALL
+  USING (auth.role() = 'service_role' OR auth.jwt()->>'role' = 'service_role')
+  WITH CHECK (auth.role() = 'service_role' OR auth.jwt()->>'role' = 'service_role');
 
 COMMENT ON TABLE price_factors IS 'SHAP 기반 가격 요인 분석 테이블';
 COMMENT ON COLUMN price_factors.factor_name IS '요인명 (영문)';

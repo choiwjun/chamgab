@@ -19,7 +19,7 @@
 2. New Service → GitHub Repo 연결
 3. Service 설정
    - Root Directory: `ml-api`
-   - Start Command (권장): `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+   - Start Command (권장): `sh start.sh`
    - (선택) Healthcheck path: `/health`
 4. Environment Variables (ML API 서비스)
    - `SUPABASE_URL`
@@ -47,6 +47,18 @@
 ```bash
 node scripts/check_ml_api_compat.mjs
 node scripts/diagnose_commercial_confidence.mjs --district 11680 --industry Q12
+```
+
+## (CLI 배포 시) 프록시 환경변수 주의 (Windows)
+
+로컬에 `HTTP_PROXY/HTTPS_PROXY/ALL_PROXY`가 `127.0.0.1:9` 같은 값으로 잡혀 있으면,
+Railway CLI가 네트워크 연결을 못해서 배포/로그인이 실패할 수 있다.
+
+PowerShell에서 Railway CLI를 실행할 때는 아래처럼 프록시 env를 제거한 뒤 실행하는 것을 권장한다:
+
+```powershell
+Remove-Item Env:HTTP_PROXY,Env:HTTPS_PROXY,Env:ALL_PROXY -ErrorAction SilentlyContinue
+railway whoami
 ```
 
 ## 4) Next.js(Web/Admin) 환경변수 (Railway/Vercel 공통)

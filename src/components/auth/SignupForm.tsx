@@ -118,11 +118,10 @@ export function SignupForm() {
 
     try {
       const supabase = createClient()
-      const { data: authData, error: authError } = await supabase.auth.signUp({
+      const { error: authError } = await supabase.auth.signUp({
         email: data.email,
         password: data.password,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
           data: {
             marketing_consent: data.agreeMarketing || false,
           },
@@ -138,13 +137,8 @@ export function SignupForm() {
         return
       }
 
-      if (authData.user) {
-        // 이메일 인증 안내 페이지로 이동
-        router.push(
-          ('/auth/verify-email?email=' +
-            encodeURIComponent(data.email)) as never
-        )
-      }
+      router.push('/')
+      router.refresh()
     } catch {
       setError('회원가입 중 오류가 발생했습니다. 다시 시도해주세요.')
     } finally {

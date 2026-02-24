@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
-import { notFound } from 'next/navigation'
+import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { getAdminContext } from '@/lib/auth/admin-context'
+import { getAdminGate } from '@/lib/auth/admin-context'
 
 export const metadata: Metadata = {
   title: '관리자 | 참값',
@@ -17,8 +17,38 @@ export default function AdminLayout({
 }
 
 async function AdminShell({ children }: { children: React.ReactNode }) {
-  const ctx = await getAdminContext()
-  if (!ctx) notFound()
+  const gate = await getAdminGate()
+  if (!gate.context) {
+    if (gate.reason === 'unauthenticated') {
+      redirect('/auth/login?redirect=/admin')
+    }
+
+    return (
+      <main className="min-h-screen bg-[#F9FAFB]">
+        <div className="mx-auto max-w-3xl px-4 py-14">
+          <section className="rounded-2xl border border-[#E5E8EB] bg-white p-6">
+            <h1 className="text-2xl font-bold text-[#191F28]">
+              관리자 권한이 필요합니다
+            </h1>
+            <p className="mt-3 text-sm text-[#4E5968]">
+              현재 계정은 관리자 콘솔 접근 권한이 없습니다. `admin_users` 테이블에
+              계정을 등록하거나, 초기 부트스트랩 환경(`ADMIN_BOOTSTRAP=true` +
+              `ADMIN_EMAILS`)을 확인해주세요.
+            </p>
+            <div className="mt-5">
+              <Link
+                href={'/' as never}
+                className="inline-flex rounded-xl border border-[#E5E8EB] px-4 py-2 text-sm font-medium text-[#191F28] hover:bg-[#F2F4F6]"
+              >
+                홈으로 이동
+              </Link>
+            </div>
+          </section>
+        </div>
+      </main>
+    )
+  }
+  const ctx = gate.context
 
   const nav = [
     { href: '/admin', label: '대시보드' },

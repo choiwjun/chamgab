@@ -1409,3 +1409,88 @@ P6-Enhancement
 - **공통 컴포넌트**: `specs/shared/components.yaml`
 - **커버리지 리포트**: `specs/coverage-report.yaml`
 - **검증 리포트**: `docs/planning/TASKS-VALIDATION-REPORT.md`
+
+---
+
+## Phase 7: School Analysis (학군분석) Full Launch (16주+)
+
+### P7-R1: Product/Foundation (Week 1-2)
+
+- [ ] SA-001: IA/Flow 확정 (`/school-analysis`, `/result`, `/schools/[id]`, `/share/[token]`)
+- [ ] SA-002: API 응답 계약서 확정 (`provenance`, `data_freshness`, `confidence_score`, `availability`)
+- [ ] SA-003: Share token 정책 확정 (만료, 폐기, 레이트리밋, read-only)
+- [ ] SA-004: Report idempotency 규칙 확정 (중복 생성 방지)
+- [ ] SA-005: 데이터 품질 게이트/SLA/알림 기준 문서화
+- [ ] SA-006: 메뉴/접근제어 UX 설계 승인
+
+### P7-R2: DB/RLS/Views (Week 3-4)
+
+- [ ] SA-007: `043_create_school_analysis_core.sql` 작성/적용
+- [ ] SA-008: `044_create_school_analysis_views.sql` 작성/적용
+- [ ] SA-009: `045_create_school_analysis_rls.sql` 작성/적용
+- [ ] SA-010: RLS 권한 테스트 (public/auth/service 경계)
+- [ ] SA-011: 초기 샘플 데이터/백필 1차 실행
+
+### P7-R3: Data Pipeline (Week 5-8)
+
+- [ ] SA-012: `collect_school_districts.py`
+- [ ] SA-013: `collect_school_metrics_official.py`
+- [ ] SA-014: `collect_school_progression.py`
+- [ ] SA-015: `collect_academies.py`
+- [ ] SA-016: `collect_academy_fees.py`
+- [ ] SA-017: `build_school_analysis_marts.py`
+- [ ] SA-018: `check_school_data_quality.py`
+- [ ] SA-019: 스케줄러 연동 (월/주/일)
+- [ ] SA-020: 수집 실패 재시도 2회 + 관리자 알림
+- [ ] SA-021: 커버리지 95%/좌표 누락률 5% 기준 검증
+
+### P7-R4: Backend API (Week 9-12)
+
+- [ ] SA-022: `school-analysis.ts` 타입 정의
+- [ ] SA-023: `GET /api/school-analysis/preview` (public)
+- [ ] SA-024: `POST /api/school-analysis/reports` (auth, idempotent)
+- [ ] SA-025: `GET /api/school-analysis/reports/[id]` (auth)
+- [ ] SA-026: `GET /api/school-analysis/schools/[id]` (auth)
+- [ ] SA-027: `POST /api/school-analysis/reports/[id]/share` (auth)
+- [ ] SA-028: `GET /api/school-analysis/share/[token]` (public, read-only)
+- [ ] SA-029: Middleware public exact/prefix 분리 반영
+- [ ] SA-030: API 계약 테스트/권한 테스트 통과
+
+### P7-S1: Frontend UX (Week 11-14)
+
+- [ ] SA-031: Header/모바일 메뉴에 `학군분석` 추가
+- [ ] SA-032: 공개 프리뷰 페이지 구현 (`/school-analysis`)
+- [ ] SA-033: 로그인 상세 리포트 페이지 구현 (`/school-analysis/result`)
+- [ ] SA-034: 학교 상세 페이지 구현 (`/school-analysis/schools/[schoolId]`)
+- [ ] SA-035: 공유 읽기전용 페이지 구현 (`/school-analysis/share/[token]`)
+- [ ] SA-036: provenance/신뢰도/결측 안내 UI 적용
+- [ ] SA-037: 공유 링크 복사 기능
+- [ ] SA-038: PDF 저장 기능
+
+### P7-QA1: QA/Perf/Release (Week 14-16+)
+
+- [ ] SA-039: 비로그인 접근/로그인 리다이렉트 E2E 통과
+- [ ] SA-040: 리포트 생성/조회/공유/만료 플로우 테스트
+- [ ] SA-041: 동일 입력 요청 시 캐시 재사용/응답 일관성 검증
+- [ ] SA-042: 프리뷰 API p95 <= 1.2s
+- [ ] SA-043: 상세 API p95 <= 2.5s
+- [ ] SA-044: 5xx < 1% 유지
+- [ ] SA-045: 운영 대시보드/알림 연동
+- [ ] SA-046: 10% 제한 공개 롤아웃
+- [ ] SA-047: 7일 모니터링 후 100% 롤아웃 판단
+
+### P7-Policy: Score/Labeling Rules (고정안)
+
+- [ ] overall_score = 0.45*school_quality + 0.35*academy_ecosystem + 0.20*commute_safety
+- [ ] school_quality = 학업/성취(30) + 진학 성과(25) + 교육환경(15) + 안전/생활(15) + 프로그램(15)
+- [ ] academy_ecosystem = 밀집도(35) + 과목 다양성(25) + 접근성(20) + 비용 적정성(20)
+- [ ] total_confidence = 0.7*official_confidence + 0.3*inferred_confidence
+- [ ] 내신 직접값 부재 시 대체지표 + `추정` 라벨 강제
+
+### P7-DoD (공통 완료 조건)
+
+- [ ] 공식/추정 지표가 UI에서 명확히 분리되어 표시된다.
+- [ ] 각 리포트에 `data_freshness`, `confidence_score`, `formula_version`이 저장된다.
+- [ ] 결측값은 `null` 대신 `availability.reason`으로 표기된다.
+- [ ] 공유 링크는 read-only이며 만료/폐기 정책이 동작한다.
+- [ ] RLS 우회 없이 public/auth/service 접근 경계가 검증된다.

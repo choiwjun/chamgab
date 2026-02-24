@@ -1,9 +1,9 @@
-// @TASK P1-R1 - 네이버 OAuth 콜백 라우트
-// 네이버 인증 완료 후 Supabase 세션 생성
+// @TASK P1-R1 - Naver OAuth callback route
+// Naver authorization completion -> Supabase session issuance
 
 import { createClient } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase/server'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 
 interface NaverTokenResponse {
   access_token: string
@@ -26,11 +26,75 @@ interface NaverUserResponse {
   }
 }
 
+type NaverStateCookie = {
+  nonce: string
+  redirect: string
+  issued_at: number
+}
+
+const NAVER_STATE_COOKIE = 'naver_oauth_state'
+const NAVER_STATE_MAX_AGE_MS = 10 * 60 * 1000
+
+function sanitizeRedirectPath(raw: unknown): string {
+  if (typeof raw !== 'string') return '/'
+  const value = raw.trim()
+  if (!value.startsWith('/')) return '/'
+  if (value.startsWith('//')) return '/'
+  return value
+}
+
+function withClearedStateCookie(response: NextResponse): NextResponse {
+  response.cookies.set({
+    name: NAVER_STATE_COOKIE,
+    value: '',
+    maxAge: 0,
+    path: '/api/auth/naver/callback',
+  })
+  return response
+}
+
+function redirectWithError(origin: string, message: string): NextResponse {
+  return withClearedStateCookie(
+    NextResponse.redirect(
+      `${origin}/auth/login?error=${encodeURIComponent(message)}`
+    )
+  )
+}
+
+function validateState(
+  request: NextRequest,
+  state: string | null
+): { redirect: string } | null {
+  if (!state) return null
+  const rawCookie = request.cookies.get(NAVER_STATE_COOKIE)?.value
+  if (!rawCookie) return null
+
+  try {
+    const decoded = Buffer.from(rawCookie, 'base64url').toString('utf8')
+    const parsed = JSON.parse(decoded) as NaverStateCookie
+    if (!parsed || typeof parsed !== 'object') return null
+    if (typeof parsed.nonce !== 'string' || parsed.nonce.length < 16) return null
+    if (parsed.nonce !== state) return null
+    if (
+      typeof parsed.issued_at !== 'number' ||
+      !Number.isFinite(parsed.issued_at)
+    ) {
+      return null
+    }
+    if (Date.now() - parsed.issued_at > NAVER_STATE_MAX_AGE_MS) {
+      return null
+    }
+    return { redirect: sanitizeRedirectPath(parsed.redirect) }
+  } catch {
+    return null
+  }
+}
+
 /**
  * GET /api/auth/naver/callback
- * 네이버 OAuth 콜백 처리
+ * Handles Naver OAuth callback.
  */
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
 
   const code = searchParams.get('code')
@@ -38,35 +102,20 @@ export async function GET(request: Request) {
   const error = searchParams.get('error')
   const errorDescription = searchParams.get('error_description')
 
-  // 에러 처리
   if (error) {
     console.error('Naver OAuth error:', error, errorDescription)
-    return NextResponse.redirect(
-      `${origin}/auth/login?error=${encodeURIComponent(errorDescription || error)}`
-    )
+    return redirectWithError(origin, errorDescription || error)
   }
 
   if (!code) {
-    return NextResponse.redirect(
-      `${origin}/auth/login?error=${encodeURIComponent('인증 코드가 없습니다.')}`
-    )
+    return redirectWithError(origin, '?몄쬆 肄붾뱶媛 ?놁뒿?덈떎.')
   }
 
-  // state에서 redirect URL 추출 (Open Redirect 방지)
-  let redirect = '/'
-  if (state) {
-    try {
-      const stateData = JSON.parse(Buffer.from(state, 'base64').toString())
-      const raw = stateData.redirect || '/'
-      // 내부 경로만 허용 (프로토콜 상대 URL, 외부 URL 차단)
-      redirect =
-        typeof raw === 'string' && raw.startsWith('/') && !raw.startsWith('//')
-          ? raw
-          : '/'
-    } catch {
-      // state 파싱 실패 시 기본값 사용
-    }
+  const stateResult = validateState(request, state)
+  if (!stateResult) {
+    return redirectWithError(origin, '濡쒓렇???좏슚?섏? ?딆? ?붿껌?낅땲??')
   }
+  const redirect = stateResult.redirect
 
   const clientId = process.env.NAVER_CLIENT_ID
   const clientSecret = process.env.NAVER_CLIENT_SECRET
@@ -75,20 +124,15 @@ export async function GET(request: Request) {
 
   if (!clientId || !clientSecret) {
     console.error('Naver OAuth credentials not configured')
-    return NextResponse.redirect(
-      `${origin}/auth/login?error=${encodeURIComponent('네이버 로그인 설정 오류')}`
-    )
+    return redirectWithError(origin, '?ㅼ씠踰?濡쒓렇???ㅼ젙 ?ㅻ쪟')
   }
 
   if (!supabaseUrl || !supabaseServiceKey) {
     console.error('Supabase service role key not configured')
-    return NextResponse.redirect(
-      `${origin}/auth/login?error=${encodeURIComponent('서버 설정 오류')}`
-    )
+    return redirectWithError(origin, '?쒕쾭 ?ㅼ젙 ?ㅻ쪟')
   }
 
   try {
-    // 1. 코드로 액세스 토큰 교환
     const tokenUrl = new URL('https://nid.naver.com/oauth2.0/token')
     tokenUrl.searchParams.set('grant_type', 'authorization_code')
     tokenUrl.searchParams.set('client_id', clientId)
@@ -105,12 +149,9 @@ export async function GET(request: Request) {
         tokenData.error,
         tokenData.error_description
       )
-      return NextResponse.redirect(
-        `${origin}/auth/login?error=${encodeURIComponent(tokenData.error_description || '토큰 발급 실패')}`
-      )
+      return redirectWithError(origin, tokenData.error_description || '?좏겙 諛쒓툒 ?ㅽ뙣')
     }
 
-    // 2. 사용자 정보 가져오기
     const userResponse = await fetch('https://openapi.naver.com/v1/nid/me', {
       headers: {
         Authorization: `Bearer ${tokenData.access_token}`,
@@ -120,21 +161,19 @@ export async function GET(request: Request) {
 
     if (userData.resultcode !== '00') {
       console.error('Naver user info error:', userData.message)
-      return NextResponse.redirect(
-        `${origin}/auth/login?error=${encodeURIComponent('사용자 정보 조회 실패')}`
-      )
+      return redirectWithError(origin, '?ъ슜???뺣낫 議고쉶 ?ㅽ뙣')
     }
 
     const naverUser = userData.response
     const email = naverUser.email
 
     if (!email) {
-      return NextResponse.redirect(
-        `${origin}/auth/login?error=${encodeURIComponent('이메일 정보가 필요합니다. 네이버 계정 설정에서 이메일 제공을 허용해주세요.')}`
+      return redirectWithError(
+        origin,
+        '?대찓???뺣낫媛 ?꾩슂?⑸땲?? ?ㅼ씠踰?怨꾩젙 ?ㅼ젙?먯꽌 ?대찓???쒓났???덉슜?댁＜?몄슂.'
       )
     }
 
-    // 3. Supabase Admin API로 사용자 생성/조회
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
       auth: {
         autoRefreshToken: false,
@@ -144,7 +183,6 @@ export async function GET(request: Request) {
 
     let userId: string
 
-    // Fast-path: lookup by email in user_profiles first (avoids listUsers O(n)).
     const { data: existingProfile } = await supabaseAdmin
       .from('user_profiles')
       .select('id')
@@ -153,10 +191,7 @@ export async function GET(request: Request) {
 
     if (existingProfile?.id) {
       userId = existingProfile.id
-
-      // Load auth user to merge metadata safely.
-      const { data: authUser } =
-        await supabaseAdmin.auth.admin.getUserById(userId)
+      const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(userId)
       const existingMeta = authUser?.user?.user_metadata || {}
 
       await supabaseAdmin.auth.admin.updateUserById(userId, {
@@ -169,7 +204,6 @@ export async function GET(request: Request) {
         },
       })
     } else {
-      // Create new user (will also create user_profiles via trigger in most cases).
       const { data: newUser, error: createError } =
         await supabaseAdmin.auth.admin.createUser({
           email,
@@ -183,7 +217,6 @@ export async function GET(request: Request) {
         })
 
       if (createError || !newUser.user) {
-        // Rare fallback: user exists but profile missing; fall back to listUsers once.
         const msg = (createError?.message || '').toLowerCase()
         if (msg.includes('already') || msg.includes('exists')) {
           const { data: usersPage } = await supabaseAdmin.auth.admin.listUsers()
@@ -192,22 +225,17 @@ export async function GET(request: Request) {
             userId = found.id
           } else {
             console.error('Failed to resolve existing user by email')
-            return NextResponse.redirect(
-              `${origin}/auth/login?error=${encodeURIComponent('사용자 조회 실패')}`
-            )
+            return redirectWithError(origin, '?ъ슜??議고쉶 ?ㅽ뙣')
           }
         } else {
           console.error('Failed to create user:', createError)
-          return NextResponse.redirect(
-            `${origin}/auth/login?error=${encodeURIComponent('사용자 생성 실패')}`
-          )
+          return redirectWithError(origin, '?ъ슜???앹꽦 ?ㅽ뙣')
         }
       } else {
         userId = newUser.user.id
       }
     }
 
-    // Suspended user gate (banned accounts cannot proceed)
     try {
       const { data: prof } = await supabaseAdmin
         .from('user_profiles')
@@ -215,23 +243,20 @@ export async function GET(request: Request) {
         .eq('id', userId)
         .maybeSingle()
       const suspended = !!prof?.is_suspended
-      const until = prof?.suspended_until
-        ? new Date(prof.suspended_until)
-        : null
+      const until = prof?.suspended_until ? new Date(prof.suspended_until) : null
       const activeSuspension =
         suspended &&
-        (!until ||
-          (!Number.isNaN(until.getTime()) && until.getTime() > Date.now()))
+        (!until || (!Number.isNaN(until.getTime()) && until.getTime() > Date.now()))
       if (activeSuspension) {
-        return NextResponse.redirect(
-          `${origin}/auth/login?error=${encodeURIComponent('정지된 계정입니다. 관리자에게 문의해주세요.')}`
+        return redirectWithError(
+          origin,
+          '?뺤???怨꾩젙?낅땲?? 愿由ъ옄?먭쾶 臾몄쓽?댁＜?몄슂.'
         )
       }
     } catch {
       // ignore
     }
 
-    // 4. 세션 생성 (magic link 방식 사용)
     const { data: linkData, error: linkError } =
       await supabaseAdmin.auth.admin.generateLink({
         type: 'magiclink',
@@ -243,12 +268,9 @@ export async function GET(request: Request) {
 
     if (linkError || !linkData.properties?.hashed_token) {
       console.error('Failed to generate link:', linkError)
-      return NextResponse.redirect(
-        `${origin}/auth/login?error=${encodeURIComponent('세션 생성 실패')}`
-      )
+      return redirectWithError(origin, '?몄뀡 ?앹꽦 ?ㅽ뙣')
     }
 
-    // 5. 토큰으로 세션 교환
     const supabase = await createServerClient()
     const { error: verifyError } = await supabase.auth.verifyOtp({
       token_hash: linkData.properties.hashed_token,
@@ -257,17 +279,16 @@ export async function GET(request: Request) {
 
     if (verifyError) {
       console.error('Failed to verify OTP:', verifyError)
-      return NextResponse.redirect(
-        `${origin}/auth/login?error=${encodeURIComponent('로그인 실패')}`
-      )
+      return redirectWithError(origin, '濡쒓렇???ㅽ뙣')
     }
 
-    // 성공 - 리다이렉트
-    return NextResponse.redirect(`${origin}${redirect}`)
+    return withClearedStateCookie(NextResponse.redirect(`${origin}${redirect}`))
   } catch (err) {
     console.error('Naver callback error:', err)
-    return NextResponse.redirect(
-      `${origin}/auth/login?error=${encodeURIComponent('네이버 로그인 처리 중 오류가 발생했습니다.')}`
+    return redirectWithError(
+      origin,
+      '?ㅼ씠踰?濡쒓렇??泥섎━ 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.'
     )
   }
 }
+

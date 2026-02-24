@@ -22,12 +22,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   if (!complex) {
     return {
-      title: '단지를 찾을 수 없음',
-      description: 'AI 기반 부동산 가격 분석 서비스',
+      title: '단지를 찾을 수 없습니다',
+      description: 'AI 기반 부동산 가격 분석 서비스 참값입니다.',
     }
   }
 
-  const desc = `${complex.name} ${complex.address} - ${complex.total_units}세대 아파트 단지. AI 적정가격 분석, 실거래가 추이, 가격 영향 요인을 확인하세요.`
+  const unitsText = complex.total_units
+    ? `${complex.total_units.toLocaleString('ko-KR')}세대`
+    : '단지'
+  const desc = `${complex.name} (${complex.address}) ${unitsText} 아파트 시세/실거래가 분석. AI 적정가격, 실거래 추이, 가격 영향 요인을 확인하세요.`
 
   return {
     title: `${complex.name} 시세·적정가격`,
@@ -46,7 +49,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     twitter: {
       card: 'summary',
       title: `${complex.name} 시세·적정가격 | 참값`,
-      description: `${complex.address} | ${complex.total_units}세대`,
+      description: `${complex.address} | ${unitsText}`,
     },
     alternates: {
       canonical: `/complex/${id}`,
@@ -58,9 +61,7 @@ export default async function ComplexDetailPage({ params }: Props) {
   const { id } = await params
   const complex = await getComplexById(id)
 
-  if (!complex) {
-    notFound()
-  }
+  if (!complex) notFound()
 
   return (
     <>
@@ -73,7 +74,7 @@ export default async function ComplexDetailPage({ params }: Props) {
       />
       <RealEstateListingJsonLd
         name={complex.name}
-        description={`${complex.address} - ${complex.total_units}세대 아파트 단지`}
+        description={`${complex.address} - ${complex.total_units ?? 0}세대 아파트`}
         url={`/complex/${id}`}
         address={complex.address}
       />
@@ -81,3 +82,4 @@ export default async function ComplexDetailPage({ params }: Props) {
     </>
   )
 }
+

@@ -62,9 +62,10 @@ function toDateExclusive(yyyyMm: string): string {
  *   limit: number,
  *   stats: {
  *     avg_price_per_m2: number | null,
- *     total_count: number,
- *     total_area_m2: number | null,
- *     date_range: { from: string | null, to: string | null }
+ *     median_price_per_m2: number | null,
+ *     min_price_per_m2: number | null,
+ *     max_price_per_m2: number | null,
+ *     total_transactions: number
  *   }
  * }
  */
@@ -229,11 +230,20 @@ export async function GET(request: NextRequest) {
     // -- Compute stats from statsResult --
     let stats: {
       avg_price_per_m2: number | null
+      median_price_per_m2: number | null
+      min_price_per_m2: number | null
+      max_price_per_m2: number | null
+      total_transactions: number
+      // Backward-compatible aliases for existing clients.
       total_count: number
       total_area_m2: number | null
       date_range: { from: string | null; to: string | null }
     } = {
       avg_price_per_m2: null,
+      median_price_per_m2: null,
+      min_price_per_m2: null,
+      max_price_per_m2: null,
+      total_transactions: 0,
       total_count: 0,
       total_area_m2: null,
       date_range: { from: null, to: null },
@@ -252,6 +262,23 @@ export async function GET(request: NextRequest) {
               pricesPerM2.reduce((sum, v) => sum + v, 0) / pricesPerM2.length
             )
           : null
+      const sortedPrices = [...pricesPerM2].sort((a, b) => a - b)
+      const medianPricePerM2 =
+        sortedPrices.length === 0
+          ? null
+          : sortedPrices.length % 2 === 1
+            ? sortedPrices[(sortedPrices.length - 1) / 2]
+            : Math.round(
+                (sortedPrices[sortedPrices.length / 2 - 1] +
+                  sortedPrices[sortedPrices.length / 2]) /
+                  2
+              )
+      const minPricePerM2 =
+        sortedPrices.length > 0 ? Math.round(sortedPrices[0]) : null
+      const maxPricePerM2 =
+        sortedPrices.length > 0
+          ? Math.round(sortedPrices[sortedPrices.length - 1])
+          : null
 
       // Total area
       const areas = rows
@@ -269,6 +296,10 @@ export async function GET(request: NextRequest) {
 
       stats = {
         avg_price_per_m2: avgPricePerM2,
+        median_price_per_m2: medianPricePerM2,
+        min_price_per_m2: minPricePerM2,
+        max_price_per_m2: maxPricePerM2,
+        total_transactions: statsResult.count || rows.length,
         total_count: statsResult.count || rows.length,
         total_area_m2: totalArea,
         date_range: {

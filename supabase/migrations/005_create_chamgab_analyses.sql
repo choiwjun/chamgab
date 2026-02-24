@@ -22,13 +22,12 @@ CREATE INDEX IF NOT EXISTS idx_chamgab_expires ON chamgab_analyses(expires_at);
 -- RLS 정책
 ALTER TABLE chamgab_analyses ENABLE ROW LEVEL SECURITY;
 
--- 모든 사용자가 분석 결과 조회 가능 (rate limit은 API에서 처리)
-CREATE POLICY "Anyone can read chamgab analyses" ON chamgab_analyses
-  FOR SELECT USING (true);
-
--- 인증된 사용자만 분석 요청 가능
-CREATE POLICY "Authenticated users can insert analyses" ON chamgab_analyses
-  FOR INSERT WITH CHECK (auth.uid() IS NOT NULL OR user_id IS NULL);
+-- Direct table access is restricted to service role.
+-- Public/API reads are mediated by server routes to avoid exposing user_id.
+CREATE POLICY "Service role manage chamgab analyses" ON chamgab_analyses
+  FOR ALL
+  USING (auth.role() = 'service_role' OR auth.jwt()->>'role' = 'service_role')
+  WITH CHECK (auth.role() = 'service_role' OR auth.jwt()->>'role' = 'service_role');
 
 COMMENT ON TABLE chamgab_analyses IS '참값 분석 결과 테이블';
 COMMENT ON COLUMN chamgab_analyses.chamgab_price IS 'AI 예측 참값 가격 (원)';

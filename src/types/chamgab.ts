@@ -13,6 +13,16 @@ export interface ChamgabAnalysis {
   created_at: string
 }
 
+export type ChamgabGapBand = 'safe' | 'watch' | 'severe' | 'unknown'
+
+export interface ChamgabQuality {
+  factor_count: number
+  factor_complete: boolean
+  gap_band: ChamgabGapBand
+  calibration_version: string
+  quality_flags?: string[]
+}
+
 export interface PriceFactor {
   id: string
   analysis_id: string
@@ -49,6 +59,8 @@ export interface Favorite {
 // API Response Types
 export interface ChamgabAnalysisResponse {
   analysis: ChamgabAnalysis
+  quality?: ChamgabQuality
+  quality_flags?: string[]
   factors?: PriceFactor[]
 }
 

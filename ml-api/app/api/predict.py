@@ -53,7 +53,10 @@ async def predict_price(request_body: PredictRequest, request: Request):
         residual_info = getattr(request.app.state, "residual_info", None)
         lgbm_model = getattr(request.app.state, "lgbm_model", None)
         model_service = ModelService(model, artifacts, residual_info, lgbm_model)
-        result = model_service.predict(request_body.property_id)
+        result = model_service.predict(
+            request_body.property_id,
+            feature_overrides=request_body.features or {},
+        )
 
         return PredictResponse(
             chamgab_price=result["chamgab_price"],

@@ -7,6 +7,7 @@ export const dynamic = 'force-dynamic'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { sanitizeFilterInput } from '@/lib/sanitize'
+import { LAND_CATEGORY_LABELS } from '@/types/land'
 
 function getSupabase() {
   return createClient(
@@ -16,7 +17,7 @@ function getSupabase() {
 }
 
 /** Allowed land category values */
-const VALID_LAND_CATEGORIES = ['대', '전', '답', '임', '잡'] as const
+const VALID_LAND_CATEGORIES = new Set(Object.keys(LAND_CATEGORY_LABELS))
 
 /** Allowed sort fields and directions */
 const VALID_SORT_FIELDS = [
@@ -60,11 +61,18 @@ export async function GET(request: NextRequest) {
     const sido = searchParams.get('sido') || undefined
     const sigungu = searchParams.get('sigungu') || undefined
     const landCategory = searchParams.get('land_category') || undefined
+    const zoning = searchParams.get('zoning') || undefined
     const minArea = searchParams.get('min_area')
       ? parseFloat(searchParams.get('min_area')!)
       : undefined
     const maxArea = searchParams.get('max_area')
       ? parseFloat(searchParams.get('max_area')!)
+      : undefined
+    const minPrice = searchParams.get('min_price')
+      ? parseFloat(searchParams.get('min_price')!)
+      : undefined
+    const maxPrice = searchParams.get('max_price')
+      ? parseFloat(searchParams.get('max_price')!)
       : undefined
     const page = Math.max(1, parseInt(searchParams.get('page') || '1'))
     const limit = Math.min(
@@ -76,15 +84,13 @@ export async function GET(request: NextRequest) {
     // -- Validate land_category --
     if (
       landCategory &&
-      !VALID_LAND_CATEGORIES.includes(
-        landCategory as (typeof VALID_LAND_CATEGORIES)[number]
-      )
+      !VALID_LAND_CATEGORIES.has(landCategory)
     ) {
       return NextResponse.json(
         {
           items: [],
           total: 0,
-          error: `Invalid land_category. Must be one of: ${VALID_LAND_CATEGORIES.join(', ')}`,
+          error: `Invalid land_category. Must be one of: ${Array.from(VALID_LAND_CATEGORIES).join(', ')}`,
         },
         { status: 400 }
       )
@@ -141,12 +147,47 @@ export async function GET(request: NextRequest) {
       query = query.eq('land_category', landCategory)
     }
 
+    // -- Zoning filter (via parcel_id -> land_parcels) --
+    if (zoning) {
+      const sanitizedZoning = sanitizeFilterInput(zoning)
+      if (sanitizedZoning) {
+        const { data: parcels, error: parcelError } = await supabase
+          .from('land_parcels')
+          .select('id')
+          .ilike('zoning', `%${sanitizedZoning}%`)
+          .limit(5000)
+
+        if (parcelError) {
+          return NextResponse.json(
+            { items: [], total: 0, error: 'Zoning lookup failed' },
+            { status: 503 }
+          )
+        }
+
+        const parcelIds = (parcels || [])
+          .map((row) => String(row.id || '').trim())
+          .filter(Boolean)
+        if (parcelIds.length === 0) {
+          return NextResponse.json({ items: [], total: 0, page, limit })
+        }
+        query = query.in('parcel_id', parcelIds)
+      }
+    }
+
     // -- Area range filter --
     if (minArea !== undefined && !isNaN(minArea)) {
       query = query.gte('area_m2', minArea)
     }
     if (maxArea !== undefined && !isNaN(maxArea)) {
       query = query.lte('area_m2', maxArea)
+    }
+
+    // -- Price range filter (만원 단위) --
+    if (minPrice !== undefined && !isNaN(minPrice)) {
+      query = query.gte('price', minPrice)
+    }
+    if (maxPrice !== undefined && !isNaN(maxPrice)) {
+      query = query.lte('price', maxPrice)
     }
 
     // -- Sort --

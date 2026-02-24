@@ -1,9 +1,11 @@
 import type {
+  ApiErrorCode,
   CreateSchoolReportParams,
   SchoolAnalysisReport,
   SchoolDetail,
-  SchoolDistrictSummary,
   SchoolPreviewParams,
+  SchoolPreviewResponse,
+  SchoolAnalysisMode,
 } from '@/types/school-analysis'
 
 const DEFAULT_TIMEOUT = 10000
@@ -12,7 +14,9 @@ export class APIError extends Error {
   constructor(
     message: string,
     public statusCode?: number,
-    public detail?: string
+    public detail?: string,
+    public code?: ApiErrorCode,
+    public mode?: SchoolAnalysisMode
   ) {
     super(message)
     this.name = 'APIError'
@@ -50,14 +54,28 @@ async function requestJson<T>(
   const response = await fetchWithTimeout(url, options)
 
   if (!response.ok) {
+    let body:
+      | { detail?: string; error?: string; code?: ApiErrorCode; mode?: SchoolAnalysisMode }
+      | undefined
     let detail: string | undefined
     try {
-      const body = await response.json()
+      body = (await response.json()) as {
+        detail?: string
+        error?: string
+        code?: ApiErrorCode
+        mode?: SchoolAnalysisMode
+      }
       detail = body?.detail || body?.error
     } catch {
       detail = undefined
     }
-    throw new APIError(detail || 'Request failed.', response.status, detail)
+    throw new APIError(
+      detail || 'Request failed.',
+      response.status,
+      detail,
+      body?.code,
+      body?.mode
+    )
   }
 
   return (await response.json()) as T
@@ -75,7 +93,7 @@ function toQueryString(params: SchoolPreviewParams): string {
 
 export async function getSchoolPreview(
   params: SchoolPreviewParams = {}
-): Promise<{ items: SchoolDistrictSummary[]; generated_at: string }> {
+): Promise<SchoolPreviewResponse> {
   return requestJson(`/api/school-analysis/preview${toQueryString(params)}`)
 }
 

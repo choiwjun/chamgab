@@ -1,47 +1,72 @@
-export const dynamic = 'force-dynamic'
+﻿export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { NextResponse } from 'next/server'
+import { requireApiUser } from '@/app/api/_auth'
+import { createClient } from '@/lib/supabase/server'
 import type { SchoolAnalysisReport } from '@/types/school-analysis'
-import { buildMockReport, normalizeDistrictCode } from '../../_helpers'
+import { getSchoolAnalysisMode, schoolApiError } from '../../_helpers'
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 export async function GET(
-  request: NextRequest,
+  _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params
-  const districtCode = normalizeDistrictCode(
-    request.nextUrl.searchParams.get('district_code') || undefined
-  )
+  const auth = await requireApiUser()
+  if ('response' in auth) return auth.response
 
-  if (UUID_REGEX.test(id)) {
-    try {
-      const admin = createAdminClient()
-      const { data, error } = await admin
-        .from('school_analysis_reports')
-        .select('report_payload')
-        .eq('id', id)
-        .maybeSingle()
-
-      if (!error && data?.report_payload) {
-        return NextResponse.json({
-          report: data.report_payload as SchoolAnalysisReport,
-        })
-      }
-    } catch {
-      // ignore and fallback to generated public report
-    }
+  if (getSchoolAnalysisMode() !== 'open') {
+    const payload = schoolApiError(
+      'preview_only_mode',
+      'School analysis detail is temporarily limited to preview mode.',
+      409
+    )
+    return NextResponse.json(payload, { status: payload.status })
   }
 
-  const report = buildMockReport({
-    reportId: UUID_REGEX.test(id) ? id : undefined,
-    userId: null,
-    districtCode,
-  })
+  const { id } = await params
+  if (!UUID_REGEX.test(id)) {
+    const payload = schoolApiError('invalid_request', 'Invalid report id.', 400)
+    return NextResponse.json(payload, { status: payload.status })
+  }
 
-  return NextResponse.json({ report })
+  try {
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from('school_analysis_reports')
+      .select('report_payload')
+      .eq('id', id)
+      .maybeSingle()
+
+    if (error) {
+      const payload = schoolApiError(
+        'pipeline_unavailable',
+        `Failed to load report: ${error.message}`,
+        503
+      )
+      return NextResponse.json(payload, { status: payload.status })
+    }
+
+    if (!data?.report_payload) {
+      const payload = schoolApiError(
+        'report_not_found',
+        'Report not found.',
+        404
+      )
+      return NextResponse.json(payload, { status: payload.status })
+    }
+
+    return NextResponse.json({
+      report: data.report_payload as SchoolAnalysisReport,
+    })
+  } catch {
+    const payload = schoolApiError(
+      'pipeline_unavailable',
+      'Failed to load report.',
+      503
+    )
+    return NextResponse.json(payload, { status: payload.status })
+  }
 }

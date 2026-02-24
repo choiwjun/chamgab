@@ -39,6 +39,8 @@ const PUBLIC_EXACT_ROUTES = [
   '/search',
   '/business-analysis',
   '/school-analysis',
+  '/manifest.webmanifest',
+  '/site.webmanifest',
 ]
 const PUBLIC_PREFIX_ROUTES = [
   '/auth',
@@ -165,6 +167,6 @@ export const config = {
      * - api (API 라우트는 각자 인증 처리)
      * - 정적 파일 확장자 (.svg, .png, .jpg, .jpeg, .gif, .webp)
      */
-    '/((?!_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt|api|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|site.webmanifest|sitemap.xml|robots.txt|api|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }

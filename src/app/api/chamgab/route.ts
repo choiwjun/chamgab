@@ -1,12 +1,13 @@
-// @TASK P3-R1-T2 - Chamgab API - 분석 요청
+// @TASK P3-R1-T2 - Chamgab API - 遺꾩꽍 ?붿껌
 
-// 동적 렌더링 강제 (Supabase 사용)
+// ?숈쟻 ?뚮뜑留?媛뺤젣 (Supabase ?ъ슜)
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { buildChamgabQuality } from './_quality'
 import crypto from 'crypto'
 
 const ML_API_URL = process.env.ML_API_URL || 'http://localhost:8000'
@@ -22,6 +23,15 @@ const HOME_PRICE_CREDIT_COST = (() => {
   return Math.min(Math.max(Math.trunc(n), 1), 100)
 })()
 
+const FREE_OPEN_MODE =
+  process.env.FREE_OPEN_MODE === 'true' ||
+  process.env.NEXT_PUBLIC_FREE_OPEN_MODE === 'true'
+
+const ANALYSIS_PUBLIC_SELECT =
+  'id,property_id,chamgab_price,min_price,max_price,confidence,analyzed_at,expires_at,created_at'
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
 function getClientIp(req: NextRequest) {
   const xf = req.headers.get('x-forwarded-for')
   if (xf) return xf.split(',')[0]?.trim() || null
@@ -36,6 +46,21 @@ function getClientIp(req: NextRequest) {
 function hashIp(ip: string) {
   // Store only a short hash to avoid logging raw IPs.
   return crypto.createHash('sha256').update(ip).digest('hex').slice(0, 32)
+}
+
+function hasInputValue(value: unknown): boolean {
+  if (value === null || value === undefined) return false
+  if (typeof value === 'string') return value.trim().length > 0
+  return true
+}
+
+function parsePositiveNumber(value: unknown): number | null {
+  if (value === null || value === undefined) return null
+  const raw = String(value).trim()
+  if (!raw) return null
+  const parsed = Number(raw.replace(/[^0-9.]/g, ''))
+  if (!Number.isFinite(parsed) || parsed <= 0) return null
+  return parsed
 }
 
 async function logEvent(params: {
@@ -68,15 +93,16 @@ async function logEvent(params: {
 
 /**
  * POST /api/chamgab
- * 참값 분석 요청 (ML API 호출)
+ * 李멸컪 遺꾩꽍 ?붿껌 (ML API ?몄텧)
  *
- * Body (둘 중 하나):
- *   - { property_id } — 매물 ID로 직접 분석
- *   - { complex_id, area_type, floor, dong?, direction? } — 단지 기반 분석
+ * Body (??以??섎굹):
+ *   - { property_id } ??留ㅻЪ ID濡?吏곸젒 遺꾩꽍
+ *   - { complex_id, area_type, floor, dong?, direction? } ???⑥? 湲곕컲 遺꾩꽍
  */
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
+    const admin = createAdminClient()
     const body = await request.json()
     const {
       property_id,
@@ -87,6 +113,21 @@ export async function POST(request: NextRequest) {
       direction,
       force,
     } = body
+
+    const hasFeatureOverrides = [area_type, floor, dong, direction].some(
+      hasInputValue
+    )
+    const shouldUseCache = !force && !hasFeatureOverrides
+    const shouldPersistAnalysis = !hasFeatureOverrides
+
+    const features: Record<string, unknown> = {}
+    if (hasInputValue(area_type)) features.area_type = area_type
+    const areaExclusive = parsePositiveNumber(area_type)
+    if (areaExclusive) features.area_exclusive = areaExclusive
+    if (hasInputValue(floor)) features.floor = floor
+    if (hasInputValue(dong)) features.dong = dong
+    if (hasInputValue(direction)) features.direction = direction
+    if (complex_id) features.complex_id = complex_id
 
     const {
       data: { user },
@@ -100,8 +141,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // complex_id → 해당 단지의 매물 ID 조회
-    let resolvedPropertyId = property_id
+    // Treat invalid property_id as absent to avoid uuid cast errors downstream.
+    const hasValidPropertyId =
+      typeof property_id === 'string' && UUID_REGEX.test(property_id)
+    let resolvedPropertyId = hasValidPropertyId ? property_id : null
     if (!resolvedPropertyId && complex_id) {
       const { data: property } = await supabase
         .from('properties')
@@ -114,12 +157,21 @@ export async function POST(request: NextRequest) {
         resolvedPropertyId = property.id
       }
     }
+    const canUseResolvedPropertyId =
+      typeof resolvedPropertyId === 'string' && UUID_REGEX.test(resolvedPropertyId)
 
-    // 캐시된 분석 결과 확인 (force=true면 무시)
-    if (resolvedPropertyId && !force) {
-      const { data: existingAnalysis } = await supabase
+    if (property_id && !hasValidPropertyId && !complex_id) {
+      return NextResponse.json(
+        { error: 'invalid_property_id', code: 'INVALID_PROPERTY_ID' },
+        { status: 400 }
+      )
+    }
+
+    // 罹먯떆??遺꾩꽍 寃곌낵 ?뺤씤 (force=true硫?臾댁떆)
+    if (canUseResolvedPropertyId && shouldUseCache) {
+      const { data: existingAnalysis } = await admin
         .from('chamgab_analyses')
-        .select('*')
+        .select(ANALYSIS_PUBLIC_SELECT)
         .eq('property_id', resolvedPropertyId)
         .gt('expires_at', new Date().toISOString())
         .order('analyzed_at', { ascending: false })
@@ -127,24 +179,154 @@ export async function POST(request: NextRequest) {
         .single()
 
       if (existingAnalysis) {
+        if (!FREE_OPEN_MODE) {
+          // Count cache hits too: credits/quota is per request, not per ML execution.
+          // (Avoids bypassing limits by repeatedly fetching cached analyses.)
+          if (actorUserId) {
+            const { data: quotaRows, error: quotaError } = await supabase.rpc(
+              'consume_user_credits',
+              {
+                p_product: 'home_price',
+                p_cost: HOME_PRICE_CREDIT_COST,
+                p_meta: {
+                  property_id: resolvedPropertyId || complex_id,
+                  features,
+                  cached: true,
+                },
+              }
+            )
+
+            if (quotaError) {
+              await logEvent({
+                property_id: resolvedPropertyId || String(complex_id),
+                actor_user_id: actorUserId,
+                status: 'error',
+                http_status: 500,
+                error_code: 'CREDITS_RPC_ERROR',
+                error_message: quotaError.message,
+                request: {
+                  property_id: resolvedPropertyId || complex_id,
+                  features,
+                  cached: true,
+                },
+              })
+              return NextResponse.json(
+                { error: 'Credit check failed' },
+                { status: 500 }
+              )
+            }
+
+            const q = Array.isArray(quotaRows) ? quotaRows[0] : null
+            if (!q?.allowed) {
+              await logEvent({
+                property_id: resolvedPropertyId || String(complex_id),
+                actor_user_id: actorUserId,
+                status: 'error',
+                http_status: 429,
+                error_code: 'CREDITS_EXCEEDED',
+                error_message: 'Insufficient credits',
+                request: {
+                  property_id: resolvedPropertyId || complex_id,
+                  features,
+                  cached: true,
+                },
+              })
+              return NextResponse.json(
+                {
+                  error: 'Insufficient credits',
+                  code: 'CREDITS_EXCEEDED',
+                  quota: q,
+                },
+                { status: 429 }
+              )
+            }
+          } else {
+            const ip = getClientIp(request)
+            if (!ip) {
+              return NextResponse.json(
+                { error: 'not_authenticated', code: 'AUTH_REQUIRED' },
+                { status: 401 }
+              )
+            }
+            const ipHash = hashIp(ip)
+            try {
+              const { data: anonRows, error: anonError } = await admin.rpc(
+                'consume_anonymous_analysis_quota',
+                { p_ip_hash: ipHash, p_cost: 1, p_limit: ANON_DAILY_LIMIT }
+              )
+
+              if (anonError) {
+                await logEvent({
+                  property_id: resolvedPropertyId || String(complex_id),
+                  actor_user_id: null,
+                  status: 'error',
+                  http_status: 500,
+                  error_code: 'ANON_QUOTA_RPC_ERROR',
+                  error_message: anonError.message,
+                  request: {
+                    property_id: resolvedPropertyId || complex_id,
+                    features,
+                    cached: true,
+                    ip_hash: ipHash,
+                  },
+                })
+                return NextResponse.json(
+                  { error: 'Credit check failed' },
+                  { status: 500 }
+                )
+              }
+
+              const q = Array.isArray(anonRows) ? anonRows[0] : null
+              if (!q?.allowed) {
+                await logEvent({
+                  property_id: resolvedPropertyId || String(complex_id),
+                  actor_user_id: null,
+                  status: 'error',
+                  http_status: 429,
+                  error_code: 'ANON_QUOTA_EXCEEDED',
+                  error_message: 'Guest daily limit exceeded',
+                  request: {
+                    property_id: resolvedPropertyId || complex_id,
+                    features,
+                    cached: true,
+                    ip_hash: ipHash,
+                  },
+                })
+                return NextResponse.json(
+                  {
+                    error: 'Guest daily limit exceeded',
+                    code: 'ANON_QUOTA_EXCEEDED',
+                    quota: q,
+                  },
+                  { status: 429 }
+                )
+              }
+            } catch {
+              return NextResponse.json(
+                { error: 'Credit check failed' },
+                { status: 500 }
+              )
+            }
+          }
+        }
+
         // optional: do not log cache hits to reduce noise
+        const quality = await buildChamgabQuality(admin, {
+          analysisId: existingAnalysis.id,
+          propertyId: resolvedPropertyId || existingAnalysis.property_id,
+          chamgabPrice: existingAnalysis.chamgab_price,
+          confidence: existingAnalysis.confidence,
+        })
         return NextResponse.json({
           analysis: existingAnalysis,
           cached: true,
+          quality,
         })
       }
     }
 
-    // ML API에 넘길 features 구성
-    const features: Record<string, unknown> = {}
-    if (area_type) features.area_type = area_type
-    if (floor) features.floor = floor
-    if (dong) features.dong = dong
-    if (direction) features.direction = direction
-    if (complex_id) features.complex_id = complex_id
-
-    // Atomic credit consumption (only for authenticated users, only when hitting ML).
-    if (actorUserId) {
+    // Atomic credit consumption (authenticated users).
+    if (!FREE_OPEN_MODE && actorUserId) {
       const { data: quotaRows, error: quotaError } = await supabase.rpc(
         'consume_user_credits',
         {
@@ -178,29 +360,29 @@ export async function POST(request: NextRequest) {
           status: 'error',
           http_status: 429,
           error_code: 'CREDITS_EXCEEDED',
-          error_message: '크레딧이 부족합니다.',
+          error_message: '?щ젅?㏃씠 遺議깊빀?덈떎.',
           request: { property_id: resolvedPropertyId || complex_id, features },
         })
         return NextResponse.json(
           {
-            error: '크레딧이 부족합니다.',
+            error: 'Insufficient credits',
+            code: 'CREDITS_EXCEEDED',
             quota: q,
           },
           { status: 429 }
         )
       }
-    } else {
+    } else if (!FREE_OPEN_MODE) {
       // Anonymous quota: service-side limit per (hashed) IP.
       const ip = getClientIp(request)
       if (!ip) {
         return NextResponse.json(
-          { error: '로그인이 필요합니다.' },
+          { error: 'not_authenticated', code: 'AUTH_REQUIRED' },
           { status: 401 }
         )
       }
       const ipHash = hashIp(ip)
       try {
-        const admin = createAdminClient()
         const { data: anonRows, error: anonError } = await admin.rpc(
           'consume_anonymous_analysis_quota',
           { p_ip_hash: ipHash, p_cost: 1, p_limit: ANON_DAILY_LIMIT }
@@ -234,7 +416,7 @@ export async function POST(request: NextRequest) {
             status: 'error',
             http_status: 429,
             error_code: 'ANON_QUOTA_EXCEEDED',
-            error_message: '비로그인 일일 분석 한도를 초과했습니다.',
+            error_message: '鍮꾨줈洹몄씤 ?쇱씪 遺꾩꽍 ?쒕룄瑜?珥덇낵?덉뒿?덈떎.',
             request: {
               property_id: resolvedPropertyId || complex_id,
               features,
@@ -243,8 +425,8 @@ export async function POST(request: NextRequest) {
           })
           return NextResponse.json(
             {
-              error:
-                '비로그인 일일 분석 한도를 초과했습니다. 로그인 후 이용해주세요.',
+              error: 'Guest daily limit exceeded',
+              code: 'ANON_QUOTA_EXCEEDED',
               quota: q,
             },
             { status: 429 }
@@ -258,7 +440,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ML API 호출 (10초 타임아웃)
+    // ML API ?몄텧 (10珥???꾩븘??
     let prediction
     try {
       const controller = new AbortController()
@@ -307,7 +489,7 @@ export async function POST(request: NextRequest) {
           http_status: isTimeout ? 504 : 503,
           error_code: isTimeout ? 'TIMEOUT' : 'ML_UNAVAILABLE',
           error_message: isTimeout
-            ? '분석 요청 시간이 초과되었습니다.'
+            ? '遺꾩꽍 ?붿껌 ?쒓컙??珥덇낵?섏뿀?듬땲??'
             : 'ML API unavailable',
           request: { property_id: resolvedPropertyId || complex_id, features },
         })
@@ -315,62 +497,81 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           error: isTimeout
-            ? '분석 요청 시간이 초과되었습니다.'
+            ? '遺꾩꽍 ?붿껌 ?쒓컙??珥덇낵?섏뿀?듬땲??'
             : 'ML API unavailable',
         },
         { status: isTimeout ? 504 : 503 }
       )
     }
 
-    // 분석 결과 저장 (resolvedPropertyId가 있을 때만)
-    if (resolvedPropertyId) {
-      const { data: newAnalysis, error } = await supabase
+    // Persist only canonical property-level analyses (no scenario overrides).
+    if (canUseResolvedPropertyId && shouldPersistAnalysis) {
+      const persistedPropertyId = resolvedPropertyId as string
+      const { data: newAnalysis, error } = await admin
         .from('chamgab_analyses')
         .insert({
-          property_id: resolvedPropertyId,
+          property_id: persistedPropertyId,
           user_id: actorUserId,
           chamgab_price: prediction.chamgab_price,
           min_price: prediction.min_price,
           max_price: prediction.max_price,
           confidence: prediction.confidence,
         })
-        .select()
+        .select(ANALYSIS_PUBLIC_SELECT)
         .single()
 
       if (error) {
         console.error('[Chamgab API] DB save error:', error.message)
         await logEvent({
-          property_id: resolvedPropertyId,
+          property_id: persistedPropertyId,
           actor_user_id: actorUserId,
           status: 'error',
           http_status: 500,
           error_code: 'DB_SAVE_ERROR',
           error_message: error.message,
-          request: { property_id: resolvedPropertyId, features },
+          request: { property_id: persistedPropertyId, features },
         })
-        return NextResponse.json({ analysis: prediction, saved: false })
+        const quality = await buildChamgabQuality(admin, {
+          analysisId: null,
+          propertyId: persistedPropertyId,
+          chamgabPrice: prediction.chamgab_price,
+          confidence: prediction.confidence,
+        })
+        return NextResponse.json({ analysis: prediction, saved: false, quality })
       }
 
       await logEvent({
-        property_id: resolvedPropertyId,
+        property_id: persistedPropertyId,
         analysis_id: newAnalysis.id,
         actor_user_id: actorUserId,
         status: 'success',
         http_status: 200,
-        request: { property_id: resolvedPropertyId, features },
+        request: { property_id: persistedPropertyId, features },
       })
-      return NextResponse.json({ analysis: newAnalysis, saved: true })
+      const quality = await buildChamgabQuality(admin, {
+        analysisId: newAnalysis.id,
+        propertyId: persistedPropertyId,
+        chamgabPrice: newAnalysis.chamgab_price,
+        confidence: newAnalysis.confidence,
+      })
+      return NextResponse.json({ analysis: newAnalysis, saved: true, quality })
     }
 
-    // 매칭 매물이 없으면 예측 결과만 반환
+    const logPropertyId = resolvedPropertyId || String(complex_id)
     await logEvent({
-      property_id: String(complex_id),
+      property_id: logPropertyId,
       actor_user_id: actorUserId,
       status: 'success',
       http_status: 200,
-      request: { property_id: complex_id, features },
+      request: { property_id: logPropertyId, features },
     })
-    return NextResponse.json({ analysis: prediction, saved: false })
+    const quality = await buildChamgabQuality(admin, {
+      analysisId: null,
+      propertyId: resolvedPropertyId,
+      chamgabPrice: prediction.chamgab_price,
+      confidence: prediction.confidence,
+    })
+    return NextResponse.json({ analysis: prediction, saved: false, quality })
   } catch (error) {
     console.error('[Chamgab API] Error:', error)
     return NextResponse.json(
@@ -379,3 +580,52 @@ export async function POST(request: NextRequest) {
     )
   }
 }
+
+/**
+ * GET /api/chamgab?property_id=<uuid>
+ * Legacy lookup path used by compare modules.
+ */
+export async function GET(request: NextRequest) {
+  try {
+    const propertyId = (request.nextUrl.searchParams.get('property_id') || '').trim()
+    if (!propertyId || !UUID_REGEX.test(propertyId)) {
+      return NextResponse.json(
+        { error: 'invalid_property_id' },
+        { status: 400 }
+      )
+    }
+
+    const admin = createAdminClient()
+    const { data: analysis, error } = await admin
+      .from('chamgab_analyses')
+      .select(ANALYSIS_PUBLIC_SELECT)
+      .eq('property_id', propertyId)
+      .gt('expires_at', new Date().toISOString())
+      .order('analyzed_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (error || !analysis) {
+      return NextResponse.json({ analysis: null })
+    }
+
+    const quality = await buildChamgabQuality(admin, {
+      analysisId: analysis.id,
+      propertyId,
+      chamgabPrice: analysis.chamgab_price,
+      confidence: analysis.confidence,
+    })
+    return NextResponse.json({
+      analysis,
+      quality,
+      quality_flags: quality.quality_flags,
+    })
+  } catch (error) {
+    console.error('[Chamgab API] GET error:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+

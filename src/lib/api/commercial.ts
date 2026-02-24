@@ -1,8 +1,5 @@
 /**
- * 상권분석 API 클라이언트
- *
- * 모든 엔드포인트를 로컬 Next.js API 라우트로 호출.
- * HuggingFace ML API 의존성 완전 제거.
+ * 상권분석 클라이언트 API
  */
 
 import type {
@@ -16,13 +13,10 @@ import type {
   DistrictCharacteristics,
 } from '@/types/commercial'
 
-const DEFAULT_TIMEOUT = 10000 // 10초
+const DEFAULT_TIMEOUT = 10_000
 const MAX_RETRIES = 3
-const RETRY_DELAY = 1000 // 1초
+const RETRY_DELAY = 1_000
 
-/**
- * 커스텀 에러 클래스
- */
 export class APIError extends Error {
   constructor(
     message: string,
@@ -34,9 +28,6 @@ export class APIError extends Error {
   }
 }
 
-/**
- * 타임아웃을 지원하는 fetch wrapper
- */
 async function fetchWithTimeout(
   url: string,
   options: RequestInit = {},
@@ -62,9 +53,6 @@ async function fetchWithTimeout(
   }
 }
 
-/**
- * 재시도 로직을 포함한 fetch wrapper
- */
 async function fetchWithRetry(
   url: string,
   options: RequestInit = {},
@@ -88,36 +76,43 @@ async function fetchWithRetry(
   }
 }
 
-/**
- * 응답 처리 및 에러 파싱
- */
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    let errorMessage = '요청을 처리하는데 실패했습니다.'
+    let errorMessage = '요청 처리에 실패했습니다.'
     let errorDetail: string | undefined
 
     try {
       const errorData = await response.json()
       errorDetail = errorData.detail || errorData.message
     } catch {
-      // JSON 파싱 실패 시 기본 메시지 사용
+      // ignore parsing error
     }
 
     switch (response.status) {
       case 400:
         errorMessage = '잘못된 요청입니다.'
         break
+      case 401:
+        errorMessage = '로그인이 필요합니다.'
+        break
+      case 403:
+        errorMessage = '권한이 없습니다.'
+        break
       case 404:
         errorMessage = '요청한 데이터를 찾을 수 없습니다.'
         break
+      case 409:
+        errorMessage = '현재 상태에서는 요청을 처리할 수 없습니다.'
+        break
       case 429:
-        errorMessage =
-          '너무 많은 요청이 발생했습니다. 잠시 후 다시 시도해주세요.'
+        errorMessage = '요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.'
         break
       case 500:
       case 502:
       case 503:
-        errorMessage = '서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'
+        errorMessage = '서버 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.'
+        break
+      default:
         break
     }
 
@@ -127,12 +122,7 @@ async function handleResponse<T>(response: Response): Promise<T> {
   return response.json()
 }
 
-/**
- * 상권 목록 조회
- */
-export async function getDistricts(
-  sigunguCode?: string
-): Promise<DistrictBasic[]> {
+export async function getDistricts(sigunguCode?: string): Promise<DistrictBasic[]> {
   const params = new URLSearchParams()
   if (sigunguCode) params.append('sigungu_code', sigunguCode)
 
@@ -141,9 +131,6 @@ export async function getDistricts(
   return handleResponse<DistrictBasic[]>(response)
 }
 
-/**
- * 업종 목록 조회
- */
 export async function getIndustries(category?: string): Promise<Industry[]> {
   const params = new URLSearchParams()
   if (category) params.append('category', category)
@@ -153,25 +140,15 @@ export async function getIndustries(category?: string): Promise<Industry[]> {
   return handleResponse<Industry[]>(response)
 }
 
-/**
- * 상권 상세 정보 조회
- */
 export async function getDistrictDetail(
   code: string,
   industryCode?: string
 ): Promise<DistrictDetail> {
-  const qs = industryCode
-    ? `?industry_code=${encodeURIComponent(industryCode)}`
-    : ''
-  const response = await fetchWithRetry(
-    `/api/commercial/districts/${code}${qs}`
-  )
+  const qs = industryCode ? `?industry_code=${encodeURIComponent(industryCode)}` : ''
+  const response = await fetchWithRetry(`/api/commercial/districts/${code}${qs}`)
   return handleResponse<DistrictDetail>(response)
 }
 
-/**
- * 창업 성공 확률 예측
- */
 export async function predictBusinessSuccess(params: {
   district_code: string
   industry_code: string
@@ -189,16 +166,12 @@ export async function predictBusinessSuccess(params: {
     }
   })
 
-  const response = await fetchWithRetry(
-    `/api/commercial/predict?${queryParams.toString()}`,
-    { method: 'POST' }
-  )
+  const response = await fetchWithRetry(`/api/commercial/predict?${queryParams.toString()}`, {
+    method: 'POST',
+  })
   return handleResponse<BusinessPredictionResult>(response)
 }
 
-/**
- * 지역 비교
- */
 export async function compareRegions(
   districtCodes: string[],
   industryCode: string
@@ -214,9 +187,6 @@ export async function compareRegions(
   return handleResponse<RegionComparisonResult>(response)
 }
 
-/**
- * 업종 통계 조회
- */
 export async function getIndustryStatistics(
   code: string,
   limit = 5
@@ -227,9 +197,6 @@ export async function getIndustryStatistics(
   return handleResponse<IndustryStatistics>(response)
 }
 
-/**
- * 비즈니스 트렌드 조회
- */
 export async function getBusinessTrends(
   districtCode: string,
   industryCode: string,
@@ -241,14 +208,7 @@ export async function getBusinessTrends(
   return handleResponse<BusinessTrends>(response)
 }
 
-/**
- * 상권 특성 분석 조회
- */
-export async function getDistrictCharacteristics(
-  code: string
-): Promise<DistrictCharacteristics> {
-  const response = await fetchWithRetry(
-    `/api/commercial/districts/${code}/characteristics`
-  )
+export async function getDistrictCharacteristics(code: string): Promise<DistrictCharacteristics> {
+  const response = await fetchWithRetry(`/api/commercial/districts/${code}/characteristics`)
   return handleResponse<DistrictCharacteristics>(response)
 }

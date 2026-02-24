@@ -2,6 +2,7 @@
 // @SPEC Land section layout with metadata
 
 import type { Metadata } from 'next'
+import { ENABLE_LAND } from '@/lib/features'
 
 export const metadata: Metadata = {
   title: '토지 실거래가 조회·시세 분석',
@@ -19,6 +20,9 @@ export const metadata: Metadata = {
   alternates: {
     canonical: '/land',
   },
+  robots: ENABLE_LAND
+    ? { index: true, follow: true }
+    : { index: false, follow: false },
 }
 
 export default function LandLayout({

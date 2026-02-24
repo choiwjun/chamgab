@@ -8,14 +8,50 @@ import {
   createContext,
   useContext,
   useEffect,
+  useRef,
   useState,
   useCallback,
   useMemo,
   type ReactNode,
 } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { createClient, clearSupabaseAuthCookies } from '@/lib/supabase/client'
 import type { User, AuthChangeEvent, Session } from '@supabase/supabase-js'
 import type { AuthContextType, UserProfile } from '@/types/auth'
+
+const AUTH_REQUEST_TIMEOUT_MS = 5000
+const TIMEOUT_SENTINEL = '__auth_timeout__'
+const timeoutWarnAt = new Map<string, number>()
+const TIMEOUT_WARN_INTERVAL_MS = 60000
+
+function warnTimeout(label: string) {
+  if (process.env.NODE_ENV !== 'development') return
+  const now = Date.now()
+  const prev = timeoutWarnAt.get(label) ?? 0
+  if (now - prev < TIMEOUT_WARN_INTERVAL_MS) return
+  timeoutWarnAt.set(label, now)
+  console.warn(`[auth] ${label} timed out after ${AUTH_REQUEST_TIMEOUT_MS}ms`)
+}
+
+async function withTimeout<T>(
+  operation: Promise<T>,
+  fallback: T,
+  label: string
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<T>((resolve) => {
+        timeoutId = setTimeout(() => {
+          warnTimeout(label)
+          resolve(fallback)
+        }, AUTH_REQUEST_TIMEOUT_MS)
+      }),
+    ])
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId)
+  }
+}
 
 // Auth Context 생성
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -30,14 +66,49 @@ interface AuthProviderProps {
  * 핵심 원칙: Supabase Auth만 사용 (NextAuth 혼용 금지)
  * @see .claude/constitutions/supabase/auth-integration.md
  */
+const PROFILE_CACHE_KEY = 'chamgab_profile_cache'
+
+function getCachedProfile(): UserProfile | null {
+  if (typeof sessionStorage === 'undefined') return null
+  try {
+    const raw = sessionStorage.getItem(PROFILE_CACHE_KEY)
+    if (!raw) return null
+    return JSON.parse(raw) as UserProfile
+  } catch {
+    return null
+  }
+}
+
+function setCachedProfile(p: UserProfile | null) {
+  if (typeof sessionStorage === 'undefined') return
+  try {
+    if (p) {
+      sessionStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(p))
+    } else {
+      sessionStorage.removeItem(PROFILE_CACHE_KEY)
+    }
+  } catch { /* quota exceeded etc */ }
+}
+
 export function AuthProvider({ children }: AuthProviderProps) {
   // Create the Supabase browser client inside the component to avoid any
   // module-eval side effects and allow preflight cookie repairs.
   const supabase = useMemo(() => createClient(), [])
 
   const [user, setUser] = useState<User | null>(null)
-  const [profile, setProfile] = useState<UserProfile | null>(null)
+  const [profile, setProfile] = useState<UserProfile | null>(() => getCachedProfile())
   const [isLoading, setIsLoading] = useState(true)
+  const profileRef = useRef<UserProfile | null>(null)
+
+  // setProfile wrapper that also persists to sessionStorage
+  const updateProfile = useCallback((p: UserProfile | null) => {
+    setProfile(p)
+    setCachedProfile(p)
+  }, [])
+
+  useEffect(() => {
+    profileRef.current = profile
+  }, [profile])
 
   // 프로필 조회
   const fetchProfile = useCallback(
@@ -114,12 +185,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
       } catch {
         // ignore
       } finally {
+        clearSupabaseAuthCookies()
         setUser(null)
-        setProfile(null)
+        updateProfile(null)
       }
       return true
     },
-    [supabase]
+    [supabase, updateProfile]
   )
 
   const enforceForceLogout = useCallback(
@@ -134,29 +206,52 @@ export function AuthProvider({ children }: AuthProviderProps) {
       } catch {
         // ignore
       } finally {
+        clearSupabaseAuthCookies()
         setUser(null)
-        setProfile(null)
+        updateProfile(null)
       }
       return true
     },
-    [supabase]
+    [supabase, updateProfile]
   )
 
   // 사용자 정보 새로고침
   const refreshUser = useCallback(async () => {
     setIsLoading(true)
     try {
+      const sessionFallback = {
+        data: { session: null },
+        error: { message: TIMEOUT_SENTINEL },
+      } as unknown as Awaited<ReturnType<typeof supabase.auth.getSession>>
+
+      const sessionResult = await withTimeout(
+        supabase.auth.getSession(),
+        sessionFallback,
+        'getSession'
+      )
+      const timedOut =
+        (
+          sessionResult as {
+            error?: { message?: string } | null
+          }
+        ).error?.message === TIMEOUT_SENTINEL
+      if (timedOut) return
+
       const {
         data: { session },
-      } = await supabase.auth.getSession()
-      const {
-        data: { user: currentUser },
-      } = await supabase.auth.getUser()
+      } = sessionResult
+      const currentUser = session?.user ?? null
 
       setUser(currentUser)
 
       if (currentUser) {
-        const userProfile = await fetchProfile(currentUser.id)
+        const fallbackProfile =
+          profileRef.current?.id === currentUser.id ? profileRef.current : null
+        const userProfile = await withTimeout(
+          fetchProfile(currentUser.id),
+          fallbackProfile,
+          'fetchProfile(refreshUser)'
+        )
         if (!(await enforceSuspension(userProfile))) {
           if (
             await enforceForceLogout(
@@ -166,19 +261,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
             )
           )
             return
-          setProfile(userProfile)
+          updateProfile(userProfile)
         }
       } else {
-        setProfile(null)
+        updateProfile(null)
       }
     } catch (error) {
+      // AbortError는 컴포넌트 언마운트/리렌더 시 정상 발생 → 무시
+      if (error instanceof DOMException && error.name === 'AbortError') return
       console.error('Error refreshing user:', error)
       setUser(null)
-      setProfile(null)
+      updateProfile(null)
     } finally {
       setIsLoading(false)
     }
-  }, [fetchProfile, supabase])
+  }, [fetchProfile, supabase, updateProfile])
 
   // 회원가입
   const signUp = useCallback(
@@ -253,18 +350,25 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // 로그아웃
   const signOut = useCallback(async () => {
     try {
-      await supabase.auth.signOut()
+      // 5초 타임아웃으로 signOut (네트워크 문제 시 hang 방지)
+      await Promise.race([
+        supabase.auth.signOut(),
+        new Promise((resolve) => setTimeout(resolve, 5000)),
+      ])
     } catch (error) {
       console.error('Sign out error:', error)
     } finally {
-      // 에러 여부와 관계없이 항상 클라이언트 상태 초기화
+      // 에러/타임아웃 관계없이 항상 쿠키 강제 삭제 + 상태 초기화
+      clearSupabaseAuthCookies()
       setUser(null)
-      setProfile(null)
+      updateProfile(null)
     }
-  }, [supabase])
+  }, [supabase, updateProfile])
 
   // 초기 세션 확인 및 Auth 상태 변화 구독
   useEffect(() => {
+    let mounted = true
+
     // 초기 사용자 확인
     refreshUser()
 
@@ -273,30 +377,44 @@ export function AuthProvider({ children }: AuthProviderProps) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(
       async (event: AuthChangeEvent, session: Session | null) => {
-        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-          if (session?.user) {
-            setUser(session.user)
-            const userProfile = await fetchProfile(session.user.id)
-            if (!(await enforceSuspension(userProfile))) {
-              if (
-                await enforceForceLogout(
-                  userProfile,
-                  session.user,
-                  session.access_token
-                )
+        if (!mounted) return
+        try {
+          if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+            if (session?.user) {
+              setUser(session.user)
+              const fallbackProfile =
+                profileRef.current?.id === session.user.id ? profileRef.current : null
+              const userProfile = await withTimeout(
+                fetchProfile(session.user.id),
+                fallbackProfile,
+                'fetchProfile(onAuthStateChange)'
               )
-                return
-              setProfile(userProfile)
+              if (!mounted) return
+              if (!(await enforceSuspension(userProfile))) {
+                if (
+                  await enforceForceLogout(
+                    userProfile,
+                    session.user,
+                    session.access_token
+                  )
+                )
+                  return
+                if (mounted) updateProfile(userProfile)
+              }
             }
+          } else if (event === 'SIGNED_OUT') {
+            setUser(null)
+            updateProfile(null)
           }
-        } else if (event === 'SIGNED_OUT') {
-          setUser(null)
-          setProfile(null)
+        } catch (error) {
+          if (error instanceof DOMException && error.name === 'AbortError') return
+          throw error
         }
       }
     )
 
     return () => {
+      mounted = false
       subscription.unsubscribe()
     }
   }, [refreshUser, fetchProfile, supabase])

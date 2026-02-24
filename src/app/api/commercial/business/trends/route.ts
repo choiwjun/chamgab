@@ -7,6 +7,7 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { requireApiUser } from '@/app/api/_auth'
 import {
   getSupabase,
   fetchSalesStats,
@@ -26,6 +27,9 @@ function simpleHash(str: string): number {
 }
 
 export async function GET(request: NextRequest) {
+  const auth = await requireApiUser()
+  if ('response' in auth) return auth.response
+
   try {
     const params = request.nextUrl.searchParams
     const districtCode = params.get('district_code') || ''

@@ -8,13 +8,21 @@ export const metadata: Metadata = {
   description: 'AI 기반 부동산 가격 분석 서비스 참값에 로그인하세요.',
 }
 
+function sanitizeRedirectPath(raw: string | undefined): string {
+  if (!raw) return '/'
+  const value = raw.trim()
+  if (!value.startsWith('/')) return '/'
+  if (value.startsWith('//')) return '/'
+  return value
+}
+
 export default async function LoginPage({
   searchParams,
 }: {
   searchParams: Promise<{ redirect?: string; error?: string }>
 }) {
   const params = await searchParams
-  const redirectUrl = params.redirect || '/'
+  const redirectUrl = sanitizeRedirectPath(params.redirect)
   const error = params.error
 
   return (

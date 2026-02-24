@@ -11,11 +11,13 @@ import { cn } from '@/lib/utils'
 type BadgeInfo = { label: string; color: string } | null
 
 function detectTypeBadge(name: string): BadgeInfo {
-  if (name.startsWith('빌라'))
+  const n = (name || '').trim()
+  if (!n) return null
+  if (n.startsWith('빌라'))
     return { label: '빌라', color: 'bg-emerald-50 text-emerald-600' }
-  if (name.startsWith('오피스텔'))
+  if (n.startsWith('오피스텔'))
     return { label: '오피스텔', color: 'bg-violet-50 text-violet-600' }
-  if (name.startsWith('단독주택'))
+  if (n.startsWith('단독주택'))
     return { label: '단독주택', color: 'bg-orange-50 text-orange-600' }
   return null
 }
@@ -26,11 +28,7 @@ interface ComplexCardProps {
   index?: number
 }
 
-export function ComplexCard({
-  complex,
-  className,
-  index = 0,
-}: ComplexCardProps) {
+export function ComplexCard({ complex, className, index = 0 }: ComplexCardProps) {
   const badge = detectTypeBadge(complex.name)
 
   return (
@@ -93,30 +91,30 @@ export function ComplexCard({
 
           {/* 상세 정보 */}
           <div className="flex items-center gap-6">
-            {complex.total_units && (
+            {complex.total_units ? (
               <div className="flex items-center gap-2">
                 <Building className="h-4 w-4 text-gray-400" />
                 <span className="text-sm text-gray-600">
                   {complex.total_units.toLocaleString()}세대
                 </span>
               </div>
-            )}
-            {complex.built_year && (
+            ) : null}
+            {complex.built_year ? (
               <div className="flex items-center gap-2">
                 <Calendar className="h-4 w-4 text-gray-400" />
                 <span className="text-sm text-gray-600">
                   {complex.built_year}년
                 </span>
               </div>
-            )}
-            {complex.parking_ratio && (
+            ) : null}
+            {complex.parking_ratio ? (
               <div className="flex items-center gap-2">
                 <Car className="h-4 w-4 text-gray-400" />
                 <span className="text-sm text-gray-600">
                   {complex.parking_ratio.toFixed(1)}대
                 </span>
               </div>
-            )}
+            ) : null}
           </div>
 
           {/* CTA */}
@@ -130,3 +128,4 @@ export function ComplexCard({
     </motion.div>
   )
 }
+

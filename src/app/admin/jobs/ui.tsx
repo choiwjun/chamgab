@@ -6,6 +6,10 @@ type Status = {
   is_running?: boolean
   jobs?: unknown[]
   last_collection_job?: string | null
+  last_land_collection_job?: string | null
+  last_land_collection_ok?: boolean | null
+  last_land_collection_error?: string | null
+  last_land_collection_finished_at?: string | null
   last_analysis_job?: string | null
   last_training_job?: string | null
   current_job_running?: boolean | null
@@ -42,13 +46,57 @@ type CommercialDataHealth = {
   >
 }
 
+type ApartmentDiagnostics = {
+  as_of: string
+  complexes: number
+  properties_apt: number
+  transactions: number
+  transactions_30d: number
+  transactions_90d: number
+  transactions_unlinked: number
+  transactions_90d_unlinked: number
+  recent_unlinked_samples: Array<{
+    transaction_date: string
+    sigungu: string | null
+    apt_name: string | null
+    jibun: string | null
+    price: number | null
+    area_exclusive: number | null
+    floor: number | null
+    complex_id: string | null
+  }>
+}
+
+type ComplexNameFixPreview = {
+  as_of: string
+  params: { since_days: number; min_count: number; min_share: number }
+  result: { updated_count: number; samples: unknown[] }
+}
+
 const JOBS = [
   'daily',
   'weekly',
   'monthly',
   'collect_commercial',
+  'collect_land_daily',
+  'collect_land_locations',
+  'link_complexes',
+  'fix_complex_names',
   'train_business',
   'train_all',
+  'chamgab_backfill_property_id',
+  'chamgab_audit_gap',
+  'chamgab_reanalyze_severe',
+  'chamgab_factor_backfill',
+  'chamgab_autofix_apply',
+  'chamgab_gap_recovery_full',
+  'collect_school_base_monthly',
+  'collect_school_metrics_monthly',
+  'collect_school_academy_weekly',
+  'build_school_marts_daily',
+  'check_school_data_quality',
+  'collect_school_official_data',
+  'school_full_rebuild',
 ]
 
 export function AdminJobsClient() {
@@ -70,6 +118,10 @@ export function AdminJobsClient() {
     unknown
   > | null>(null)
 
+  const [aptDiag, setAptDiag] = useState<ApartmentDiagnostics | null>(null)
+  const [nameFixPreview, setNameFixPreview] =
+    useState<ComplexNameFixPreview | null>(null)
+
   const [fixFlow, setFixFlow] = useState<{
     running: boolean
     step:
@@ -79,6 +131,12 @@ export function AdminJobsClient() {
       | 'train_business'
       | 'probe'
       | 'done'
+    note?: string
+  }>({ running: false, step: 'idle' })
+
+  const [aptFixFlow, setAptFixFlow] = useState<{
+    running: boolean
+    step: 'idle' | 'link_complexes' | 'fix_complex_names' | 'diagnose' | 'done'
     note?: string
   }>({ running: false, step: 'idle' })
 
@@ -264,6 +322,28 @@ export function AdminJobsClient() {
     }
   }
 
+  const fetchApartmentDiagnostics = async () => {
+    const res = await fetch('/api/admin/apartments/diagnostics', {
+      cache: 'no-store',
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok)
+      throw new Error(data?.detail || data?.error || 'Failed to diagnose')
+    setAptDiag(data)
+    return data as ApartmentDiagnostics
+  }
+
+  const fetchNameFixPreview = async () => {
+    const res = await fetch('/api/admin/apartments/name-fix-preview', {
+      cache: 'no-store',
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok)
+      throw new Error(data?.detail || data?.error || 'Failed to preview')
+    setNameFixPreview(data)
+    return data as ComplexNameFixPreview
+  }
+
   useEffect(() => {
     load()
   }, [])
@@ -358,6 +438,60 @@ export function AdminJobsClient() {
     }
   }
 
+  const runApartmentFixFlow = async () => {
+    setAptFixFlow({ running: true, step: 'link_complexes' })
+    setLoading(true)
+    setError(null)
+    try {
+      const pre1 = await fetchStatus()
+      {
+        const res = await fetch('/api/admin/scheduler/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ job_type: 'link_complexes' }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok)
+          throw new Error(
+            data?.detail || data?.error || 'Failed to start link_complexes'
+          )
+      }
+      await waitForJob('link_complexes', 70 * 60 * 1000, {
+        startedAt: pre1?.current_job_started_at ?? null,
+        finishedAt: pre1?.current_job_finished_at ?? null,
+      })
+
+      setAptFixFlow({ running: true, step: 'fix_complex_names' })
+      const pre2 = await fetchStatus()
+      {
+        const res = await fetch('/api/admin/scheduler/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ job_type: 'fix_complex_names' }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok)
+          throw new Error(
+            data?.detail || data?.error || 'Failed to start fix_complex_names'
+          )
+      }
+      await waitForJob('fix_complex_names', 40 * 60 * 1000, {
+        startedAt: pre2?.current_job_started_at ?? null,
+        finishedAt: pre2?.current_job_finished_at ?? null,
+      })
+
+      setAptFixFlow({ running: true, step: 'diagnose' })
+      await fetchApartmentDiagnostics()
+      await fetchNameFixPreview()
+      setAptFixFlow({ running: false, step: 'done' })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to run apartment flow')
+      setAptFixFlow({ running: false, step: 'idle' })
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <div className="space-y-4">
       {error && (
@@ -404,6 +538,117 @@ export function AdminJobsClient() {
         </div>
       </div>
 
+      <div className="rounded-2xl border border-[#E5E8EB] bg-white p-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="text-sm font-semibold text-[#191F28]">
+              아파트 데이터 보정 플로우
+            </div>
+            <div className="mt-1 text-xs text-[#6B7684]">
+              `link_complexes` → `fix_complex_names` 실행 후, 진단/프리뷰로 결과를
+              확인합니다.
+            </div>
+            {aptFixFlow.step !== 'idle' && (
+              <div className="mt-2 text-xs text-[#191F28]">
+                step: <span className="font-semibold">{aptFixFlow.step}</span>
+                {aptFixFlow.note ? ` (${aptFixFlow.note})` : ''}
+              </div>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={async () => {
+                setLoading(true)
+                setError(null)
+                try {
+                  await fetchApartmentDiagnostics()
+                  await fetchNameFixPreview()
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : 'Failed to check')
+                  setAptDiag(null)
+                  setNameFixPreview(null)
+                } finally {
+                  setLoading(false)
+                }
+              }}
+              disabled={loading}
+              className="rounded-xl border border-[#E5E8EB] bg-white px-4 py-3 text-sm font-semibold text-[#191F28] disabled:opacity-30"
+            >
+              진단만
+            </button>
+            <button
+              onClick={runApartmentFixFlow}
+              disabled={loading || aptFixFlow.running}
+              className="rounded-xl bg-[#111827] px-4 py-3 text-sm font-semibold text-white disabled:opacity-30"
+            >
+              보정 플로우 실행
+            </button>
+          </div>
+        </div>
+
+        {aptDiag && (
+          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+            <div className="rounded-xl border border-[#E5E8EB] bg-[#F9FAFB] p-4">
+              <div className="text-xs font-semibold text-[#6B7684]">
+                complexes
+              </div>
+              <div className="mt-2 text-xl font-bold text-[#191F28]">
+                {aptDiag.complexes.toLocaleString()}
+              </div>
+            </div>
+            <div className="rounded-xl border border-[#E5E8EB] bg-[#F9FAFB] p-4">
+              <div className="text-xs font-semibold text-[#6B7684]">
+                properties (apt)
+              </div>
+              <div className="mt-2 text-xl font-bold text-[#191F28]">
+                {aptDiag.properties_apt.toLocaleString()}
+              </div>
+            </div>
+            <div className="rounded-xl border border-[#E5E8EB] bg-[#F9FAFB] p-4">
+              <div className="text-xs font-semibold text-[#6B7684]">
+                transactions (90d)
+              </div>
+              <div className="mt-2 text-xl font-bold text-[#191F28]">
+                {aptDiag.transactions_90d.toLocaleString()}
+              </div>
+            </div>
+            <div className="rounded-xl border border-[#E5E8EB] bg-[#F9FAFB] p-4">
+              <div className="text-xs font-semibold text-[#6B7684]">
+                unlinked (90d)
+              </div>
+              <div className="mt-2 text-xl font-bold text-[#191F28]">
+                {aptDiag.transactions_90d_unlinked.toLocaleString()}
+              </div>
+              <div className="mt-1 text-xs text-[#6B7684]">
+                total_unlinked: {aptDiag.transactions_unlinked.toLocaleString()}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {aptDiag?.recent_unlinked_samples?.length ? (
+          <details className="mt-4 rounded-xl border border-[#E5E8EB] bg-white px-4 py-3">
+            <summary className="cursor-pointer text-sm font-semibold text-[#191F28]">
+              recent unlinked samples
+            </summary>
+            <pre className="mt-3 overflow-auto rounded-lg bg-[#0B1220] p-3 text-xs text-white">
+              {JSON.stringify(aptDiag.recent_unlinked_samples, null, 2)}
+            </pre>
+          </details>
+        ) : null}
+
+        {nameFixPreview && (
+          <details className="mt-4 rounded-xl border border-[#E5E8EB] bg-white px-4 py-3">
+            <summary className="cursor-pointer text-sm font-semibold text-[#191F28]">
+              complex name fix preview (dry-run)
+            </summary>
+            <pre className="mt-3 overflow-auto rounded-lg bg-[#0B1220] p-3 text-xs text-white">
+              {JSON.stringify(nameFixPreview, null, 2)}
+            </pre>
+          </details>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
         <div className="rounded-2xl border border-[#E5E8EB] bg-[#F9FAFB] p-4">
           <div className="text-xs font-semibold text-[#6B7684]">running</div>
@@ -418,6 +663,23 @@ export function AdminJobsClient() {
           <div className="mt-2 text-sm font-semibold text-[#191F28]">
             {status?.last_collection_job || '-'}
           </div>
+          <div className="mt-1 text-xs text-[#6B7684]">
+            land: {status?.last_land_collection_job || '-'} (
+            {status?.last_land_collection_ok == null
+              ? '-'
+              : String(status.last_land_collection_ok)}
+            )
+          </div>
+          {status?.last_land_collection_error && (
+            <div className="mt-1 text-xs text-[#B91C1C]">
+              land_error: {status.last_land_collection_error}
+            </div>
+          )}
+          {status?.last_land_collection_finished_at && (
+            <div className="mt-1 text-xs text-[#6B7684]">
+              land_finished_at: {status.last_land_collection_finished_at}
+            </div>
+          )}
         </div>
         <div className="rounded-2xl border border-[#E5E8EB] bg-[#F9FAFB] p-4">
           <div className="text-xs font-semibold text-[#6B7684]">

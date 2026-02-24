@@ -1,0 +1,11 @@
+pytest-cache-files-*
+.pytest_cache
+playwright-report
+test-results
+tmp
+tmp_*
+logs
+ml-api
+worktree
+node_modules
+.git

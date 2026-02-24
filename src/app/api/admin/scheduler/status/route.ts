@@ -9,7 +9,13 @@ export async function GET(req: NextRequest) {
   const gate = await requireAdmin(req)
   if (!gate.ok) return gate.res
 
-  const token = process.env.ML_ADMIN_TOKEN || ''
+  const token = process.env.ML_ADMIN_TOKEN
+  if (!token) {
+    return NextResponse.json(
+      { error: 'ML_ADMIN_TOKEN not configured' },
+      { status: 500 }
+    )
+  }
   if (!ML_API_URL) {
     return NextResponse.json(
       { error: 'ML_API_URL not configured' },
@@ -18,7 +24,7 @@ export async function GET(req: NextRequest) {
   }
   try {
     const res = await fetch(`${ML_API_URL}/api/scheduler/status`, {
-      headers: token ? { 'X-Admin-Token': token } : {},
+      headers: { 'X-Admin-Token': token },
       cache: 'no-store',
     })
     const data = await res.json().catch(() => ({}))

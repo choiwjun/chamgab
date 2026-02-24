@@ -1,0 +1,125 @@
+name: Run ML Scheduler Job (Remote)
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_type:
+        description: "ML API scheduler job type"
+        required: true
+        default: "chamgab_autofix_apply"
+        type: choice
+        options:
+          - daily
+          - weekly
+          - monthly
+          - collect_commercial
+          - build_commercial_quality_snapshot
+          - check_commercial_data_quality
+          - check_launch_readiness_gate
+          - collect_land_daily
+          - collect_land_locations
+          - link_complexes
+          - fix_complex_names
+          - train_business
+          - train_all
+          - chamgab_backfill_property_id
+          - chamgab_audit_gap
+          - chamgab_reanalyze_severe
+          - chamgab_factor_backfill
+          - chamgab_autofix_apply
+          - chamgab_gap_recovery_full
+          - collect_school_base_monthly
+          - collect_school_metrics_monthly
+          - collect_school_academy_weekly
+          - build_school_marts_daily
+          - check_school_data_quality
+          - collect_school_official_data
+      wait_for_completion:
+        description: "Wait until the job finishes"
+        required: true
+        default: true
+        type: boolean
+      timeout_minutes:
+        description: "Max wait time in minutes"
+        required: true
+        default: "240"
+        type: string
+      poll_seconds:
+        description: "Polling interval in seconds"
+        required: true
+        default: "20"
+        type: string
+      allow_busy:
+        description: "Allow queueing even when scheduler is already running another job"
+        required: true
+        default: false
+        type: boolean
+
+concurrency:
+  group: ml-scheduler-${{ inputs.job_type }}
+  cancel-in-progress: false
+
+jobs:
+  run-remote-job:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Validate required secrets
+        env:
+          ML_API_URL: ${{ secrets.ML_API_BASE_URL }}
+          ML_ADMIN_TOKEN: ${{ secrets.ML_ADMIN_TOKEN }}
+        run: |
+          if [ -z "${ML_API_URL}" ]; then
+            echo "Missing secret: ML_API_BASE_URL"
+            exit 1
+          fi
+          if [ -z "${ML_ADMIN_TOKEN}" ]; then
+            echo "Missing secret: ML_ADMIN_TOKEN"
+            exit 1
+          fi
+
+      - name: Trigger and monitor remote scheduler job
+        env:
+          ML_API_URL: ${{ secrets.ML_API_BASE_URL }}
+          ML_ADMIN_TOKEN: ${{ secrets.ML_ADMIN_TOKEN }}
+        run: |
+          WAIT_FLAG="--wait"
+          if [ "${{ inputs.wait_for_completion }}" != "true" ]; then
+            WAIT_FLAG="--no-wait"
+          fi
+
+          BUSY_FLAG=""
+          if [ "${{ inputs.allow_busy }}" = "true" ]; then
+            BUSY_FLAG="--allow-busy"
+          fi
+
+          TIMEOUT_MINUTES="${{ inputs.timeout_minutes }}"
+          POLL_SECONDS="${{ inputs.poll_seconds }}"
+          TIMEOUT_SECONDS=$((TIMEOUT_MINUTES * 60))
+
+          node scripts/trigger_scheduler_job.mjs \
+            --job-type "${{ inputs.job_type }}" \
+            ${WAIT_FLAG} \
+            ${BUSY_FLAG} \
+            --timeout-seconds "${TIMEOUT_SECONDS}" \
+            --poll-seconds "${POLL_SECONDS}"
+
+      - name: Write workflow summary
+        if: always()
+        run: |
+          echo "## Remote Scheduler Job" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- job_type: \`${{ inputs.job_type }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- wait_for_completion: \`${{ inputs.wait_for_completion }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- timeout_minutes: \`${{ inputs.timeout_minutes }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- poll_seconds: \`${{ inputs.poll_seconds }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- allow_busy: \`${{ inputs.allow_busy }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- finished_at: \`$(date -u +"%Y-%m-%dT%H:%M:%SZ")\`" >> $GITHUB_STEP_SUMMARY

@@ -15,7 +15,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application
 COPY . .
 
-# HuggingFace Spaces uses port 7860
-EXPOSE 7860
-
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7860"]
+# Use Python to read PORT env var (avoids shell expansion issues).
+# Railway injects $PORT at runtime; local/HF can fall back to 7860.
+CMD python -c "import os; port=os.environ.get('PORT','7860'); os.execvp('uvicorn',['uvicorn','app.main:app','--host','0.0.0.0','--port',port])"

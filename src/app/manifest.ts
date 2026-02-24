@@ -2,10 +2,10 @@ import { MetadataRoute } from 'next'
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: '참값 - AI 부동산 가격 분석',
+    name: '참값 - AI 부동산 가치 분석',
     short_name: '참값',
     description:
-      'AI가 분석한 정확한 부동산 참값을 확인하세요. 아파트 적정가격, 상권분석, 토지 시세를 한 곳에서.',
+      'AI가 분석한 정확한 부동산 참값을 확인하세요. 아파트 적정가격, 상권 분석, 학군 분석을 한곳에서 제공합니다.',
     start_url: '/',
     display: 'standalone',
     background_color: '#ffffff',

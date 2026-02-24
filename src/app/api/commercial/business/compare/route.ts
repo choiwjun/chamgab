@@ -7,6 +7,7 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { requireApiUser } from '@/app/api/_auth'
 import {
   getSupabase,
   getDistrictName,
@@ -19,6 +20,9 @@ import {
 } from '../../_helpers'
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiUser()
+  if ('response' in auth) return auth.response
+
   try {
     const body = await request.json()
     const districtCodes: string[] = body.district_codes || []

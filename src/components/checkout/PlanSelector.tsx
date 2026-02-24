@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { Check, Crown, Building2, Zap } from 'lucide-react'
+import { ENABLE_LAND } from '@/lib/features'
 
 interface Plan {
   id: string
@@ -25,7 +26,7 @@ const PLANS: Plan[] = [
       '일 크레딧 20 / 월 크레딧 400',
       '상권 분석(기본 요약)',
       '집값 분석(기본)',
-      '토지 분석(미제공)',
+      ...(ENABLE_LAND ? ['토지 분석(미제공)'] : []),
       '기본 지원',
     ],
   },
@@ -39,7 +40,7 @@ const PLANS: Plan[] = [
     recommended: true,
     features: [
       '일 크레딧 200 / 월 크레딧 5,000',
-      '상권/집값/토지 분석',
+      ENABLE_LAND ? '상권/집값/토지 분석' : '상권/집값 분석',
       '유사거래 확장 조회',
       'PDF 리포트(준비중)',
       '우선 지원',
@@ -108,12 +109,16 @@ export function PlanSelector() {
               {COSTS.home_price} 크레딧/회
             </div>
           </div>
-          <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-            <div className="text-xs font-semibold text-gray-700">토지 분석</div>
-            <div className="mt-1 text-sm text-gray-900">
-              {COSTS.land} 크레딧/회
+          {ENABLE_LAND && (
+            <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+              <div className="text-xs font-semibold text-gray-700">
+                토지 분석
+              </div>
+              <div className="mt-1 text-sm text-gray-900">
+                {COSTS.land} 크레딧/회
+              </div>
             </div>
-          </div>
+          )}
         </div>
         <p className="mt-3 text-xs text-gray-500">
           실제 차감 정책은 운영 설정에 따라 조정될 수 있습니다.
@@ -271,14 +276,16 @@ export function PlanSelector() {
                 </td>
                 <td className="py-4 text-center font-medium">전체</td>
               </tr>
-              <tr className="border-b">
-                <td className="py-4 text-gray-600">토지 분석</td>
-                <td className="py-4 text-center text-gray-300">-</td>
-                <td className="py-4 text-center font-medium text-blue-500">
-                  전체
-                </td>
-                <td className="py-4 text-center font-medium">전체</td>
-              </tr>
+              {ENABLE_LAND && (
+                <tr className="border-b">
+                  <td className="py-4 text-gray-600">토지 분석</td>
+                  <td className="py-4 text-center text-gray-300">-</td>
+                  <td className="py-4 text-center font-medium text-blue-500">
+                    전체
+                  </td>
+                  <td className="py-4 text-center font-medium">전체</td>
+                </tr>
+              )}
               <tr className="border-b">
                 <td className="py-4 text-gray-600">PDF 리포트</td>
                 <td className="py-4 text-center text-gray-300">-</td>

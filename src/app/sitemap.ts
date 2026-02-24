@@ -1,5 +1,6 @@
 import { MetadataRoute } from 'next'
 import { createClient } from '@supabase/supabase-js'
+import { ENABLE_LAND } from '@/lib/features'
 
 const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL || 'https://chamgab.vercel.app'
@@ -25,16 +26,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.9,
     },
     {
-      url: `${SITE_URL}/land`,
+      url: `${SITE_URL}/business-analysis`,
       lastModified: new Date(),
-      changeFrequency: 'daily',
+      changeFrequency: 'weekly',
       priority: 0.8,
     },
     {
-      url: `${SITE_URL}/compare`,
+      url: `${SITE_URL}/school-analysis`,
       lastModified: new Date(),
-      changeFrequency: 'weekly',
-      priority: 0.6,
+      changeFrequency: 'daily',
+      priority: 0.8,
     },
     {
       url: `${SITE_URL}/terms/service`,
@@ -49,6 +50,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.2,
     },
   ]
+
+  if (ENABLE_LAND) {
+    staticPages.push({
+      url: `${SITE_URL}/land`,
+      lastModified: new Date(),
+      changeFrequency: 'daily',
+      priority: 0.8,
+    })
+  }
 
   // 동적 페이지: 단지 상세
   let complexPages: MetadataRoute.Sitemap = []

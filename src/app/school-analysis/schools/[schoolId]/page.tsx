@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
@@ -50,10 +50,7 @@ function ProgressionSection({ school }: { school: SchoolDetail }) {
     return (
       <section className="rounded-2xl border border-[#E5E8EB] bg-white p-4">
         <h2 className="mb-2 text-sm font-semibold text-[#191F28]">진학 지표</h2>
-        <MetricRow
-          label="대학 진학률"
-          metric={progression.college_progression_rate}
-        />
+        <MetricRow label="대학 진학률" metric={progression.college_progression_rate} />
       </section>
     )
   }
@@ -64,23 +61,16 @@ function ProgressionSection({ school }: { school: SchoolDetail }) {
         <h2 className="mb-2 text-sm font-semibold text-[#191F28]">
           고등학교 진학 유형
         </h2>
+        <MetricRow label="일반고" metric={progression.general_highschool_rate} />
         <MetricRow
-          label="일반고 비율"
-          metric={progression.general_highschool_rate}
-        />
-        <MetricRow
-          label="특목/자사 비율"
+          label="특목고"
           metric={progression.special_purpose_highschool_rate}
         />
-        <MetricRow
-          label="자율고 비율"
-          metric={progression.autonomy_highschool_rate}
-        />
+        <MetricRow label="자사고" metric={progression.autonomy_highschool_rate} />
       </section>
     )
   }
 
-  // elementary or other — no meaningful progression data
   return null
 }
 
@@ -92,19 +82,19 @@ const STATUS_BANNER: Record<
     bg: 'bg-[#E8FAF0]',
     border: 'border-[#00C471]/20',
     text: 'text-[#059669]',
-    label: '학교알리미 공식 데이터 확인됨 (2023년 기준)',
+    label: '공식 데이터가 확인된 학교입니다.',
   },
   name_mismatch: {
     bg: 'bg-[#FEF3C7]',
     border: 'border-[#F59E0B]/20',
     text: 'text-[#B45309]',
-    label: '학교명 불일치로 공식 데이터 미연동 · 추정 데이터 사용',
+    label: '학교명 매칭 이슈로 일부 지표는 추정치가 포함됩니다.',
   },
   inactive: {
     bg: 'bg-[#F2F4F6]',
     border: 'border-[#8B95A1]/20',
     text: 'text-[#8B95A1]',
-    label: '폐교 또는 비활성 학교 · 과거 데이터만 표시',
+    label: '폐교/비활성 상태로 과거 데이터만 제공됩니다.',
   },
 }
 
@@ -136,11 +126,17 @@ export default function SchoolDetailPage() {
         const response = await getSchoolDetail(schoolId)
         setSchool(response.school)
       } catch (err) {
-        const message =
-          err instanceof APIError
-            ? err.message
-            : 'Failed to load school detail.'
-        setError(message)
+        if (err instanceof APIError) {
+          if (err.code === 'preview_only_mode') {
+            setError('현재 학군 상세는 프리뷰만 운영 중입니다.')
+          } else if (err.code === 'school_not_found') {
+            setError('학교 데이터를 찾을 수 없습니다.')
+          } else {
+            setError(err.message)
+          }
+        } else {
+          setError('Failed to load school detail.')
+        }
       } finally {
         setIsLoading(false)
       }
@@ -192,17 +188,14 @@ export default function SchoolDetailPage() {
             {school.address}
           </p>
           <p className="mt-2 text-xs text-[#8B95A1]">
-            data freshness{' '}
-            {new Date(school.data_freshness).toLocaleDateString()}
+            data freshness {new Date(school.data_freshness).toLocaleDateString()}
           </p>
           <DataStatusBanner status={school.data_status} />
         </header>
 
         <div className="mt-4 grid gap-4 md:grid-cols-2 md:items-start">
           <section className="rounded-2xl border border-[#E5E8EB] bg-white p-4">
-            <h2 className="mb-2 text-sm font-semibold text-[#191F28]">
-              학교 품질
-            </h2>
+            <h2 className="mb-2 text-sm font-semibold text-[#191F28]">학교 품질</h2>
             <MetricRow label="종합" metric={school.quality.overall} />
             <MetricRow label="학업/성취" metric={school.quality.achievement} />
             <MetricRow

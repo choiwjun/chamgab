@@ -115,8 +115,8 @@ export function MyPageContent() {
     menuItems.pop()
   }
 
-  // Loading state
-  if (isLoading) {
+  // Loading state (skip skeleton if we have cached profile)
+  if (isLoading && !profile) {
     return (
       <div className="mx-auto max-w-lg px-6 py-12 md:px-8">
         <div className="mb-8">

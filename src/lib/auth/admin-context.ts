@@ -12,13 +12,22 @@ export type AdminContext = {
   bootstrap: boolean
 }
 
-export async function getAdminContext(): Promise<AdminContext | null> {
+export type AdminGateReason = 'unauthenticated' | 'forbidden'
+
+export type AdminGateResult = {
+  context: AdminContext | null
+  reason: AdminGateReason | null
+}
+
+export async function getAdminGate(): Promise<AdminGateResult> {
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
 
-  if (!user?.email) return null
+  if (!user?.email) {
+    return { context: null, reason: 'unauthenticated' }
+  }
 
   // Primary: DB-driven admin membership.
   const { data: membership } = await supabase
@@ -29,22 +38,33 @@ export async function getAdminContext(): Promise<AdminContext | null> {
 
   if (membership?.is_active) {
     return {
-      userId: user.id,
-      email: user.email,
-      role: (membership.role || 'admin') as AdminRole,
-      bootstrap: false,
+      context: {
+        userId: user.id,
+        email: user.email,
+        role: (membership.role || 'admin') as AdminRole,
+        bootstrap: false,
+      },
+      reason: null,
     }
   }
 
   // Bootstrap fallback: env allowlist.
   if (process.env.ADMIN_BOOTSTRAP === 'true' && isAdminEmail(user.email)) {
     return {
-      userId: user.id,
-      email: user.email,
-      role: 'super_admin',
-      bootstrap: true,
+      context: {
+        userId: user.id,
+        email: user.email,
+        role: 'super_admin',
+        bootstrap: true,
+      },
+      reason: null,
     }
   }
 
-  return null
+  return { context: null, reason: 'forbidden' }
+}
+
+export async function getAdminContext(): Promise<AdminContext | null> {
+  const gate = await getAdminGate()
+  return gate.context
 }

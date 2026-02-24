@@ -7,12 +7,16 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
+import { requireApiUser } from '@/app/api/_auth'
 import { getSupabase, fetchFootTraffic, num } from '../../../_helpers'
 
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ code: string }> }
 ) {
+  const auth = await requireApiUser()
+  if ('response' in auth) return auth.response
+
   try {
     const { code } = await params
     const supabase = getSupabase()
