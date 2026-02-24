@@ -14,6 +14,7 @@ import { ChamgabCard } from '@/components/property/ChamgabCard'
 import { PriceFactors } from '@/components/property/PriceFactors'
 import { SimilarTransactions } from '@/components/property/SimilarTransactions'
 import { InvestmentScore } from '@/components/property/InvestmentScore'
+import type { ChamgabQuality } from '@/types/chamgab'
 
 interface Property {
   id: string
@@ -70,6 +71,16 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
   const [isFavorite, setIsFavorite] = useState(false)
   const [favoriteId, setFavoriteId] = useState<string | null>(null)
   const [analysis, setAnalysis] = useState<Analysis | null>(null)
+  const [analysisQuality, setAnalysisQuality] = useState<ChamgabQuality | null>(
+    null
+  )
+  const [analysisGateStatus, setAnalysisGateStatus] = useState<
+    'pass' | 'warn' | 'fail' | null
+  >(null)
+  const [analysisGrade, setAnalysisGrade] = useState<
+    'A' | 'B' | 'C' | 'D' | null
+  >(null)
+  const [analysisFlags, setAnalysisFlags] = useState<string[]>([])
   const [factors, setFactors] = useState<Factor[]>([])
   const [similarTransactions, setSimilarTransactions] = useState<Transaction[]>(
     []
@@ -91,12 +102,40 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
-        throw new Error(err.error || 'Analysis request failed')
+        const errorCode =
+          typeof err?.code === 'string' && err.code.trim().length > 0
+            ? err.code
+            : null
+        const serverMessage =
+          typeof err?.error === 'string' && err.error.trim().length > 0
+            ? err.error
+            : null
+        const messageByCode =
+          errorCode === 'AUTH_REQUIRED'
+            ? '로그인이 필요한 기능입니다. 로그인 후 다시 시도해주세요.'
+            : errorCode === 'ANON_QUOTA_EXCEEDED'
+              ? '비로그인 이용 한도를 초과했습니다. 로그인 후 계속 이용해주세요.'
+              : errorCode === 'CREDITS_EXCEEDED'
+                ? '크레딧이 부족합니다. 플랜을 확인해주세요.'
+                : null
+        const fallbackMessage =
+          res.status === 401
+            ? '로그인이 필요한 기능입니다. 로그인 후 다시 시도해주세요.'
+            : res.status === 429
+              ? '요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.'
+              : 'Analysis request failed'
+        throw new Error(messageByCode || serverMessage || fallbackMessage)
       }
 
       const result = await res.json()
       if (result.analysis) {
         setAnalysis(result.analysis)
+        setAnalysisQuality(result.quality || null)
+        setAnalysisGateStatus(result.quality_gate_status || null)
+        setAnalysisGrade(result.quality_grade || null)
+        setAnalysisFlags(
+          result.quality_flags || result.quality?.quality_flags || []
+        )
 
         // 분석 결과에 ID가 있으면 가격 요인도 조회
         if (result.analysis.id) {
@@ -111,6 +150,10 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
       }
     } catch (error) {
       console.error('Analysis request failed:', error)
+      if (error instanceof Error && error.message) {
+        setAnalysisError(error.message)
+        return
+      }
       setAnalysisError(
         '분석 요청 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'
       )
@@ -123,12 +166,26 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
   useEffect(() => {
     async function loadData() {
       setIsLoading(true)
+      setAnalysis(null)
+      setAnalysisQuality(null)
+      setAnalysisGateStatus(null)
+      setAnalysisGrade(null)
+      setAnalysisFlags([])
+      setFactors([])
       try {
         // 참값 분석 조회
         const analysisRes = await fetch(`/api/chamgab/${property.id}`)
         if (analysisRes.ok) {
           const analysisData = await analysisRes.json()
-          setAnalysis(analysisData.analysis)
+          setAnalysis(analysisData.analysis || null)
+          setAnalysisQuality(analysisData.quality || null)
+          setAnalysisGateStatus(analysisData.quality_gate_status || null)
+          setAnalysisGrade(analysisData.quality_grade || null)
+          setAnalysisFlags(
+            analysisData.quality_flags ||
+              analysisData.quality?.quality_flags ||
+              []
+          )
 
           // 가격 요인 조회
           if (analysisData.analysis?.id) {
@@ -296,6 +353,10 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
           )}
           <ChamgabCard
             analysis={analysis || undefined}
+            quality={analysisQuality || undefined}
+            qualityGateStatus={analysisGateStatus || undefined}
+            qualityGrade={analysisGrade || undefined}
+            qualityFlags={analysisFlags}
             isLoading={isLoading || isRequesting}
             onRequestAnalysis={handleRequestAnalysis}
           />

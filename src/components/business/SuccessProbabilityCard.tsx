@@ -3,15 +3,27 @@
 import {
   TrendingUp,
   TrendingDown,
+  Minus,
   AlertCircle,
   CheckCircle,
 } from 'lucide-react'
 import type { BusinessPredictionResult } from '@/types/commercial'
+import { QualityGateNotice } from '@/components/ui/QualityGateNotice'
 
 interface SuccessProbabilityCardProps {
   result: BusinessPredictionResult
   districtName: string
   industryName: string
+}
+
+const QUALITY_FLAG_LABELS: Record<string, string> = {
+  missing_business_data: '기초 업종 통계 부족',
+  missing_sales_data: '매출 통계 부족',
+  missing_store_data: '점포 통계 부족',
+  stale_data: '데이터 최신성 낮음',
+  industry_location_mismatch: '업종-상권 적합도 주의',
+  fallback_rule_based: '모델 대체 추론',
+  low_confidence: '신뢰도 낮음',
 }
 
 export function SuccessProbabilityCard({
@@ -21,21 +33,18 @@ export function SuccessProbabilityCard({
 }: SuccessProbabilityCardProps) {
   const {
     success_probability,
-    raw_success_probability,
     confidence,
-    model_confidence,
     factors,
     recommendation,
-    source,
+    quality_flags,
   } = result
-  const { ml_status, ml_http_status, ml_detail, data_coverage } = result
 
   const getProbabilityBand = (probability: number) => {
     if (probability >= 75) {
       return {
         label: '우수',
         description:
-          '핵심 지표가 안정적입니다. 실행 계획만 정리되면 진입을 우선 검토할 수 있습니다.',
+          '핵심 지표가 안정적입니다. 우선 검토 후보로 볼 수 있습니다.',
         title: '진입 우선 검토 구간',
         circleClassName:
           'text-emerald-700 bg-emerald-50 ring-4 ring-emerald-100',
@@ -51,7 +60,7 @@ export function SuccessProbabilityCard({
       return {
         label: '유망',
         description:
-          '진입 가능성이 충분하지만 업종별 고정비와 경쟁 강도를 함께 검토해야 합니다.',
+          '진입 가능성은 충분하지만 비용·경쟁 강도 점검이 필요합니다.',
         title: '조건부 진입 구간',
         circleClassName: 'text-blue-700 bg-blue-50 ring-4 ring-blue-100',
         progressClassName: 'bg-blue-500',
@@ -64,8 +73,7 @@ export function SuccessProbabilityCard({
     if (probability >= 35) {
       return {
         label: '보통',
-        description:
-          '손익분기 지점이 불안정할 수 있습니다. 매출 구조와 비용 구조 보완이 필요합니다.',
+        description: '추가 검증 후 판단이 필요한 구간입니다.',
         title: '보완 후 재평가 구간',
         circleClassName: 'text-amber-700 bg-amber-50 ring-4 ring-amber-100',
         progressClassName: 'bg-amber-500',
@@ -76,9 +84,8 @@ export function SuccessProbabilityCard({
       }
     }
     return {
-      label: '위험',
-      description:
-        '현재 지표 기준으로 리스크가 높습니다. 지역 또는 업종 대안 비교를 우선 권장합니다.',
+      label: '주의',
+      description: '현재 조건에서는 진입 리스크가 높습니다.',
       title: '진입 보류 권장 구간',
       circleClassName: 'text-rose-700 bg-rose-50 ring-4 ring-rose-100',
       progressClassName: 'bg-rose-500',
@@ -108,25 +115,34 @@ export function SuccessProbabilityCard({
     }
   }
 
+  const getFactorStyle = (direction: 'positive' | 'negative' | 'neutral') => {
+    if (direction === 'positive') {
+      return {
+        icon: <TrendingUp className="h-5 w-5 text-green-500" />,
+        textClassName: 'text-green-600',
+        barClassName: 'bg-green-500',
+        prefix: '+',
+      }
+    }
+    if (direction === 'negative') {
+      return {
+        icon: <TrendingDown className="h-5 w-5 text-red-500" />,
+        textClassName: 'text-red-600',
+        barClassName: 'bg-red-500',
+        prefix: '-',
+      }
+    }
+    return {
+      icon: <Minus className="h-5 w-5 text-gray-500" />,
+      textClassName: 'text-gray-600',
+      barClassName: 'bg-gray-400',
+      prefix: '',
+    }
+  }
+
   const probabilityBand = getProbabilityBand(success_probability)
   const confidenceTier = getConfidenceTier(confidence)
-  const rawProbability =
-    typeof raw_success_probability === 'number' &&
-    Number.isFinite(raw_success_probability)
-      ? Math.min(Math.max(raw_success_probability, 0), 100)
-      : null
-  const calibrationDelta =
-    rawProbability === null ? 0 : success_probability - rawProbability
-  const showCalibrationInfo =
-    rawProbability !== null && Math.abs(calibrationDelta) >= 0.1
-
-  // NOTE: "ML Model / Rule-based" badge is intentionally hidden per product decision.
-  // const sourceLabel =
-  //   source === 'ml_model'
-  //     ? 'ML Model'
-  //     : source === 'rule_based'
-  //       ? 'Rule-based (Fallback)'
-  //       : null
+  const visibleFlags = (quality_flags || []).slice(0, 3)
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-8">
@@ -135,11 +151,6 @@ export function SuccessProbabilityCard({
           {districtName} / {industryName}
         </h2>
         <p className="text-gray-600">창업 성공 확률 분석</p>
-        {/* {sourceLabel && (
-          <div className="mt-3 inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-semibold text-gray-700">
-            {sourceLabel}
-          </div>
-        )} */}
       </div>
 
       <div className="mb-8 text-center">
@@ -170,6 +181,7 @@ export function SuccessProbabilityCard({
             {probabilityBand.label}
           </span>
         </div>
+
         <p className="mb-4 text-sm text-gray-600">
           {probabilityBand.description}
         </p>
@@ -186,64 +198,26 @@ export function SuccessProbabilityCard({
           </span>
         </div>
         <div className="mt-1 text-xs text-gray-500">
-          데이터 커버리지, 최신성, 확률 보정치를 함께 반영합니다.
+          데이터 커버리지와 최신성을 반영한 신뢰도입니다.
         </div>
 
-        {showCalibrationInfo && (
-          <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700">
-            <span className="font-semibold">확률 보정</span> 보정 전{' '}
-            {rawProbability.toFixed(1)}% -&gt; 보정 후{' '}
-            {success_probability.toFixed(1)}%
-            <span className="ml-2 font-semibold">
-              ({calibrationDelta >= 0 ? '+' : ''}
-              {calibrationDelta.toFixed(1)}%p)
-            </span>
-          </div>
-        )}
+        <QualityGateNotice
+          status={result.quality_gate_status}
+          grade={result.quality_grade}
+          flags={quality_flags || []}
+          className="mx-auto mt-3 max-w-xl text-left"
+        />
 
-        {source === 'ml_model' && typeof model_confidence === 'number' && (
-          <div className="mt-2 text-xs text-gray-500">
-            모델 분류 확신도 {model_confidence.toFixed(1)}% (참고)
-          </div>
-        )}
-
-        {source === 'rule_based' && confidence < 90 && (
-          <div className="mt-3 text-xs text-gray-500">
-            ML API 연결/데이터 최신화가 되면 신뢰도가 더 올라갈 수 있습니다.
-          </div>
-        )}
-
-        {source === 'rule_based' && (ml_status || data_coverage) && (
-          <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700">
-            <div className="font-semibold">진단</div>
-            {ml_status && (
-              <div className="mt-1">
-                ML 호출 상태: <span className="font-mono">{ml_status}</span>
-                {typeof ml_http_status === 'number' && (
-                  <span className="ml-1 font-mono">({ml_http_status})</span>
-                )}
-                {ml_detail && (
-                  <span className="ml-2 text-gray-600">{ml_detail}</span>
-                )}
-              </div>
-            )}
-            {data_coverage && (
-              <div className="mt-1">
-                데이터 커버리지:
-                <span className="ml-1 font-mono">
-                  biz={data_coverage.business_rows}, sales=
-                  {data_coverage.sales_rows}, store={data_coverage.store_rows}
-                </span>
-              </div>
-            )}
-            {data_coverage &&
-              (data_coverage.sales_rows === 0 ||
-                data_coverage.store_rows === 0) && (
-                <div className="mt-1 text-gray-600">
-                  `sales_statistics`/`store_statistics`가 비어있으면 신뢰도가
-                  60% 근처로 내려가는 게 정상입니다.
-                </div>
-              )}
+        {visibleFlags.length > 0 && (
+          <div className="mt-3 flex flex-wrap justify-center gap-2">
+            {visibleFlags.map((flag) => (
+              <span
+                key={flag}
+                className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs text-gray-600"
+              >
+                {QUALITY_FLAG_LABELS[flag] || flag}
+              </span>
+            ))}
           </div>
         )}
       </div>
@@ -267,46 +241,34 @@ export function SuccessProbabilityCard({
       <div>
         <h3 className="mb-4 font-semibold text-gray-900">주요 영향 요인</h3>
         <div className="space-y-3">
-          {factors.map((factor, index) => (
-            <div key={index} className="flex items-center gap-3">
-              <div className="flex-shrink-0">
-                {factor.direction === 'positive' ? (
-                  <TrendingUp className="h-5 w-5 text-green-500" />
-                ) : (
-                  <TrendingDown className="h-5 w-5 text-red-500" />
-                )}
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-900">
-                    {factor.name}
-                  </span>
-                  <span
-                    className={`text-sm font-semibold ${
-                      factor.direction === 'positive'
-                        ? 'text-green-600'
-                        : 'text-red-600'
-                    }`}
-                  >
-                    {factor.direction === 'positive' ? '+' : '-'}
-                    {Number(factor.impact).toFixed(1)}
-                  </span>
-                </div>
-                <div className="mt-1 h-1.5 w-full rounded-full bg-gray-200">
-                  <div
-                    className={`h-1.5 rounded-full ${
-                      factor.direction === 'positive'
-                        ? 'bg-green-500'
-                        : 'bg-red-500'
-                    }`}
-                    style={{
-                      width: `${Math.min(Math.abs(Number(factor.impact)), 100)}%`,
-                    }}
-                  />
+          {factors.map((factor, index) => {
+            const factorStyle = getFactorStyle(factor.direction)
+            const impact = Math.abs(Number(factor.impact))
+            return (
+              <div key={index} className="flex items-center gap-3">
+                <div className="flex-shrink-0">{factorStyle.icon}</div>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-gray-900">
+                      {factor.name}
+                    </span>
+                    <span
+                      className={`text-sm font-semibold ${factorStyle.textClassName}`}
+                    >
+                      {factorStyle.prefix}
+                      {impact.toFixed(1)}
+                    </span>
+                  </div>
+                  <div className="mt-1 h-1.5 w-full rounded-full bg-gray-200">
+                    <div
+                      className={`h-1.5 rounded-full ${factorStyle.barClassName}`}
+                      style={{ width: `${Math.min(impact, 100)}%` }}
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
     </div>
