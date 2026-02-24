@@ -1,5 +1,7 @@
 // @TASK P3-R1 - Chamgab Analyses 타입 정의
 
+import type { QualityMeta } from './quality'
+
 export interface ChamgabAnalysis {
   id: string
   property_id: string
@@ -11,6 +13,16 @@ export interface ChamgabAnalysis {
   analyzed_at: string
   expires_at: string
   created_at: string
+}
+
+export type ChamgabGapBand = 'safe' | 'watch' | 'severe' | 'unknown'
+
+export interface ChamgabQuality {
+  factor_count: number
+  factor_complete: boolean
+  gap_band: ChamgabGapBand
+  calibration_version: string
+  quality_flags?: string[]
 }
 
 export interface PriceFactor {
@@ -47,8 +59,9 @@ export interface Favorite {
 }
 
 // API Response Types
-export interface ChamgabAnalysisResponse {
+export interface ChamgabAnalysisResponse extends Partial<QualityMeta> {
   analysis: ChamgabAnalysis
+  quality?: ChamgabQuality
   factors?: PriceFactor[]
 }
 

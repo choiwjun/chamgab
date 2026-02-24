@@ -1,5 +1,6 @@
 // @TASK Land Analysis Feature - Type definitions
 // Land parcel and transaction types
+import type { QualityMeta } from './quality'
 
 export interface LandParcel {
   id: string
@@ -39,7 +40,42 @@ export interface LandTransaction {
   transaction_type: string | null
   is_partial_sale: boolean
   is_cancelled: boolean
+  zoning?: string | null
   created_at: string
+}
+
+export interface LandOfficialPrice {
+  id: string
+  parcel_id: string
+  price_year: number
+  official_price_per_m2: number
+  created_at: string
+}
+
+export interface LandCharacteristics {
+  id: string
+  parcel_id: string
+  land_use: string | null
+  elevation_type: string | null
+  terrain_shape: string | null
+  road_access: string | null
+  road_distance: string | null
+  zoning_detail: string | null
+  building_coverage: number | null
+  floor_area_ratio: number | null
+  created_at: string
+  updated_at: string
+}
+
+export interface LandMapPoint {
+  id: string
+  title: string
+  lat: number
+  lng: number
+  kind: 'subject' | 'nearby'
+  land_category?: string | null
+  transaction_price?: number | null
+  transaction_date?: string | null
 }
 
 export interface LandRegionStats {
@@ -55,6 +91,7 @@ export interface LandSearchParams {
   sido?: string
   sigungu?: string
   land_category?: string
+  zoning?: string
   min_area?: number
   max_area?: number
   min_price?: number
@@ -63,6 +100,22 @@ export interface LandSearchParams {
   order?: 'asc' | 'desc'
   page?: number
   limit?: number
+}
+
+export interface LandAnalysisResponse extends Partial<QualityMeta> {
+  pnu: string
+  analysis: {
+    overall_score: number | null
+    investment_grade: string
+    sample_size: number
+    nearby_sample_size: number
+    [key: string]: unknown
+  }
+  snapshot: {
+    sample_size: number
+    parcel_transaction_count: number
+    nearby_transaction_count: number
+  }
 }
 
 // 지목 코드 매핑

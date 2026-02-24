@@ -27,6 +27,12 @@ type CreateReportBody = {
   district_code?: string
 }
 
+type QualityGateStatus = 'pass' | 'warn' | 'fail'
+type QualityGrade = 'A' | 'B' | 'C' | 'D'
+
+const SCHOOL_QUALITY_VERSION =
+  process.env.SCHOOL_QUALITY_VERSION || 'school-quality-v1'
+
 class SchoolApiException extends Error {
   constructor(
     public code:
@@ -109,6 +115,49 @@ function extractCoverage(preview: Record<string, unknown> | undefined): number {
   return fallback ?? 0
 }
 
+function deriveSchoolQualityMeta(report: SchoolAnalysisReport): {
+  quality_gate_status: QualityGateStatus
+  quality_grade: QualityGrade
+  quality_flags: string[]
+  quality_version: string
+  data_freshness: string | null
+} {
+  const coverageRaw =
+    report.data_quality?.coverage_rate ??
+    report.confidence_breakdown.official_confidence
+  const inferredRatio = Math.max(0, 100 - (coverageRaw ?? 0))
+  const flags: string[] = []
+
+  if ((coverageRaw ?? 0) < 95) flags.push('insufficient_official_data')
+  if (inferredRatio > 20) flags.push('high_inferred_ratio')
+  if (!isRecent(report.data_freshness, 45)) flags.push('stale_data')
+  if (report.confidence_score < 70) flags.push('low_confidence')
+
+  const hasFail = (coverageRaw ?? 0) < 80 || report.confidence_score < 55
+  const quality_gate_status: QualityGateStatus = hasFail
+    ? 'fail'
+    : flags.length > 0
+      ? 'warn'
+      : 'pass'
+
+  const quality_grade: QualityGrade =
+    quality_gate_status === 'fail'
+      ? 'D'
+      : quality_gate_status === 'warn'
+        ? 'C'
+        : report.confidence_score >= 85
+          ? 'A'
+          : 'B'
+
+  return {
+    quality_gate_status,
+    quality_grade,
+    quality_flags: flags,
+    quality_version: SCHOOL_QUALITY_VERSION,
+    data_freshness: report.data_freshness || null,
+  }
+}
+
 export async function POST(request: NextRequest) {
   const auth = await requireApiUser()
   if ('response' in auth) return auth.response
@@ -162,7 +211,11 @@ export async function POST(request: NextRequest) {
       existingReport &&
       isRecent(existingRow.data_freshness as string | null, 45)
     ) {
-      return NextResponse.json({ report: existingReport, cached: true })
+      return NextResponse.json({
+        report: existingReport,
+        cached: true,
+        ...deriveSchoolQualityMeta(existingReport),
+      })
     }
 
     const { data: previewRows, error: previewError } = await supabase
@@ -470,7 +523,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ report, cached: false }, { status: 201 })
+    return NextResponse.json(
+      {
+        report,
+        cached: false,
+        ...deriveSchoolQualityMeta(report),
+      },
+      { status: 201 }
+    )
   } catch (err) {
     if (err instanceof SchoolApiException) {
       const payload = schoolApiError(err.code, err.message, err.status)
