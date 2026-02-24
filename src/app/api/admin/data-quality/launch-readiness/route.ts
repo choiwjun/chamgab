@@ -48,6 +48,12 @@ type GateCheck = {
   source: string
 }
 
+type AdminDbClient = ReturnType<typeof createAdminClient>
+type CountQueryResult = {
+  count: number | null
+  error: { message: string } | null
+}
+
 function hasInternalAdminToken(req: NextRequest): boolean {
   const expected =
     process.env.ADMIN_API_TOKEN ||
@@ -123,14 +129,14 @@ async function readJsonSafe(relativePath: string): Promise<Record<string, unknow
   }
 }
 
-async function countExact(q: any): Promise<number> {
+async function countExact(q: Promise<CountQueryResult>): Promise<number> {
   const { count, error } = await q
   if (error) throw new Error(error.message)
   return count ?? 0
 }
 
 async function distinctCount(
-  admin: any,
+  admin: AdminDbClient,
   table: string,
   column: string,
   maxRows = 300_000
@@ -161,7 +167,9 @@ async function distinctCount(
   return set.size
 }
 
-async function averageInferredRatioPreview(admin: any): Promise<number | null> {
+async function averageInferredRatioPreview(
+  admin: AdminDbClient
+): Promise<number | null> {
   const pageSize = 1000
   let offset = 0
   let sum = 0
@@ -212,7 +220,10 @@ async function averageInferredRatioPreview(admin: any): Promise<number | null> {
   return Number((sum / count).toFixed(2))
 }
 
-async function latestBaseMonth(admin: any, table: string): Promise<string | null> {
+async function latestBaseMonth(
+  admin: AdminDbClient,
+  table: string
+): Promise<string | null> {
   const { data, error } = await admin
     .from(table)
     .select('base_year_month')

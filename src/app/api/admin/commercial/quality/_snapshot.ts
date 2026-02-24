@@ -189,7 +189,8 @@ async function fetchLatestDistrictProfiles(admin: AdminClient): Promise<Map<stri
       ? 'sigungu_code,commercial_district_code,base_year_quarter,district_type,resident_ratio,office_worker_ratio,student_ratio,weekend_sales_ratio'
       : 'commercial_district_code,base_year_quarter,district_type,resident_ratio,office_worker_ratio,student_ratio,weekend_sales_ratio'
 
-    const { data, error } = await (admin.from('district_characteristics') as any)
+    const { data, error } = await admin
+      .from('district_characteristics')
       .select(selectColumns)
       .order('base_year_quarter', { ascending: false })
       .range(offset, offset + pageSize - 1)
