@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -56,7 +56,7 @@ export default function SchoolAnalysisPreviewPage() {
       const message =
         err instanceof APIError
           ? err.message
-          : 'Failed to load school analysis preview.'
+          : '학군 프리뷰 데이터를 불러오지 못했습니다.'
       setError(message)
     } finally {
       setIsLoading(false)
@@ -93,7 +93,6 @@ export default function SchoolAnalysisPreviewPage() {
   return (
     <div className="min-h-screen bg-[#F8FAFC]">
       <div className="mx-auto max-w-6xl px-4 py-10">
-        {/* Header */}
         <div className="mb-8 rounded-2xl border border-[#DDE7F2] bg-white p-6">
           <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-[#E6F0FF] px-3 py-1 text-xs font-semibold text-[#1B64DA]">
             <GraduationCap className="h-4 w-4" />
@@ -101,12 +100,11 @@ export default function SchoolAnalysisPreviewPage() {
           </div>
           <h1 className="text-2xl font-bold text-[#191F28]">학군분석</h1>
           <p className="mt-2 text-sm text-[#4E5968]">
-            전국 {allItems.length > 0 ? `${allItems.length}개` : ''} 시군구의
-            학교 수준, 진학 경로, 학원 생태계를 비교해보세요.
+            전국 {allItems.length > 0 ? `${allItems.length}개` : ''} 학군의 학교
+            수준, 진학 경로, 학원 생태계를 비교해보세요.
           </p>
         </div>
 
-        {/* Filters */}
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start">
           <div className="flex flex-wrap gap-1.5">
             {SIDO_OPTIONS.map((opt) => (
@@ -130,13 +128,12 @@ export default function SchoolAnalysisPreviewPage() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="구/군 검색..."
+              placeholder="학군명/코드 검색"
               className="w-full rounded-xl border border-[#E5E8EB] bg-white py-2 pl-9 pr-3 text-sm text-[#191F28] placeholder-[#8B95A1] outline-none focus:border-[#3182F6]"
             />
           </div>
         </div>
 
-        {/* Count */}
         {!isLoading && !error && (
           <p className="mb-4 text-xs text-[#8B95A1]">
             {filtered.length}개 학군
@@ -145,19 +142,17 @@ export default function SchoolAnalysisPreviewPage() {
           </p>
         )}
 
-        {/* Loading */}
         {isLoading && (
           <div className="flex min-h-[240px] items-center justify-center rounded-2xl border border-[#E5E8EB] bg-white">
             <div className="text-center">
               <Loader2 className="mx-auto h-8 w-8 animate-spin text-[#3182F6]" />
               <p className="mt-3 text-sm text-[#8B95A1]">
-                전국 학군 데이터를 불러오는 중...
+                학군 데이터를 불러오는 중입니다...
               </p>
             </div>
           </div>
         )}
 
-        {/* Error */}
         {!isLoading && error && (
           <div className="rounded-2xl border border-[#FECACA] bg-[#FEF2F2] p-6">
             <p className="text-sm text-[#B91C1C]">{error}</p>
@@ -171,7 +166,6 @@ export default function SchoolAnalysisPreviewPage() {
           </div>
         )}
 
-        {/* Grid */}
         {!isLoading && !error && (
           <>
             {paged.length === 0 ? (
@@ -228,7 +222,6 @@ export default function SchoolAnalysisPreviewPage() {
               </div>
             )}
 
-            {/* Pagination */}
             {totalPages > 1 && (
               <div className="mt-8 flex items-center justify-center gap-2">
                 <button

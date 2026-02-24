@@ -1,7 +1,8 @@
-'use client'
+﻿'use client'
 
-import { useState } from 'react'
-import { Check, Crown, Building2, Zap } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Check, Crown, Building2, Zap, AlertTriangle } from 'lucide-react'
+import { ENABLE_LAND } from '@/lib/features'
 
 interface Plan {
   id: string
@@ -19,14 +20,14 @@ const PLANS: Plan[] = [
     id: 'free',
     name: 'Free',
     price: 0,
-    description: '상권/집값 분석을 가볍게 시작',
+    description: '가볍게 시작하는 기본 플랜',
     icon: <Zap className="h-6 w-6" />,
     features: [
-      '일 크레딧 20 / 월 크레딧 400',
-      '상권 분석(기본 요약)',
-      '집값 분석(기본)',
-      '토지 분석(미제공)',
-      '기본 지원',
+      '일일 20 / 월간 400 크레딧',
+      '아파트 분석(요약)',
+      '상권분석(요약)',
+      '학군분석(프리뷰)',
+      ...(ENABLE_LAND ? ['토지분석(요약)'] : []),
     ],
   },
   {
@@ -34,14 +35,14 @@ const PLANS: Plan[] = [
     name: 'Premium',
     price: 9900,
     yearlyPrice: 99000,
-    description: '개인/소상공인용 확장 분석',
+    description: '개인 투자자/창업자용 확장 플랜',
     icon: <Crown className="h-6 w-6" />,
     recommended: true,
     features: [
-      '일 크레딧 200 / 월 크레딧 5,000',
-      '상권/집값/토지 분석',
-      '유사거래 확장 조회',
-      'PDF 리포트(준비중)',
+      '일일 200 / 월간 5,000 크레딧',
+      ENABLE_LAND ? '4메뉴 상세 분석' : '3메뉴 상세 분석',
+      '유사 사례 비교',
+      'PDF 리포트(출시 예정)',
       '우선 지원',
     ],
   },
@@ -49,13 +50,13 @@ const PLANS: Plan[] = [
     id: 'business',
     name: 'Business',
     price: 49900,
-    description: '팀/기업 운영용',
+    description: '팀/기업 운영용 플랜',
     icon: <Building2 className="h-6 w-6" />,
     features: [
-      '크레딧 무제한(공정 사용 정책 적용)',
-      'Premium 모든 기능',
-      '팀/권한 관리',
-      '운영 API/RPC',
+      '월간 대량 크레딧(협의)',
+      'Premium 기능 포함',
+      '팀 계정 관리',
+      '운영 API/RPC 연동',
       'SLA(협의)',
     ],
   },
@@ -67,16 +68,21 @@ export function PlanSelector() {
   )
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null)
   const [showDialog, setShowDialog] = useState(false)
+  const [ackQualityWarning, setAckQualityWarning] = useState(false)
+  const [ackNoRefund, setAckNoRefund] = useState(false)
 
   const COSTS = {
+    apartment: 2,
     commercial: 1,
-    home_price: 2,
+    school: 1,
     land: 4,
   } as const
 
   const handleSelectPlan = (planId: string) => {
     const plan = PLANS.find((p) => p.id === planId) || null
     setSelectedPlan(plan)
+    setAckQualityWarning(false)
+    setAckNoRefund(false)
     setShowDialog(true)
   }
 
@@ -85,6 +91,17 @@ export function PlanSelector() {
     return `${price.toLocaleString('ko-KR')}원`
   }
 
+  const selectedDisplayPrice = useMemo(() => {
+    if (!selectedPlan) return '-'
+    const monthly =
+      billingPeriod === 'yearly' && selectedPlan.yearlyPrice
+        ? Math.floor(selectedPlan.yearlyPrice / 12)
+        : selectedPlan.price
+    return formatPrice(monthly)
+  }, [billingPeriod, selectedPlan])
+
+  const canConfirm = ackQualityWarning && ackNoRefund
+
   return (
     <div>
       <div className="mb-8 rounded-2xl border border-gray-200 bg-white p-6">
@@ -92,32 +109,41 @@ export function PlanSelector() {
           크레딧 기반 과금 방식
         </h2>
         <p className="mt-2 text-sm text-gray-600">
-          분석 메뉴별로 크레딧이 차감되며, 플랜은 일/월 크레딧 한도를
-          제공합니다. 보너스 크레딧은 추가 구매(또는 운영 지급)로 충전됩니다.
+          분석 메뉴별로 크레딧이 차감됩니다. 플랜은 기본 지급 크레딧의 한도를
+          정하며, 초과 사용은 보너스 크레딧 또는 추가 결제로 운영됩니다.
         </p>
-        <div className="mt-4 grid gap-2 md:grid-cols-3">
+        <div className="mt-4 grid gap-2 md:grid-cols-4">
           <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-            <div className="text-xs font-semibold text-gray-700">상권 분석</div>
+            <div className="text-xs font-semibold text-gray-700">
+              아파트 분석
+            </div>
+            <div className="mt-1 text-sm text-gray-900">
+              {COSTS.apartment} 크레딧/회
+            </div>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+            <div className="text-xs font-semibold text-gray-700">상권분석</div>
             <div className="mt-1 text-sm text-gray-900">
               {COSTS.commercial} 크레딧/회
             </div>
           </div>
           <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-            <div className="text-xs font-semibold text-gray-700">집값 분석</div>
+            <div className="text-xs font-semibold text-gray-700">학군분석</div>
             <div className="mt-1 text-sm text-gray-900">
-              {COSTS.home_price} 크레딧/회
+              {COSTS.school} 크레딧/회
             </div>
           </div>
-          <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-            <div className="text-xs font-semibold text-gray-700">토지 분석</div>
-            <div className="mt-1 text-sm text-gray-900">
-              {COSTS.land} 크레딧/회
+          {ENABLE_LAND && (
+            <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+              <div className="text-xs font-semibold text-gray-700">
+                토지분석
+              </div>
+              <div className="mt-1 text-sm text-gray-900">
+                {COSTS.land} 크레딧/회
+              </div>
             </div>
-          </div>
+          )}
         </div>
-        <p className="mt-3 text-xs text-gray-500">
-          실제 차감 정책은 운영 설정에 따라 조정될 수 있습니다.
-        </p>
       </div>
 
       <div className="mb-8 flex justify-center">
@@ -238,60 +264,44 @@ export function PlanSelector() {
             </thead>
             <tbody>
               <tr className="border-b">
-                <td className="py-4 text-gray-600">크레딧</td>
-                <td className="py-4 text-center">일 20 / 월 400</td>
+                <td className="py-4 text-gray-600">월간 크레딧</td>
+                <td className="py-4 text-center">400</td>
                 <td className="py-4 text-center font-medium text-blue-500">
-                  일 200 / 월 5,000
+                  5,000
                 </td>
-                <td className="py-4 text-center font-medium">무제한</td>
+                <td className="py-4 text-center font-medium">협의</td>
               </tr>
               <tr className="border-b">
-                <td className="py-4 text-gray-600">보너스 크레딧</td>
-                <td className="py-4 text-center text-gray-300">-</td>
-                <td className="py-4 text-center text-gray-600">
-                  추가 구매/운영 지급
-                </td>
-                <td className="py-4 text-center text-gray-600">
-                  추가 구매/운영 지급
-                </td>
-              </tr>
-              <tr className="border-b">
-                <td className="py-4 text-gray-600">상권 분석</td>
+                <td className="py-4 text-gray-600">아파트/상권/학군</td>
                 <td className="py-4 text-center">기본</td>
                 <td className="py-4 text-center font-medium text-blue-500">
-                  전체
+                  상세
                 </td>
-                <td className="py-4 text-center font-medium">전체</td>
+                <td className="py-4 text-center font-medium">상세</td>
               </tr>
+              {ENABLE_LAND && (
+                <tr className="border-b">
+                  <td className="py-4 text-gray-600">토지분석</td>
+                  <td className="py-4 text-center">요약</td>
+                  <td className="py-4 text-center font-medium text-blue-500">
+                    상세
+                  </td>
+                  <td className="py-4 text-center font-medium">상세</td>
+                </tr>
+              )}
               <tr className="border-b">
-                <td className="py-4 text-gray-600">집값 분석</td>
-                <td className="py-4 text-center">기본</td>
-                <td className="py-4 text-center font-medium text-blue-500">
-                  전체
-                </td>
-                <td className="py-4 text-center font-medium">전체</td>
-              </tr>
-              <tr className="border-b">
-                <td className="py-4 text-gray-600">토지 분석</td>
-                <td className="py-4 text-center text-gray-300">-</td>
-                <td className="py-4 text-center font-medium text-blue-500">
-                  전체
-                </td>
-                <td className="py-4 text-center font-medium">전체</td>
-              </tr>
-              <tr className="border-b">
-                <td className="py-4 text-gray-600">PDF 리포트</td>
-                <td className="py-4 text-center text-gray-300">-</td>
-                <td className="py-4 text-center text-gray-300">준비중</td>
-                <td className="py-4 text-center text-gray-300">준비중</td>
-              </tr>
-              <tr>
-                <td className="py-4 text-gray-600">팀/운영 기능</td>
+                <td className="py-4 text-gray-600">팀 기능</td>
                 <td className="py-4 text-center text-gray-300">-</td>
                 <td className="py-4 text-center text-gray-300">-</td>
                 <td className="py-4 text-center">
                   <Check className="mx-auto h-5 w-5 text-green-500" />
                 </td>
+              </tr>
+              <tr>
+                <td className="py-4 text-gray-600">운영 API/RPC</td>
+                <td className="py-4 text-center text-gray-300">-</td>
+                <td className="py-4 text-center text-gray-300">-</td>
+                <td className="py-4 text-center">포함</td>
               </tr>
             </tbody>
           </table>
@@ -307,7 +317,7 @@ export function PlanSelector() {
                   {selectedPlan.name} 플랜 신청
                 </div>
                 <div className="mt-1 text-xs text-gray-500">
-                  결제 연동 전 운영 안내 화면입니다.
+                  결제 전 품질 경고 및 정책 확인이 필요합니다.
                 </div>
               </div>
               <button
@@ -317,22 +327,50 @@ export function PlanSelector() {
                 닫기
               </button>
             </div>
+
             <div className="space-y-4 px-5 py-5">
               <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
-                <div className="font-semibold text-gray-900">포함 내용</div>
-                <ul className="mt-2 space-y-1">
-                  {selectedPlan.features.map((f) => (
-                    <li key={f} className="flex items-start gap-2">
-                      <span className="mt-1 inline-block h-1.5 w-1.5 rounded-full bg-gray-400" />
-                      <span>{f}</span>
-                    </li>
-                  ))}
-                </ul>
+                <div className="font-semibold text-gray-900">선택 플랜</div>
+                <div className="mt-1">{selectedPlan.name}</div>
+                <div className="mt-1 text-xs text-gray-500">
+                  {selectedDisplayPrice}/월 기준
+                </div>
               </div>
 
-              <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-                결제/구독 자동 처리(토스/Stripe)는 준비중입니다. 지금은 운영자가
-                수동으로 플랜/크레딧을 적용할 수 있습니다.
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                  <div>
+                    <p className="font-semibold">품질 경고 안내</p>
+                    <p className="mt-1">
+                      일부 메뉴는 현재 품질 게이트가 완전히 충족되지 않았을 수
+                      있으며, 결과 상단에 품질 경고 배지가 표시됩니다.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm">
+                <label className="flex items-start gap-2 text-gray-700">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={ackQualityWarning}
+                    onChange={(e) => setAckQualityWarning(e.target.checked)}
+                  />
+                  <span>
+                    품질 경고 배지와 결과 해석 제한 안내를 확인했습니다.
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 text-gray-700">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={ackNoRefund}
+                    onChange={(e) => setAckNoRefund(e.target.checked)}
+                  />
+                  <span>무환불 정책에 동의합니다.</span>
+                </label>
               </div>
 
               <div className="flex flex-col gap-2 md:flex-row">
@@ -340,13 +378,14 @@ export function PlanSelector() {
                   href="/admin/users"
                   className="inline-flex w-full items-center justify-center rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-900 hover:bg-gray-50"
                 >
-                  운영자: 사용자 크레딧 관리
+                  운영자 사용자/크레딧 관리
                 </a>
                 <button
                   onClick={() => setShowDialog(false)}
-                  className="inline-flex w-full items-center justify-center rounded-lg bg-gray-900 px-4 py-3 text-sm font-semibold text-white hover:bg-gray-800"
+                  disabled={!canConfirm}
+                  className="inline-flex w-full items-center justify-center rounded-lg bg-gray-900 px-4 py-3 text-sm font-semibold text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-300"
                 >
-                  확인
+                  확인 후 종료
                 </button>
               </div>
             </div>
