@@ -37,19 +37,16 @@ function LandSearchContent() {
   useEffect(() => {
     const q = searchParams.get('q')
     const sigungu = searchParams.get('sigungu')
-
-    if (q || sigungu) {
-      setQuery(q || sigungu || '')
-      fetchTransactions({
-        query: q || undefined,
-        sigungu: sigungu || undefined,
-        page: currentPage,
-        limit: ITEMS_PER_PAGE,
-        sort: sortBy,
-        order: sortOrder,
-        land_category: selectedCategory || undefined,
-      })
-    }
+    setQuery(q || sigungu || '')
+    fetchTransactions({
+      query: q || undefined,
+      sigungu: sigungu || undefined,
+      page: currentPage,
+      limit: ITEMS_PER_PAGE,
+      sort: sortBy,
+      order: sortOrder,
+      land_category: selectedCategory || undefined,
+    })
   }, [searchParams, currentPage, sortBy, sortOrder, selectedCategory])
 
   const fetchTransactions = async (params: LandSearchParams) => {
@@ -81,10 +78,13 @@ function LandSearchContent() {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
-    if (query.trim()) {
-      router.push(`/land/search?q=${encodeURIComponent(query.trim())}` as never)
-      setCurrentPage(1)
+    const normalized = query.trim()
+    if (normalized) {
+      router.push(`/land/search?q=${encodeURIComponent(normalized)}` as never)
+    } else {
+      router.push('/land/search' as never)
     }
+    setCurrentPage(1)
   }
 
   const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE)
