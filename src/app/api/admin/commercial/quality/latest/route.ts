@@ -4,10 +4,12 @@ import { timingSafeEqual } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '../../../_utils'
 import {
+  computeCommercialQualitySnapshot,
   COMMERCIAL_CALIBRATION_VERSION,
   COMMERCIAL_QUALITY_VERSION,
   evaluateCommercialSnapshotGate,
   getLatestCommercialQualitySnapshot,
+  insertCommercialQualitySnapshot,
 } from '../_snapshot'
 
 function hasInternalAdminToken(req: NextRequest): boolean {
@@ -37,23 +39,27 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const snapshot = (await getLatestCommercialQualitySnapshot()) as
+    let snapshot = (await getLatestCommercialQualitySnapshot()) as
       | Record<string, unknown>
       | null
+    let snapshotRebuilt = false
+    let snapshotPersisted = true
 
     if (!snapshot) {
-      return NextResponse.json(
-        {
-          as_of: new Date().toISOString(),
-          error: 'snapshot_missing',
-          pass: false,
-          checks: [],
-          metrics: null,
-          quality_version: COMMERCIAL_QUALITY_VERSION,
-          calibration_version: COMMERCIAL_CALIBRATION_VERSION,
-        },
-        { status: 404 }
-      )
+      snapshotRebuilt = true
+      snapshotPersisted = false
+      const computed = await computeCommercialQualitySnapshot()
+      snapshot = computed as unknown as Record<string, unknown>
+      try {
+        const saved = (await insertCommercialQualitySnapshot(computed)) as Record<
+          string,
+          unknown
+        >
+        snapshot = saved
+        snapshotPersisted = true
+      } catch {
+        // If persistence fails, still return computed gate to avoid snapshot_missing.
+      }
     }
 
     const gate = evaluateCommercialSnapshotGate(snapshot)
@@ -63,6 +69,8 @@ export async function GET(req: NextRequest) {
       checks: gate.checks,
       metrics: gate.metrics,
       snapshot,
+      snapshot_rebuilt: snapshotRebuilt,
+      snapshot_persisted: snapshotPersisted,
       quality_version: COMMERCIAL_QUALITY_VERSION,
       calibration_version: COMMERCIAL_CALIBRATION_VERSION,
     })
