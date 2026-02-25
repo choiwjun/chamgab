@@ -39,14 +39,23 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
+  // Supabase 호출 타임아웃 (5초)
+  const withTimeout = useCallback(
+    <T,>(p: Promise<T>, fallback: T): Promise<T> =>
+      Promise.race([
+        p,
+        new Promise<T>((resolve) => setTimeout(() => resolve(fallback), 5000)),
+      ]),
+    []
+  )
+
   // 프로필 조회
   const fetchProfile = useCallback(
     async (userId: string) => {
-      const { data, error } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .eq('id', userId)
-        .single()
+      const { data, error } = await withTimeout(
+        supabase.from('user_profiles').select('*').eq('id', userId).single(),
+        { data: null, error: { message: 'timeout' } } as never
+      )
 
       if (error) {
         console.error('Error fetching profile:', error)
@@ -55,7 +64,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       return data as UserProfile
     },
-    [supabase]
+    [supabase, withTimeout]
   )
 
   const isSuspended = (profile: UserProfile | null) => {
@@ -146,15 +155,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const refreshUser = useCallback(async () => {
     setIsLoading(true)
     try {
-      const timeoutMs = 8000
-      const withTimeout = <T,>(p: Promise<T>, fallback: T): Promise<T> =>
-        Promise.race([
-          p,
-          new Promise<T>((resolve) =>
-            setTimeout(() => resolve(fallback), timeoutMs)
-          ),
-        ])
-
       const {
         data: { session },
       } = await withTimeout(supabase.auth.getSession(), {
@@ -192,7 +192,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } finally {
       setIsLoading(false)
     }
-  }, [fetchProfile, supabase])
+  }, [fetchProfile, supabase, withTimeout])
 
   // 회원가입
   const signUp = useCallback(
