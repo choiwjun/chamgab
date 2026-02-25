@@ -18,6 +18,12 @@ import { LAND_CATEGORY_LABELS } from '@/types/land'
 
 const ITEMS_PER_PAGE = 12
 
+const SORT_FIELD_MAP: Record<string, string> = {
+  date: 'transaction_date',
+  price: 'price',
+  area: 'area_m2',
+}
+
 function LandSearchContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -41,7 +47,7 @@ function LandSearchContent() {
     if (q || sigungu) {
       setQuery(q || sigungu || '')
       fetchTransactions({
-        query: q || undefined,
+        q: q || undefined,
         sigungu: sigungu || undefined,
         page: currentPage,
         limit: ITEMS_PER_PAGE,
@@ -55,16 +61,26 @@ function LandSearchContent() {
   const fetchTransactions = async (params: LandSearchParams) => {
     setIsLoading(true)
     try {
+      const sortKey = params.sort || 'date'
+      const sortField = SORT_FIELD_MAP[sortKey] || 'transaction_date'
+      const sortOrderParam = params.order || 'desc'
+      const apiParams: Record<string, string> = {}
+
+      for (const [key, value] of Object.entries(params)) {
+        if (value === undefined) continue
+        if (key === 'sort' || key === 'order') continue
+        apiParams[key] = String(value)
+      }
+      apiParams.sort = `${sortField}:${sortOrderParam}`
+
       const queryString = new URLSearchParams(
-        Object.entries(params)
-          .filter(([, v]) => v !== undefined)
-          .map(([k, v]) => [k, String(v)])
+        Object.entries(apiParams)
       ).toString()
 
       const res = await fetch(`/api/land/search?${queryString}`)
       if (res.ok) {
         const data = await res.json()
-        setTransactions(data.transactions || [])
+        setTransactions(data.items || data.transactions || [])
         setTotalCount(data.total || 0)
       } else {
         setTransactions([])

@@ -85,7 +85,7 @@ export interface LandRegionStats {
 }
 
 export interface LandSearchParams {
-  query?: string
+  q?: string
   sido?: string
   sigungu?: string
   land_category?: string
@@ -94,7 +94,7 @@ export interface LandSearchParams {
   max_area?: number
   min_price?: number
   max_price?: number
-  sort?: 'date' | 'price' | 'area'
+  sort?: string
   order?: 'asc' | 'desc'
   page?: number
   limit?: number
