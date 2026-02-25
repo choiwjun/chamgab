@@ -1,11 +1,8 @@
-// @TASK P1-S0-T1 - 모바일 하단 탭 바 (Editorial Luxury 스타일)
-// @SPEC specs/shared/components.yaml#bottom_tab_bar
-
 'use client'
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Home, Heart, TrendingUp, User } from 'lucide-react'
+import { Home, TrendingUp, User } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { useAuth } from '@/hooks/useAuth'
 
@@ -15,7 +12,6 @@ interface TabItem {
   label: string
   route: string
   requiresAuth?: boolean
-  showBadge?: boolean
 }
 
 const tabs: TabItem[] = [
@@ -25,13 +21,6 @@ const tabs: TabItem[] = [
     icon: TrendingUp,
     label: '상권',
     route: '/business-analysis',
-  },
-  {
-    id: 'favorites',
-    icon: Heart,
-    label: '관심',
-    route: '/favorites',
-    requiresAuth: true,
   },
   {
     id: 'mypage',
@@ -66,11 +55,10 @@ export function BottomTabBar() {
             <Link
               key={tab.id}
               href={href}
-              className={`relative flex h-full flex-1 flex-col items-center justify-center transition-colors ${isDisabled ? 'opacity-40' : ''} ${isActive ? 'text-blue-500' : 'text-gray-500 hover:text-gray-700'} `}
+              className={`relative flex h-full flex-1 flex-col items-center justify-center transition-colors ${isDisabled ? 'opacity-40' : ''} ${isActive ? 'text-blue-500' : 'text-gray-500 hover:text-gray-700'}`}
               aria-label={tab.label}
               aria-current={isActive ? 'page' : undefined}
             >
-              {/* 활성 탭 인디케이터 */}
               {isActive && (
                 <motion.div
                   layoutId="activeTab"
@@ -79,7 +67,6 @@ export function BottomTabBar() {
                 />
               )}
 
-              {/* 아이콘 + 뱃지 */}
               <div className="relative">
                 <Icon
                   className="h-5 w-5"
@@ -88,7 +75,6 @@ export function BottomTabBar() {
                 />
               </div>
 
-              {/* 라벨 */}
               <span
                 className={`mt-1 text-[10px] tracking-wide ${isActive ? 'font-medium' : ''}`}
               >

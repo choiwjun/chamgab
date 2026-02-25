@@ -1,10 +1,9 @@
-// @TASK P4-S4 - 마이페이지 (Editorial Luxury 스타일)
-import { Metadata } from 'next'
+import type { Metadata } from 'next'
 import { MyPageContent } from '@/components/mypage/MyPageContent'
 
 export const metadata: Metadata = {
   title: '마이페이지 | 참값',
-  description: '내 정보 및 구독 관리',
+  description: '회원 정보와 크레딧 사용량을 관리합니다.',
 }
 
 export default function MyPage() {
