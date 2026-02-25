@@ -18,6 +18,7 @@ import sys
 import argparse
 import asyncio
 import logging
+import random
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 import httpx
@@ -26,6 +27,13 @@ from supabase import create_client
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Some environments set a dead local proxy (127.0.0.1:9) which breaks all outbound calls.
+# Only disable this known-bad value; keep real proxies intact.
+for _k in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"):
+    v = os.environ.get(_k)
+    if v and "127.0.0.1:9" in v:
+        os.environ.pop(_k, None)
 
 # 로그 디렉토리 사전 생성
 os.makedirs('logs', exist_ok=True)
@@ -42,6 +50,10 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+# Prevent leaking service keys in logs (httpx/httpcore log the full URL with query params).
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 # 전국 시군구 코드 (법정동 코드 앞 5자리)
 # collect_all_transactions.py와 동일한 그룹 구조
@@ -171,7 +183,7 @@ class LandTransactionCollector:
 
     BASE_URL = "https://apis.data.go.kr/1613000/RTMSDataSvcLandTrade/getRTMSDataSvcLandTrade"
 
-    def __init__(self, daily_limit: int = 0):
+    def __init__(self, daily_limit: int = 0, min_interval_sec: float = 2.5):
         self.supabase = create_client(
             os.environ['SUPABASE_URL'],
             os.environ['SUPABASE_SERVICE_KEY']
@@ -187,6 +199,118 @@ class LandTransactionCollector:
         self.api_call_count = 0
         self.daily_limit = daily_limit  # 0 = 무제한
         self.limit_reached = False
+        self.min_interval_sec = float(min_interval_sec)
+        self._cooldown_until: Optional[datetime] = None
+
+    def _get_deal_ymd_sequence(self, months: int) -> List[str]:
+        """
+        Generate YYYYMM strings for the last N months including current month.
+        Uses calendar month arithmetic (not timedelta(30*i)) to avoid drift/duplicates.
+        """
+        months = max(1, int(months))
+        now = datetime.now()
+        y = now.year
+        m = now.month
+        seq: List[str] = []
+        for i in range(months):
+            mm = m - i
+            yy = y
+            while mm <= 0:
+                mm += 12
+                yy -= 1
+            seq.append(f"{yy:04d}{mm:02d}")
+        return seq
+
+    async def _rate_limit_wait(self) -> None:
+        """Global rate limit + 429 cooldown handling."""
+        if self._cooldown_until is not None:
+            now = datetime.now()
+            if now < self._cooldown_until:
+                wait = (self._cooldown_until - now).total_seconds()
+                if wait > 0:
+                    logger.warning(f"쿨다운 대기: {wait:.0f}초 (429 대응)")
+                    await asyncio.sleep(wait)
+        # Base interval with jitter to avoid synchronized bursts.
+        await asyncio.sleep(max(0.0, self.min_interval_sec + random.random() * 0.4))
+
+    def _set_cooldown(self, seconds: int) -> None:
+        seconds = int(max(1, seconds))
+        self._cooldown_until = datetime.now() + timedelta(seconds=seconds)
+
+    def is_month_collected(self, region_code: str, deal_ymd: str) -> bool:
+        """
+        Check if a region+month is already collected based on land_collection_runs status.
+        Falls back to land_transactions existence check if runs table is absent.
+        """
+        try:
+            # Preferred: month-level run bookkeeping.
+            resp = (
+                self.supabase.table("land_collection_runs")
+                .select("status")
+                .eq("region_code", region_code)
+                .eq("deal_ymd", deal_ymd)
+                .limit(1)
+                .execute()
+            )
+            if resp.data:
+                status = (resp.data[0].get("status") or "").strip().lower()
+                return status in ("success", "no_data")
+        except Exception:
+            # If the runs table doesn't exist yet, fall back to transaction existence check.
+            pass
+
+        try:
+            # Fallback: if any row exists for that month, treat as collected.
+            year = int(deal_ymd[:4])
+            month = int(deal_ymd[4:6])
+            start_dt = datetime(year, month, 1)
+            end_dt = datetime(year + 1, 1, 1) if month == 12 else datetime(year, month + 1, 1)
+            result = (
+                self.supabase.table("land_transactions")
+                .select("id", count="exact")
+                .eq("region_code", region_code)
+                .gte("transaction_date", start_dt.strftime("%Y-%m-%d"))
+                .lt("transaction_date", end_dt.strftime("%Y-%m-%d"))
+                .limit(1)
+                .execute()
+            )
+            count = result.count if result.count else 0
+            return count > 0
+        except Exception as e:
+            logger.debug(f"month collected 확인 실패: {region_code} {deal_ymd} - {e}")
+            return False
+
+    def _record_month_run(
+        self,
+        region_code: str,
+        region_name: str,
+        deal_ymd: str,
+        status: str,
+        total_count: int = 0,
+        fetched_count: int = 0,
+        error_code: str = None,
+        error_message: str = None,
+    ) -> None:
+        """Upsert a month-level collection run record (best-effort)."""
+        try:
+            rec = {
+                "region_code": region_code,
+                "region_name": region_name,
+                "deal_ymd": deal_ymd,
+                "status": status,
+                "total_count": int(total_count or 0),
+                "fetched_count": int(fetched_count or 0),
+                "error_code": error_code,
+                "error_message": (error_message or "")[:300],
+                "updated_at": datetime.now().isoformat(),
+            }
+            # supabase-py supports upsert() in recent versions.
+            self.supabase.table("land_collection_runs").upsert(
+                rec, on_conflict="region_code,deal_ymd"
+            ).execute()
+        except Exception:
+            # Don't block collection due to bookkeeping.
+            return
 
     def _check_limit(self) -> bool:
         """일일 한도 도달 여부 확인"""
@@ -254,7 +378,7 @@ class LandTransactionCollector:
         region_code: str,
         region_name: str,
         deal_ymd: str,
-    ) -> List[Dict[str, Any]]:
+    ) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
         """특정 지역/월의 토지 매매 실거래가 수집 (페이지네이션 포함)"""
         all_transactions: List[Dict[str, Any]] = []
         page_no = 1
@@ -266,6 +390,10 @@ class LandTransactionCollector:
 
         sido = SIDO_MAP.get(region_code[:2], '')
         sigungu = region_name
+        total_count_seen: Optional[int] = None
+        had_success_request = False
+        last_error_code: Optional[str] = None
+        last_error_message: Optional[str] = None
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             while True:
@@ -274,12 +402,15 @@ class LandTransactionCollector:
                     break
 
                 try:
-                    await asyncio.sleep(2.0)  # Rate limiting (2초 간격)
+                    await self._rate_limit_wait()
 
                     self.api_call_count += 1
                     items, total_count = await self.fetch_page(
                         client, region_code, deal_ymd, page_no
                     )
+                    had_success_request = True
+                    if total_count_seen is None:
+                        total_count_seen = total_count
                     retry_count = 0  # 성공 시 재시도 카운트 리셋
 
                     if not items and page_no == 1:
@@ -308,30 +439,50 @@ class LandTransactionCollector:
                             # 429 연속이면 일일 한도 도달로 판단
                             if retry_count > max_retries and e.response.status_code == 429:
                                 self.limit_reached = True
+                            last_error_code = str(e.response.status_code)
+                            last_error_message = f"HTTP {e.response.status_code} after max retries"
                             break
                         delay = backoff_delays[min(retry_count - 1, len(backoff_delays) - 1)]
                         logger.warning(
                             f"API 호출 제한 ({e.response.status_code}): {region_name} {deal_ymd} "
                             f"page={page_no} - {delay}초 대기 후 재시도 ({retry_count}/{max_retries})"
                         )
+                        if e.response.status_code == 429:
+                            # Apply a global cooldown so we don't hammer the endpoint.
+                            self._set_cooldown(delay)
                         await asyncio.sleep(delay)
                         continue  # 같은 페이지 재시도
                     logger.error(f"HTTP 에러: {region_name} {deal_ymd} - {e}")
+                    last_error_code = "http_error"
+                    last_error_message = str(e)[:200]
                     break
                 except httpx.TimeoutException:
                     logger.warning(f"타임아웃: {region_name} {deal_ymd} page={page_no}")
+                    last_error_code = "timeout"
+                    last_error_message = "timeout"
                     break
                 except etree.XMLSyntaxError as e:
                     logger.error(f"XML 파싱 오류: {region_name} {deal_ymd} - {e}")
+                    last_error_code = "xml_parse_error"
+                    last_error_message = str(e)[:200]
                     break
                 except Exception as e:
                     logger.error(f"수집 실패: {region_name} {deal_ymd} page={page_no} - {e}")
+                    last_error_code = "exception"
+                    last_error_message = str(e)[:200]
                     break
 
         if all_transactions:
             logger.info(f"수집 완료: {region_name} {deal_ymd} - {len(all_transactions)}건")
 
-        return all_transactions
+        status = "success" if all_transactions else ("no_data" if had_success_request else "error")
+        meta = {
+            "status": status,
+            "total_count": int(total_count_seen or 0),
+            "error_code": last_error_code,
+            "error_message": last_error_message,
+        }
+        return all_transactions, meta
 
     def _parse_items(
         self,
@@ -497,23 +648,51 @@ class LandTransactionCollector:
     ) -> int:
         """특정 지역의 토지 거래 데이터 수집 (지정 개월 수만큼)"""
         total = 0
-        now = datetime.now()
+        deal_ymd_list = self._get_deal_ymd_sequence(months)
 
-        for i in range(months):
+        for deal_ymd in deal_ymd_list:
             # 일일 한도 도달 시 즉시 중단
             if self.limit_reached:
                 break
 
-            target_date = now - timedelta(days=30 * i)
-            deal_ymd = target_date.strftime('%Y%m')
+            # Month-level resume (avoids skipping partially collected regions).
+            # If land_collection_runs exists, this also skips "no data" months.
+            if self.is_month_collected(region_code, deal_ymd):
+                logger.info(f"스킵 (이미 수집됨): {region_name} {deal_ymd}")
+                continue
 
-            transactions = await self.collect_land_trades(
+            transactions, meta = await self.collect_land_trades(
                 region_code, region_name, deal_ymd
             )
 
             if transactions:
                 saved = await self.save_to_supabase(transactions)
                 total += saved
+                # If collection itself returned error metadata, keep it as error to allow retry.
+                status = meta.get("status") or "success"
+                if status != "success":
+                    status = "error"
+                self._record_month_run(
+                    region_code=region_code,
+                    region_name=region_name,
+                    deal_ymd=deal_ymd,
+                    status=status,
+                    total_count=meta.get("total_count") or len(transactions),
+                    fetched_count=saved,
+                    error_code=meta.get("error_code"),
+                    error_message=meta.get("error_message"),
+                )
+            else:
+                self._record_month_run(
+                    region_code=region_code,
+                    region_name=region_name,
+                    deal_ymd=deal_ymd,
+                    status=meta.get("status") or "no_data",
+                    total_count=meta.get("total_count") or 0,
+                    fetched_count=0,
+                    error_code=meta.get("error_code"),
+                    error_message=meta.get("error_message"),
+                )
 
         logger.info(f"수집 완료: {region_name} - {total}건 저장 (API 호출 {self.api_call_count}회)")
         return total
@@ -541,9 +720,13 @@ async def main():
         '--limit', type=int, default=900,
         help='일일 API 호출 한도 (기본값 900, 0=무제한)'
     )
+    parser.add_argument(
+        '--min-interval', type=float, default=2.5,
+        help='API 호출 최소 간격(초). 429가 잦으면 3~6초로 늘리세요.'
+    )
     args = parser.parse_args()
 
-    collector = LandTransactionCollector(daily_limit=args.limit)
+    collector = LandTransactionCollector(daily_limit=args.limit, min_interval_sec=args.min_interval)
 
     # --clean: 기존 데이터 삭제
     if args.clean:

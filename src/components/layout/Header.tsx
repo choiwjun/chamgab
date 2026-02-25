@@ -5,7 +5,6 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
-  Bell,
   Building2,
   ChevronDown,
   GraduationCap,
@@ -41,7 +40,6 @@ const NAV_APARTMENT: NavCategory = {
   links: [
     { href: '/search', label: '매물 검색' },
     { href: '/compare', label: '비교하기' },
-    { href: '/favorites', label: '관심목록', requiresAuth: true },
   ],
 }
 
@@ -59,10 +57,9 @@ const NAV_LAND: NavCategory = {
   id: 'land',
   label: '토지분석',
   icon: MapPin,
-  comingSoon: true,
   links: [
-    { href: '/land', label: '토지 분석', comingSoon: true },
-    { href: '/land/search', label: '토지 검색', comingSoon: true },
+    { href: '/land', label: '토지 분석' },
+    { href: '/land/search', label: '토지 검색' },
   ],
 }
 
@@ -93,7 +90,7 @@ function NavDropdown({
 
   const handleComingSoon = (e: React.MouseEvent) => {
     e.preventDefault()
-    alert('곧 오픈 예정입니다!')
+    alert('곧 오픈 예정입니다.')
     setIsOpen(false)
   }
 
@@ -164,15 +161,19 @@ function isCategoryActive(pathname: string, categoryId: string) {
     return (
       pathname.startsWith('/search') ||
       pathname.startsWith('/compare') ||
-      pathname.startsWith('/favorites') ||
       pathname.startsWith('/property') ||
       pathname.startsWith('/complex')
     )
   }
-  if (categoryId === 'business')
+  if (categoryId === 'business') {
     return pathname.startsWith('/business-analysis')
-  if (categoryId === 'school') return pathname.startsWith('/school-analysis')
-  if (categoryId === 'land') return pathname.startsWith('/land')
+  }
+  if (categoryId === 'school') {
+    return pathname.startsWith('/school-analysis')
+  }
+  if (categoryId === 'land') {
+    return pathname.startsWith('/land')
+  }
   return false
 }
 
@@ -264,26 +265,13 @@ export function Header() {
             </button>
 
             {isAuthenticated ? (
-              <>
-                <Link
-                  href="/notifications"
-                  className="relative rounded-lg p-2 transition-colors hover:bg-[#F2F4F6]"
-                  aria-label="Notifications"
-                >
-                  <Bell className="h-5 w-5 text-[#191F28]" aria-hidden="true" />
-                  <span
-                    className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-[#3182F6]"
-                    aria-hidden="true"
-                  />
-                </Link>
-                <Link
-                  href="/mypage"
-                  className="rounded-lg p-2 transition-colors hover:bg-[#F2F4F6]"
-                  aria-label="My page"
-                >
-                  <User className="h-5 w-5 text-[#191F28]" aria-hidden="true" />
-                </Link>
-              </>
+              <Link
+                href="/mypage"
+                className="rounded-lg p-2 transition-colors hover:bg-[#F2F4F6]"
+                aria-label="My page"
+              >
+                <User className="h-5 w-5 text-[#191F28]" aria-hidden="true" />
+              </Link>
             ) : (
               <Link
                 href="/auth/login"
@@ -312,7 +300,7 @@ export function Header() {
                   type="search"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="지역 또는 주소명으로 검색"
+                  placeholder="지역명 또는 주소명으로 검색"
                   className="w-full rounded-lg border border-[#E5E8EB] bg-white px-4 py-3 pl-11 text-[#191F28] placeholder-[#8B95A1] transition-colors focus:border-[#3182F6] focus:outline-none focus:ring-1 focus:ring-[#3182F6]"
                   autoFocus
                 />
@@ -371,7 +359,7 @@ export function Header() {
                               key={link.href}
                               className="block w-full px-4 py-2 text-left text-[#8B95A1] transition-colors hover:bg-[#F9FAFB]"
                               onClick={() => {
-                                alert('곧 오픈 예정입니다!')
+                                alert('곧 오픈 예정입니다.')
                                 setIsMobileMenuOpen(false)
                               }}
                             >

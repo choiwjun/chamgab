@@ -56,7 +56,8 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
 
     // -- Parse query parameters --
-    const q = searchParams.get('q') || undefined
+    const q =
+      searchParams.get('q') || searchParams.get('query') || undefined
     const sido = searchParams.get('sido') || undefined
     const sigungu = searchParams.get('sigungu') || undefined
     const landCategory = searchParams.get('land_category') || undefined
@@ -71,7 +72,8 @@ export async function GET(request: NextRequest) {
       Math.max(1, parseInt(searchParams.get('limit') || '20')),
       100
     )
-    const sort = searchParams.get('sort') || 'created_at:desc'
+    const sortRaw = (searchParams.get('sort') || 'created_at:desc').trim()
+    const orderRaw = (searchParams.get('order') || '').trim()
 
     // -- Validate land_category --
     if (
@@ -150,11 +152,18 @@ export async function GET(request: NextRequest) {
     }
 
     // -- Sort --
-    const [sortField, sortOrder] = sort.split(':')
+    let rawSortField = sortRaw
+    let rawSortOrderFromSort = ''
+    if (sortRaw.includes(':')) {
+      const parts = sortRaw.split(':')
+      rawSortField = parts[0] || 'created_at'
+      rawSortOrderFromSort = parts[1] || ''
+    }
+    const sortOrder = (rawSortOrderFromSort || orderRaw || 'desc').toLowerCase()
     const validField = VALID_SORT_FIELDS.includes(
-      sortField as (typeof VALID_SORT_FIELDS)[number]
+      rawSortField as (typeof VALID_SORT_FIELDS)[number]
     )
-      ? sortField
+      ? rawSortField
       : 'created_at'
     query = query.order(validField, {
       ascending: sortOrder === 'asc',
@@ -177,6 +186,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       items: data || [],
+      transactions: data || [],
       total: count || 0,
       page,
       limit,

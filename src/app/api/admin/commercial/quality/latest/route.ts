@@ -4,8 +4,6 @@ import { timingSafeEqual } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '../../../_utils'
 import {
-  COMMERCIAL_CALIBRATION_VERSION,
-  COMMERCIAL_QUALITY_VERSION,
   evaluateCommercialSnapshotGate,
   getLatestCommercialQualitySnapshot,
 } from '../_snapshot'
@@ -37,44 +35,40 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const snapshot = (await getLatestCommercialQualitySnapshot()) as
-      | Record<string, unknown>
-      | null
-
+    const snapshot = await getLatestCommercialQualitySnapshot()
     if (!snapshot) {
       return NextResponse.json(
         {
           as_of: new Date().toISOString(),
-          error: 'snapshot_missing',
-          pass: false,
-          checks: [],
-          metrics: null,
-          quality_version: COMMERCIAL_QUALITY_VERSION,
-          calibration_version: COMMERCIAL_CALIBRATION_VERSION,
+          status: 'NO_GO',
+          message: 'No commercial quality snapshot found',
+          commercial: {
+            pass: false,
+            checks: [],
+            metrics: null,
+            snapshot: null,
+          },
         },
-        { status: 404 }
+        { status: 200 }
       )
     }
 
-    const gate = evaluateCommercialSnapshotGate(snapshot)
+    const evaluated = evaluateCommercialSnapshotGate(snapshot)
     return NextResponse.json({
       as_of: new Date().toISOString(),
-      pass: gate.pass,
-      checks: gate.checks,
-      metrics: gate.metrics,
-      snapshot,
-      quality_version: COMMERCIAL_QUALITY_VERSION,
-      calibration_version: COMMERCIAL_CALIBRATION_VERSION,
+      status: evaluated.pass ? 'GO' : 'NO_GO',
+      commercial: {
+        pass: evaluated.pass,
+        checks: evaluated.checks,
+        metrics: evaluated.metrics,
+        snapshot,
+      },
     })
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : 'failed to read commercial quality snapshot',
-      },
-      { status: 500 }
-    )
+    const message =
+      error instanceof Error && error.message
+        ? error.message
+        : 'commercial quality latest fetch failed'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

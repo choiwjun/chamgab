@@ -1,19 +1,9 @@
 'use client'
 
-// @TASK P4-S4 - 마이페이지 콘텐츠 (Editorial Luxury 스타일)
-
 import { useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
-import {
-  User,
-  Heart,
-  Bell,
-  CreditCard,
-  LogOut,
-  ChevronRight,
-  Crown,
-} from 'lucide-react'
+import { User, CreditCard, LogOut, ChevronRight, Crown } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { ENABLE_FREE_OPEN_MODE } from '@/lib/features'
 
@@ -37,34 +27,47 @@ interface CreditData {
 
 export function MyPageContent() {
   const router = useRouter()
-  const { user, profile, signOut, isLoading } = useAuth()
+  const { user, profile, signOut, isLoading, refreshUser } = useAuth()
   const [credits, setCredits] = useState<CreditData | null>(null)
+  const [isAuthLoadDelayed, setIsAuthLoadDelayed] = useState(false)
 
-  // 마이페이지 진입 시 서버에서 최신 크레딧 데이터 조회
   useEffect(() => {
     if (!user) return
+
     fetch('/api/me/credits')
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (data?.profile) {
-          setCredits({
-            daily_credit_used: data.profile.daily_credit_used ?? 0,
-            daily_credit_limit: data.profile.daily_credit_limit ?? 20,
-            monthly_credit_used: data.profile.monthly_credit_used ?? 0,
-            monthly_credit_limit: data.profile.monthly_credit_limit ?? 400,
-            bonus_credits: data.profile.bonus_credits ?? 0,
-          })
-        }
+        if (!data?.profile) return
+
+        setCredits({
+          daily_credit_used: data.profile.daily_credit_used ?? 0,
+          daily_credit_limit: data.profile.daily_credit_limit ?? 20,
+          monthly_credit_used: data.profile.monthly_credit_used ?? 0,
+          monthly_credit_limit: data.profile.monthly_credit_limit ?? 400,
+          bonus_credits: data.profile.bonus_credits ?? 0,
+        })
       })
       .catch(() => {})
   }, [user])
+
+  useEffect(() => {
+    if (!isLoading) {
+      setIsAuthLoadDelayed(false)
+      return
+    }
+
+    const timeout = window.setTimeout(() => {
+      setIsAuthLoadDelayed(true)
+    }, 8000)
+
+    return () => window.clearTimeout(timeout)
+  }, [isLoading])
 
   const handleLogout = async () => {
     await signOut()
     window.location.href = '/'
   }
 
-  // 서버 데이터 우선, 없으면 AuthProvider profile fallback
   const dailyCreditsUsed =
     credits?.daily_credit_used ??
     (typeof profile?.daily_credit_used === 'number'
@@ -80,12 +83,12 @@ export function MyPageContent() {
     credits?.monthly_credit_used ??
     (typeof profile?.monthly_credit_used === 'number'
       ? profile.monthly_credit_used
-      : null)
+      : 0)
   const monthlyCreditsLimit =
     credits?.monthly_credit_limit ??
     (typeof profile?.monthly_credit_limit === 'number'
       ? profile.monthly_credit_limit
-      : null)
+      : 0)
   const bonusCredits =
     credits?.bonus_credits ??
     (typeof profile?.bonus_credits === 'number' ? profile.bonus_credits : 0)
@@ -93,30 +96,21 @@ export function MyPageContent() {
   const usagePercent =
     dailyCreditsLimit > 0 ? (dailyCreditsUsed / dailyCreditsLimit) * 100 : 0
 
-  const menuItems = [
-    {
-      icon: Heart,
-      label: '관심 매물',
-      href: '/favorites',
-    },
-    {
-      icon: Bell,
-      label: '알림',
-      href: '/notifications',
-    },
-    {
-      icon: CreditCard,
-      label: '결제 및 플랜',
-      href: '/checkout/plans',
-    },
-  ]
+  const menuItems = useMemo(
+    () =>
+      ENABLE_FREE_OPEN_MODE
+        ? []
+        : [
+            {
+              icon: CreditCard,
+              label: '결제 및 플랜',
+              href: '/checkout/plans',
+            },
+          ],
+    []
+  )
 
-  if (ENABLE_FREE_OPEN_MODE) {
-    menuItems.pop()
-  }
-
-  // Loading state
-  if (isLoading) {
+  if (isLoading && !isAuthLoadDelayed) {
     return (
       <div className="mx-auto max-w-lg px-6 py-12 md:px-8">
         <div className="mb-8">
@@ -135,7 +129,43 @@ export function MyPageContent() {
     )
   }
 
-  const displayName = profile?.name || user?.user_metadata?.name || '사용자'
+  if (isLoading && isAuthLoadDelayed) {
+    return (
+      <div className="mx-auto max-w-lg px-6 py-12 md:px-8">
+        <div className="rounded-xl border border-[#E5E8EB] bg-white p-6">
+          <h2 className="mb-2 text-lg font-semibold text-[#191F28]">
+            인증 확인이 지연되고 있습니다
+          </h2>
+          <p className="mb-5 text-sm text-[#4E5968]">
+            네트워크 또는 세션 상태 문제일 수 있습니다. 다시 시도하거나 로그인
+            페이지로 이동해 주세요.
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                setIsAuthLoadDelayed(false)
+                void refreshUser()
+              }}
+              className="rounded-lg bg-[#3182F6] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1B64DA]"
+            >
+              다시 시도
+            </button>
+            <button
+              onClick={() => router.push('/auth/login' as never)}
+              className="rounded-lg border border-[#E5E8EB] px-4 py-2 text-sm font-medium text-[#4E5968] transition-colors hover:bg-[#F9FAFB]"
+            >
+              로그인으로 이동
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const displayName =
+    profile?.name ||
+    (user?.user_metadata?.name as string | undefined) ||
+    '사용자'
   const displayEmail = user?.email || profile?.email || ''
   const displayTier = (profile?.tier || 'free') as
     | 'free'
@@ -145,7 +175,6 @@ export function MyPageContent() {
 
   return (
     <div className="mx-auto max-w-lg px-6 py-12 md:px-8">
-      {/* 헤더 */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -155,7 +184,6 @@ export function MyPageContent() {
         <h1 className="text-3xl font-bold text-[#191F28]">마이페이지</h1>
       </motion.div>
 
-      {/* 프로필 섹션 */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -192,7 +220,6 @@ export function MyPageContent() {
         </div>
       </motion.div>
 
-      {/* 사용량 섹션 */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -218,52 +245,44 @@ export function MyPageContent() {
         <div className="h-2 overflow-hidden rounded-full bg-[#F9FAFB]">
           <div
             className="h-full rounded-full bg-[#3182F6] transition-all duration-500"
-            style={{ width: `${usagePercent}%` }}
+            style={{ width: `${Math.min(usagePercent, 100)}%` }}
           />
         </div>
-        {(monthlyCreditsLimit !== null || bonusCredits > 0) && (
-          <div className="mt-4 grid grid-cols-1 gap-2 text-sm text-[#4E5968]">
-            {monthlyCreditsLimit !== null && (
-              <div>
-                이번 달: {monthlyCreditsUsed ?? 0} / {monthlyCreditsLimit}
-              </div>
-            )}
-            {bonusCredits > 0 && <div>보너스: {bonusCredits}</div>}
+        <div className="mt-4 grid grid-cols-1 gap-2 text-sm text-[#4E5968]">
+          <div>
+            이번 달 {monthlyCreditsUsed} / {monthlyCreditsLimit}
           </div>
-        )}
-        {!ENABLE_FREE_OPEN_MODE && displayTier === 'free' && (
-          <p className="mt-4 text-sm text-[#4E5968]">
-            Premium으로 업그레이드하면 더 많은 크레딧을 사용할 수 있어요
-          </p>
-        )}
+          {bonusCredits > 0 && <div>보너스 {bonusCredits}</div>}
+        </div>
       </motion.div>
 
-      {/* 메뉴 리스트 */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.3 }}
-        className="mb-8 overflow-hidden rounded-xl border border-[#E5E8EB] bg-white"
-      >
-        {menuItems.map((item, index) => (
-          <button
-            key={item.label}
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            onClick={() => router.push(item.href as any)}
-            className={`flex w-full items-center justify-between px-6 py-4 text-left transition hover:bg-[#F9FAFB] ${
-              index !== menuItems.length - 1 ? 'border-b border-[#E5E8EB]' : ''
-            }`}
-          >
-            <div className="flex items-center gap-4">
-              <item.icon className="h-5 w-5 text-[#8B95A1]" strokeWidth={1.5} />
-              <span className="font-medium text-[#191F28]">{item.label}</span>
-            </div>
-            <ChevronRight className="h-4 w-4 text-[#8B95A1]" />
-          </button>
-        ))}
-      </motion.div>
+      {menuItems.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.3 }}
+          className="mb-8 overflow-hidden rounded-xl border border-[#E5E8EB] bg-white"
+        >
+          {menuItems.map((item) => (
+            <button
+              key={item.label}
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              onClick={() => router.push(item.href as any)}
+              className="flex w-full items-center justify-between px-6 py-4 text-left transition hover:bg-[#F9FAFB]"
+            >
+              <div className="flex items-center gap-4">
+                <item.icon
+                  className="h-5 w-5 text-[#8B95A1]"
+                  strokeWidth={1.5}
+                />
+                <span className="font-medium text-[#191F28]">{item.label}</span>
+              </div>
+              <ChevronRight className="h-4 w-4 text-[#8B95A1]" />
+            </button>
+          ))}
+        </motion.div>
+      )}
 
-      {/* 로그아웃 버튼 */}
       <motion.button
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}

@@ -3,25 +3,20 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import type { SchoolAnalysisReport } from '@/types/school-analysis'
 import { createClient } from '@/lib/supabase/server'
-import { buildMockReport, readPublicShareToken } from '../../_helpers'
+
+function isTokenShapeValid(token: string): boolean {
+  const trimmed = token.trim()
+  if (trimmed.length < 24 || trimmed.length > 512) return false
+  return /^[A-Za-z0-9._-]+$/.test(trimmed)
+}
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ token: string }> }
 ) {
   const { token } = await params
-
-  const publicShare = readPublicShareToken(token)
-  if (publicShare) {
-    const report = buildMockReport({
-      userId: null,
-      districtCode: publicShare.district_code,
-    })
-
-    return NextResponse.json({
-      report: report as SchoolAnalysisReport,
-      expires_at: publicShare.expires_at,
-    })
+  if (!isTokenShapeValid(token)) {
+    return NextResponse.json({ error: 'invalid_share_token' }, { status: 400 })
   }
 
   const supabase = await createClient()
@@ -32,7 +27,7 @@ export async function GET(
 
   if (error) {
     return NextResponse.json(
-      { error: 'failed_to_resolve_share_token', detail: error.message },
+      { error: 'failed_to_resolve_share_token' },
       { status: 500 }
     )
   }

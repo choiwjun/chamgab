@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
+import { requireApiUser } from '@/app/api/_auth'
 import type {
   MetricProvenance,
   MetricValue,
@@ -11,7 +12,7 @@ import type {
   SchoolQualityScore,
 } from '@/types/school-analysis'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { buildMockSchoolDetail } from '../../_helpers'
+import { getSchoolAnalysisMode, schoolApiError } from '../../_helpers'
 
 function mv(
   value: number | null,
@@ -37,28 +38,58 @@ function round(v: number, p = 1) {
   return Math.round(v * f) / f
 }
 
+function asNumber(value: unknown): number | null {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
 export async function GET(
-  request: NextRequest,
+  _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireApiUser()
+  if ('response' in auth) return auth.response
+
+  if (getSchoolAnalysisMode() !== 'open') {
+    const payload = schoolApiError(
+      'preview_only_mode',
+      'School analysis detail is temporarily limited to preview mode.',
+      409
+    )
+    return NextResponse.json(payload, { status: payload.status })
+  }
+
   const { id } = await params
 
   try {
     const supabase = createAdminClient()
 
-    const { data: rows } = await supabase
+    const { data: rows, error: qualityError } = await supabase
       .from('vw_school_quality_latest')
       .select('*')
       .eq('school_id', id)
       .limit(1)
 
-    const row = rows?.[0]
-    if (!row) {
-      const school = buildMockSchoolDetail(id)
-      return NextResponse.json({ school })
+    if (qualityError) {
+      const payload = schoolApiError(
+        'pipeline_unavailable',
+        `School quality query failed: ${qualityError.message}`,
+        503
+      )
+      return NextResponse.json(payload, { status: payload.status })
     }
 
-    const { data: schoolInfo } = await supabase
+    const row = rows?.[0]
+    if (!row) {
+      const payload = schoolApiError(
+        'school_not_found',
+        'School not found.',
+        404
+      )
+      return NextResponse.json(payload, { status: payload.status })
+    }
+
+    const { data: schoolInfo, error: infoError } = await supabase
       .from('schools')
       .select(
         'school_name,school_level,district_code,sigungu_code,address,location,is_active'
@@ -66,28 +97,31 @@ export async function GET(
       .eq('school_id', id)
       .limit(1)
 
-    const info = schoolInfo?.[0]
-    const schoolName = info?.school_name || row.school_name || `School ${id}`
-    const schoolLevel = (info?.school_level ||
-      row.school_level ||
-      'other') as SchoolLevel
-    const districtCode = info?.district_code || row.district_code || ''
-    const address = info?.address || ''
+    if (infoError) {
+      const payload = schoolApiError(
+        'pipeline_unavailable',
+        `School info query failed: ${infoError.message}`,
+        503
+      )
+      return NextResponse.json(payload, { status: payload.status })
+    }
 
-    let districtName = `District ${districtCode}`
+    const info = schoolInfo?.[0]
+
+    let districtName = `District ${info?.district_code || row.district_code || ''}`
+    const districtCode = info?.district_code || row.district_code || ''
+
     if (districtCode) {
       const { data: districtRows } = await supabase
         .from('school_districts')
         .select('district_name')
         .eq('district_code', districtCode)
         .limit(1)
-      if (districtRows?.[0]) {
+      if (districtRows?.[0]?.district_name) {
         districtName = districtRows[0].district_name
       }
     }
 
-    // Fetch raw metrics JSONB — needed for provenance and university breakdown.
-    // collect_school_official_data.py writes grad_rate, avg_class_size, schoolinfo_schul_code, etc.
     const { data: metricsRows } = await supabase
       .from('school_metrics_official')
       .select('metrics')
@@ -99,18 +133,22 @@ export async function GET(
       string,
       number | string | null
     >
-    // Data from schoolinfo.go.kr API is genuinely official
+
     const hasOfficialSchoolinfo =
-      typeof rawMetrics.schoolinfo_schul_code === 'string'
+      typeof rawMetrics.schoolinfo_schul_code === 'string' ||
+      typeof rawMetrics.achievement_score === 'number' ||
+      typeof rawMetrics.progression_outcome_score === 'number'
+
     const officialProv: MetricProvenance = hasOfficialSchoolinfo
       ? 'official'
       : 'inferred'
 
-    const ach = Number(row.achievement_score) || 0
-    const prog = Number(row.progression_outcome_score) || 0
-    const env = Number(row.education_environment_score) || 0
-    const saf = Number(row.safety_life_score) || 0
-    const prg = Number(row.program_score) || 0
+    const ach = asNumber(row.achievement_score) ?? 0
+    const prog = asNumber(row.progression_outcome_score) ?? 0
+    const env = asNumber(row.education_environment_score) ?? 0
+    const saf = asNumber(row.safety_life_score) ?? 0
+    const prg = asNumber(row.program_score) ?? 0
+
     const overall = round(
       ach * 0.3 + prog * 0.25 + env * 0.15 + saf * 0.15 + prg * 0.15,
       1
@@ -118,10 +156,10 @@ export async function GET(
 
     const quality: SchoolQualityScore = {
       overall: mv(overall, officialProv),
-      achievement: mv(round(ach, 1), 'inferred'),
+      achievement: mv(round(ach, 1), officialProv),
       progression_outcome: mv(round(prog, 1), officialProv),
       education_environment: mv(round(env, 1), officialProv),
-      safety_life: mv(round(saf, 1), 'inferred'),
+      safety_life: mv(round(saf, 1), officialProv),
       programs: mv(round(prg, 1), 'inferred'),
     }
 
@@ -165,7 +203,6 @@ export async function GET(
       }
     }
 
-    // Data status
     const isActive = info?.is_active ?? true
     const dataStatus: SchoolDataStatus = !isActive
       ? 'inactive'
@@ -173,29 +210,26 @@ export async function GET(
         ? 'official'
         : 'name_mismatch'
 
-    // Confidence: higher when we have official data from schoolinfo.go.kr
-    const officialConf = hasOfficialSchoolinfo
-      ? 90
-      : row.achievement_score != null
-        ? 70
-        : 40
-    const inferredConf = 65
+    const officialConf = hasOfficialSchoolinfo ? 90 : 60
+    const inferredConf = 60
     const totalConf = round(officialConf * 0.7 + inferredConf * 0.3, 1)
 
     const school: SchoolDetail = {
       school_id: id,
-      school_name: schoolName,
-      school_level: schoolLevel,
+      school_name: info?.school_name || row.school_name || `School ${id}`,
+      school_level: (info?.school_level ||
+        row.school_level ||
+        'other') as SchoolLevel,
       district_code: districtCode,
       district_name: districtName,
-      address,
+      address: info?.address || '',
       location,
       data_freshness: row.source_updated_at || new Date().toISOString(),
       confidence_breakdown: {
         official_confidence: officialConf,
         inferred_confidence: inferredConf,
         total_confidence: totalConf,
-        formula_version: 'v1.0.0',
+        formula_version: 'v2.0.0',
       },
       quality,
       progression,
@@ -204,12 +238,12 @@ export async function GET(
     }
 
     return NextResponse.json({ school })
-  } catch (err) {
-    console.error(
-      '[school-analysis/schools] DB query failed, falling back to mock:',
-      err
+  } catch {
+    const payload = schoolApiError(
+      'pipeline_unavailable',
+      'School detail pipeline unavailable.',
+      503
     )
-    const school = buildMockSchoolDetail(id)
-    return NextResponse.json({ school })
+    return NextResponse.json(payload, { status: payload.status })
   }
 }

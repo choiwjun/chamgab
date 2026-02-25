@@ -1,138 +1,216 @@
 #!/usr/bin/env python3
-"""Check latest commercial quality snapshot and write gate report."""
+"""Check commercial data quality gate from latest snapshot."""
 
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from pathlib import Path
+from typing import Any, Dict
 
-from scripts._admin_api import (
-    load_env_if_needed,
-    request_json,
-    resolve_admin_token,
-    resolve_web_base_url,
-)
-from scripts._write_gate import write_gate_report
+from app.core.database import get_supabase_client
 
-logger = logging.getLogger("check_commercial_data_quality")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger("check_commercial_data_quality")
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+REPORTS_DIR = PROJECT_ROOT / "reports"
+REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def env_bool(name: str, default: bool) -> bool:
+def _to_float(value: Any) -> float | None:
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+
+def _snapshot_age_hours(snapshot_time: str | None) -> float | None:
+    if not snapshot_time:
+        return None
+    try:
+        ts = snapshot_time.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(ts)
+        age = (datetime.now(timezone.utc) - dt.astimezone(timezone.utc)).total_seconds() / 3600
+        return round(age, 2)
+    except Exception:
+        return None
+
+
+def save_report(report: Dict[str, Any]) -> None:
+    latest = REPORTS_DIR / "commercial_data_quality_latest.json"
+    history = REPORTS_DIR / f"commercial_data_quality_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    payload = json.dumps(report, ensure_ascii=False, indent=2)
+    latest.write_text(payload, encoding="utf-8")
+    history.write_text(payload, encoding="utf-8")
+
+
+def _env_bool(name: str, default: bool) -> bool:
     raw = os.getenv(name)
     if raw is None:
         return default
-    normalized = raw.strip().lower()
-    if normalized in {"1", "true", "yes", "on"}:
-        return True
-    if normalized in {"0", "false", "no", "off"}:
-        return False
-    return default
-
-
-def evaluate(payload: Dict[str, Any] | None) -> Dict[str, Any]:
-    checks = payload.get("checks") if isinstance(payload, dict) else None
-    checks_list = checks if isinstance(checks, list) else []
-    missing_metrics: List[str] = []
-
-    for item in checks_list:
-        if not isinstance(item, dict):
-            continue
-        if item.get("available") is False:
-            key = str(item.get("key") or "").strip()
-            if key:
-                missing_metrics.append(key)
-
-    gate_pass = bool(isinstance(payload, dict) and payload.get("pass") is True)
-    return {
-        "gate_pass": gate_pass,
-        "missing_metrics": missing_metrics,
-        "missing_metrics_count": len(missing_metrics),
-        "checks_count": len(checks_list),
-        "metrics": payload.get("metrics") if isinstance(payload, dict) else None,
-        "checks": checks_list,
-    }
-
-
-def run(args: argparse.Namespace) -> Dict[str, Any]:
-    base_url = resolve_web_base_url()
-    token = resolve_admin_token()
-    response = request_json(
-        method="GET",
-        base_url=base_url,
-        path="/api/admin/commercial/quality/latest",
-        admin_token=token,
-        timeout_sec=args.timeout_sec,
-    )
-
-    payload = response.get("payload") if isinstance(response.get("payload"), dict) else None
-    evaluated = evaluate(payload)
-    hard_fail = (not response["ok"]) or (not evaluated["gate_pass"])
-
-    return {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "summary": {
-            "hard_fail": hard_fail,
-            "gate_pass": evaluated["gate_pass"],
-            "missing_metrics_count": evaluated["missing_metrics_count"],
-            "checks_count": evaluated["checks_count"],
-            "source_status": response["status"],
-        },
-        "source": {
-            "url": response["url"],
-            "status": response["status"],
-            "ok": response["ok"],
-        },
-        "checks": evaluated["checks"],
-        "missing_metrics": evaluated["missing_metrics"],
-        "metrics": evaluated["metrics"],
-        "payload": payload,
-    }
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Generate commercial_data_quality_latest.json from web gate API",
-    )
-    parser.add_argument("--timeout-sec", type=float, default=45.0)
-    parser.add_argument(
-        "--soft-fail",
-        action="store_true",
-        help="Never return exit code 1 on gate FAIL.",
-    )
-    parser.add_argument(
-        "--strict",
-        action="store_true",
-        help="Return exit code 1 on gate FAIL regardless of COMMERCIAL_QUALITY_SOFT_FAIL.",
-    )
-    return parser.parse_args()
+    value = raw.strip().lower()
+    return value in {"1", "true", "yes", "y", "on"}
 
 
 def main() -> None:
-    load_env_if_needed()
-    args = parse_args()
-    report = run(args)
-    latest_path, history_path = write_gate_report(
-        prefix="commercial_data_quality",
-        report=report,
+    parser = argparse.ArgumentParser(description="Check commercial data quality")
+    parser.add_argument("--max-low-prob-high-confidence", type=float, default=3.0)
+    parser.add_argument("--min-high-prob-bucket", type=float, default=5.0)
+    parser.add_argument("--max-high-prob-bucket", type=float, default=20.0)
+    parser.add_argument("--min-sigungu-coverage", type=int, default=227)
+    parser.add_argument("--max-freshness-months", type=int, default=3)
+    parser.add_argument("--max-snapshot-age-hours", type=int, default=24)
+    parser.add_argument(
+        "--soft-fail",
+        action="store_true",
+        help="Do not exit with error code when gate fails (warning mode).",
     )
-    logger.info("Report written: latest=%s history=%s", latest_path, history_path)
+    parser.add_argument(
+        "--strict-exit",
+        action="store_true",
+        help="Always exit with non-zero when gate fails.",
+    )
+    args = parser.parse_args()
 
-    hard_fail = bool(report.get("summary", {}).get("hard_fail"))
-    configured_soft_fail = env_bool("COMMERCIAL_QUALITY_SOFT_FAIL", True)
-    soft_fail = True if args.soft_fail else configured_soft_fail
-    if args.strict:
+    soft_fail = _env_bool("COMMERCIAL_QUALITY_SOFT_FAIL", True)
+    if args.soft_fail:
+        soft_fail = True
+    if args.strict_exit:
         soft_fail = False
 
-    logger.info(
-        "Commercial quality hard_fail=%s soft_fail=%s",
-        hard_fail,
-        soft_fail,
+    client = get_supabase_client()
+
+    snapshot_res = (
+        client.table("commercial_quality_snapshots")
+        .select("*")
+        .order("computed_at", desc=True)
+        .limit(1)
+        .execute()
     )
-    if hard_fail and not soft_fail:
+    snapshot = (snapshot_res.data or [None])[0]
+
+    coverage_res = client.table("vw_commercial_coverage_freshness").select("*").limit(1).execute()
+    coverage = (coverage_res.data or [None])[0]
+
+    if not snapshot:
+        report = {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "summary": {
+                "hard_fail": True,
+                "reason": "snapshot_missing",
+                "soft_fail_enabled": soft_fail,
+                "exit_mode": "soft_fail" if soft_fail else "strict",
+                "exit_code": 0 if soft_fail else 1,
+            },
+            "checks": {},
+        }
+        save_report(report)
+        if soft_fail:
+            logger.warning("No commercial quality snapshot found (soft-fail mode)")
+            return
+        logger.error("No commercial quality snapshot found")
+        raise SystemExit(1)
+
+    low_prob_high_conf = _to_float(snapshot.get("low_prob_high_confidence_ratio_pct"))
+    high_prob_bucket = _to_float(snapshot.get("high_prob_bucket_pct"))
+    freshness_months = _to_float(snapshot.get("freshness_months_max"))
+    snapshot_age_hours = _snapshot_age_hours(snapshot.get("computed_at"))
+
+    coverage_business = _to_float(snapshot.get("sigungu_coverage_business"))
+    coverage_sales = _to_float(snapshot.get("sigungu_coverage_sales"))
+    coverage_store = _to_float(snapshot.get("sigungu_coverage_store"))
+    if coverage and coverage_business is None:
+        coverage_business = _to_float(coverage.get("sigungu_coverage_business"))
+        coverage_sales = _to_float(coverage.get("sigungu_coverage_sales"))
+        coverage_store = _to_float(coverage.get("sigungu_coverage_store"))
+
+    min_coverage = None
+    if coverage_business is not None and coverage_sales is not None and coverage_store is not None:
+        min_coverage = min(coverage_business, coverage_sales, coverage_store)
+
+    checks = {
+        "low_prob_high_confidence_ratio_pct": {
+            "value": low_prob_high_conf,
+            "threshold": args.max_low_prob_high_confidence,
+            "status": "pass"
+            if low_prob_high_conf is not None and low_prob_high_conf <= args.max_low_prob_high_confidence
+            else "fail",
+        },
+        "high_prob_bucket_pct": {
+            "value": high_prob_bucket,
+            "threshold": [args.min_high_prob_bucket, args.max_high_prob_bucket],
+            "status": "pass"
+            if high_prob_bucket is not None
+            and args.min_high_prob_bucket <= high_prob_bucket <= args.max_high_prob_bucket
+            else "fail",
+        },
+        "sigungu_coverage": {
+            "value": min_coverage,
+            "threshold": args.min_sigungu_coverage,
+            "status": "pass"
+            if min_coverage is not None and min_coverage >= args.min_sigungu_coverage
+            else "fail",
+            "by_table": {
+                "business_statistics": coverage_business,
+                "sales_statistics": coverage_sales,
+                "store_statistics": coverage_store,
+            },
+        },
+        "freshness_months_max": {
+            "value": freshness_months,
+            "threshold": args.max_freshness_months,
+            "status": "pass"
+            if freshness_months is not None and freshness_months <= args.max_freshness_months
+            else "fail",
+        },
+        "snapshot_age_hours": {
+            "value": snapshot_age_hours,
+            "threshold": args.max_snapshot_age_hours,
+            "status": "pass"
+            if snapshot_age_hours is not None and snapshot_age_hours <= args.max_snapshot_age_hours
+            else "fail",
+        },
+        "mojibake_detected_count": {
+            "value": _to_float((snapshot.get("details") or {}).get("mojibake_detected_count")),
+            "threshold": 0,
+            "status": "pass"
+            if _to_float((snapshot.get("details") or {}).get("mojibake_detected_count")) == 0
+            else "fail",
+        },
+    }
+
+    hard_fail = any(item.get("status") == "fail" for item in checks.values())
+    report = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "summary": {
+            "hard_fail": hard_fail,
+            "soft_fail_enabled": soft_fail,
+            "exit_mode": "soft_fail" if soft_fail else "strict",
+            "exit_code": 0 if (soft_fail or not hard_fail) else 1,
+            "snapshot_id": snapshot.get("id"),
+            "combo_count": snapshot.get("combo_count"),
+        },
+        "checks": checks,
+        "snapshot": {
+            "id": snapshot.get("id"),
+            "computed_at": snapshot.get("computed_at"),
+            "pass": snapshot.get("pass"),
+            "details": snapshot.get("details"),
+        },
+    }
+
+    save_report(report)
+    logger.info("Commercial quality check saved. hard_fail=%s", hard_fail)
+    if hard_fail:
+        if soft_fail:
+            logger.warning("Commercial quality gate failed, but soft-fail mode is enabled")
+            return
         raise SystemExit(1)
 
 

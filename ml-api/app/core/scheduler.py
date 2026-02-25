@@ -32,14 +32,9 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 MODELS_DIR = PROJECT_ROOT / "app" / "models"
 SCRIPTS_DIR = PROJECT_ROOT / "scripts"
 LOGS_DIR = PROJECT_ROOT / "logs"
-REPORTS_DIR = PROJECT_ROOT / "reports"
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
-REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
 CRITICAL_PIPELINE_JOB_ORDER = (
-    "chamgab_gap_recovery_full",
-    "school_full_rebuild",
-    "check_school_data_quality",
     "collect_commercial",
     "build_commercial_quality_snapshot",
     "check_commercial_data_quality",
@@ -637,16 +632,6 @@ class DataScheduler:
                 raise RuntimeError("collect_land_characteristics failed")
             step_results.append("collect_land_characteristics")
 
-            ok = await self._run_script(
-                "scripts.check_land_collection_status",
-                timeout=900,
-            )
-            if not ok:
-                self.last_land_collection_ok = False
-                self.last_land_collection_error = "check_land_collection_status failed"
-                raise RuntimeError("check_land_collection_status failed")
-            step_results.append("check_land_collection_status")
-
             self.last_land_collection_ok = True
             self.current_job_result = {"steps": step_results}
         finally:
@@ -706,7 +691,7 @@ class DataScheduler:
         if not ok:
             raise RuntimeError("fix_complex_names_from_transactions failed")
 
-    async def collect_commercial_data_only(self) -> None:
+    async def weekly_commercial_collection(self) -> None:
         self.last_collection_job = f"commercial_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         ok = await self._run_script(
             "scripts.collect_business_statistics",
@@ -715,12 +700,18 @@ class DataScheduler:
         )
         if not ok:
             raise RuntimeError("collect_business_statistics failed")
-        self.current_job_result = {"step": "collect_business_statistics"}
-
-    async def weekly_commercial_collection(self) -> None:
-        await self.collect_commercial_data_only()
-        await self.build_commercial_quality_snapshot()
-        await self.check_commercial_data_quality_now()
+        ok_snapshot = await self._run_script(
+            "scripts.build_commercial_quality_snapshot",
+            timeout=1800,
+        )
+        if not ok_snapshot:
+            raise RuntimeError("build_commercial_quality_snapshot failed")
+        ok_quality = await self._run_script(
+            "scripts.check_commercial_data_quality",
+            timeout=900,
+        )
+        if not ok_quality:
+            raise RuntimeError("check_commercial_data_quality failed")
         self.current_job_result = {
             "steps": [
                 "collect_business_statistics",
@@ -742,19 +733,64 @@ class DataScheduler:
         self.current_job_result = {"step": "check_commercial_data_quality"}
 
     async def check_launch_readiness_gate(self) -> None:
-        ok = await self._run_script("scripts.check_launch_readiness_gate", timeout=900)
-        summary = self._load_summary_json(REPORTS_DIR / "launch_readiness_gate_latest.json")
-        if summary is None:
-            summary = {
-                "generated_at": datetime.now().isoformat(),
-                "ok": ok,
-                "error": "launch_readiness_gate_latest.json missing",
+        app_base_url = (
+            os.getenv("APP_BASE_URL")
+            or os.getenv("NEXT_PUBLIC_APP_URL")
+            or os.getenv("WEB_BASE_URL")
+            or ""
+        ).strip()
+        if not app_base_url:
+            raise RuntimeError(
+                "APP_BASE_URL (or NEXT_PUBLIC_APP_URL / WEB_BASE_URL) is required"
+            )
+
+        admin_token = (
+            os.getenv("ML_ADMIN_TOKEN")
+            or os.getenv("SCHEDULER_ADMIN_TOKEN")
+            or os.getenv("ADMIN_API_TOKEN")
+            or ""
+        ).strip()
+        if not admin_token:
+            raise RuntimeError(
+                "ML_ADMIN_TOKEN (or SCHEDULER_ADMIN_TOKEN / ADMIN_API_TOKEN) is required"
+            )
+
+        base = app_base_url.rstrip("/")
+        targets = {
+            "commercial_quality_latest": "/api/admin/commercial/quality/latest",
+            "launch_readiness": "/api/admin/data-quality/launch-readiness",
+        }
+        headers = {
+            "Accept": "application/json",
+            "X-Admin-Token": admin_token,
+        }
+
+        results: Dict[str, Any] = {}
+        all_ok = True
+        for key, api_path in targets.items():
+            url = f"{base}{api_path}"
+            resp = await self._http_get_json(url, headers=headers, timeout=30)
+            results[key] = {
+                "url": url,
+                "ok": bool(resp.get("ok")) and int(resp.get("status") or 0) == 200,
+                "status": int(resp.get("status") or 0),
+                "payload": resp.get("payload"),
+                "error": resp.get("error"),
             }
+            if not results[key]["ok"]:
+                all_ok = False
+
+        summary: Dict[str, Any] = {
+            "generated_at": datetime.now().isoformat(),
+            "app_base_url": base,
+            "ok": all_ok,
+            "results": results,
+        }
         self._write_summary_json(LOGS_DIR / "launch_readiness_gate_latest.json", summary)
         self.last_launch_readiness_gate_summary = summary
         self.current_job_result = summary
 
-        if not ok:
+        if not all_ok:
             raise RuntimeError("check_launch_readiness_gate failed")
 
     async def weekly_business_training(self) -> None:
@@ -864,7 +900,12 @@ class DataScheduler:
 
     async def run_chamgab_autofix_apply(self) -> None:
         if self._chamgab_autofix_lock.locked():
-            raise RuntimeError("chamgab_autofix_apply is already running")
+            self.current_job_result = {
+                "step": "chamgab_autofix_apply",
+                "skipped": True,
+                "reason": "already_running",
+            }
+            return
 
         async with self._chamgab_autofix_lock:
             threshold = self._env_float("CHAMGAB_AUTOFIX_THRESHOLD", 25.0, min_value=0.0)
@@ -1001,22 +1042,7 @@ class DataScheduler:
                     "CHAMGAB_GAP_RECOVERY_RUN_AUTOFIX_APPLY", True
                 ),
                 "chain_school_full_rebuild": self._env_bool(
-                    "CHAMGAB_GAP_RECOVERY_CHAIN_SCHOOL_FULL_REBUILD", True
-                ),
-                "chain_collect_commercial": self._env_bool(
-                    "CHAMGAB_GAP_RECOVERY_CHAIN_COLLECT_COMMERCIAL", True
-                ),
-                "chain_build_commercial_quality_snapshot": self._env_bool(
-                    "CHAMGAB_GAP_RECOVERY_CHAIN_BUILD_COMMERCIAL_QUALITY_SNAPSHOT",
-                    True,
-                ),
-                "chain_check_commercial_data_quality": self._env_bool(
-                    "CHAMGAB_GAP_RECOVERY_CHAIN_CHECK_COMMERCIAL_DATA_QUALITY",
-                    True,
-                ),
-                "chain_check_launch_readiness_gate": self._env_bool(
-                    "CHAMGAB_GAP_RECOVERY_CHAIN_CHECK_LAUNCH_READINESS_GATE",
-                    True,
+                    "CHAMGAB_GAP_RECOVERY_CHAIN_SCHOOL_FULL_REBUILD", False
                 ),
                 "link_since_days": self._env_int(
                     "CHAMGAB_GAP_RECOVERY_LINK_SINCE_DAYS", 365, min_value=1
@@ -1082,26 +1108,6 @@ class DataScheduler:
                 await _run_step(
                     "school_full_rebuild",
                     self.school_full_rebuild(),
-                )
-            if cfg["chain_collect_commercial"]:
-                await _run_step(
-                    "collect_commercial",
-                    self.collect_commercial_data_only(),
-                )
-            if cfg["chain_build_commercial_quality_snapshot"]:
-                await _run_step(
-                    "build_commercial_quality_snapshot",
-                    self.build_commercial_quality_snapshot(),
-                )
-            if cfg["chain_check_commercial_data_quality"]:
-                await _run_step(
-                    "check_commercial_data_quality",
-                    self.check_commercial_data_quality_now(),
-                )
-            if cfg["chain_check_launch_readiness_gate"]:
-                await _run_step(
-                    "check_launch_readiness_gate",
-                    self.check_launch_readiness_gate(),
                 )
             summary["ok"] = True
         except Exception as exc:
@@ -1181,12 +1187,13 @@ class DataScheduler:
         ok_marts = await self._run_script("scripts.build_school_analysis_marts", timeout=900)
         if not ok_marts:
             raise RuntimeError("build_school_analysis_marts failed")
-        ok_quality = await self._run_script("scripts.check_school_data_quality", timeout=900)
-        if not ok_quality:
-            raise RuntimeError("check_school_data_quality failed")
-        self.current_job_result = {
-            "steps": ["build_school_analysis_marts", "check_school_data_quality"]
-        }
+        steps = ["build_school_analysis_marts"]
+        if self._env_bool("BUILD_SCHOOL_MARTS_RUN_QUALITY_CHECK", False):
+            ok_quality = await self._run_script("scripts.check_school_data_quality", timeout=900)
+            if not ok_quality:
+                raise RuntimeError("check_school_data_quality failed")
+            steps.append("check_school_data_quality")
+        self.current_job_result = {"steps": steps}
 
     async def check_school_data_quality_now(self) -> None:
         ok = await self._run_script("scripts.check_school_data_quality", timeout=900)
@@ -1195,7 +1202,7 @@ class DataScheduler:
         self.current_job_result = {"step": "check_school_data_quality"}
 
     async def check_land_collection_status_now(self) -> None:
-        ok = await self._run_script("scripts.check_land_collection_status", timeout=900)
+        ok = await self._run_script("scripts.check_land_collection_status", timeout=1200)
         if not ok:
             raise RuntimeError("check_land_collection_status failed")
         self.current_job_result = {"step": "check_land_collection_status"}
@@ -1230,10 +1237,25 @@ class DataScheduler:
         self.current_job_result = {"step": "collect_school_official_data", "year": year}
 
     async def startup_catchup(self) -> None:
-        try:
-            await self.monthly_collection()
-        except Exception as exc:
-            print(f"[scheduler] startup catchup failed: {exc}")
+        # Keep startup catchup lightweight to avoid large backfills during deploy/restart.
+        steps = [
+            "build_commercial_quality_snapshot",
+            "check_commercial_data_quality",
+            "check_land_collection_status",
+            "check_launch_readiness_gate",
+        ]
+        step_results: list[Dict[str, Any]] = []
+        for step in steps:
+            try:
+                await self._run_job_once(step)
+                step_results.append({"step": step, "ok": True})
+            except Exception as exc:
+                step_results.append({"step": step, "ok": False, "error": str(exc)})
+                print(f"[scheduler] startup catchup step failed: {step} ({exc})")
+        self.current_job_result = {
+            "step": "startup_catchup",
+            "steps": step_results,
+        }
 
     async def watchdog_critical_pipeline(self) -> None:
         now = datetime.now()
@@ -1271,7 +1293,7 @@ class DataScheduler:
         async with self._watchdog_lock:
             now = datetime.now()
             job_order = self._watchdog_job_order()
-            queue_missing = self._env_bool("SCHEDULER_WATCHDOG_QUEUE_MISSING_JOBS", True)
+            queue_missing = self._env_bool("SCHEDULER_WATCHDOG_QUEUE_MISSING_JOBS", False)
             requeue_failed = self._env_bool("SCHEDULER_WATCHDOG_REQUEUE_FAILED", True)
             cooldown_sec = self._env_int("SCHEDULER_WATCHDOG_COOLDOWN_SEC", 300, min_value=30)
             max_requeue_per_job = self._env_int(
@@ -1341,15 +1363,21 @@ class DataScheduler:
         if self.is_running:
             return
 
+        daily_collection_hour = self._env_int("DAILY_COLLECTION_CRON_HOUR", 3, min_value=0)
+        daily_collection_minute = self._env_int("DAILY_COLLECTION_CRON_MINUTE", 0, min_value=0)
         self.scheduler.add_job(
-            self.daily_collection,
-            CronTrigger(hour=6, minute=0),
+            self.run_now,
+            CronTrigger(hour=daily_collection_hour, minute=daily_collection_minute),
             id="daily_collection",
             name="daily apartment collection",
             replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+            misfire_grace_time=3600,
+            args=["daily"],
         )
-        land_collection_hour = self._env_int("LAND_COLLECTION_CRON_HOUR", 6, min_value=0)
-        land_collection_minute = self._env_int("LAND_COLLECTION_CRON_MINUTE", 20, min_value=0)
+        land_collection_hour = self._env_int("LAND_COLLECTION_CRON_HOUR", 1, min_value=0)
+        land_collection_minute = self._env_int("LAND_COLLECTION_CRON_MINUTE", 0, min_value=0)
         self.scheduler.add_job(
             self.run_now,
             CronTrigger(hour=land_collection_hour, minute=land_collection_minute),
@@ -1362,8 +1390,8 @@ class DataScheduler:
             args=["collect_land_daily"],
         )
         if self._env_bool("LAND_LOCATION_CRON_ENABLED", True):
-            land_location_hour = self._env_int("LAND_LOCATION_CRON_HOUR", 7, min_value=0)
-            land_location_minute = self._env_int("LAND_LOCATION_CRON_MINUTE", 10, min_value=0)
+            land_location_hour = self._env_int("LAND_LOCATION_CRON_HOUR", 2, min_value=0)
+            land_location_minute = self._env_int("LAND_LOCATION_CRON_MINUTE", 0, min_value=0)
             self.scheduler.add_job(
                 self.run_now,
                 CronTrigger(hour=land_location_hour, minute=land_location_minute),
@@ -1375,49 +1403,38 @@ class DataScheduler:
                 misfire_grace_time=3600,
                 args=["collect_land_locations"],
             )
-        land_quality_hour = self._env_int("LAND_QUALITY_CHECK_CRON_HOUR", 7, min_value=0)
-        land_quality_minute = self._env_int("LAND_QUALITY_CHECK_CRON_MINUTE", 30, min_value=0)
         self.scheduler.add_job(
             self.run_now,
-            CronTrigger(hour=land_quality_hour, minute=land_quality_minute),
-            id="check_land_collection_status",
-            name="check land collection status",
-            replace_existing=True,
-            coalesce=True,
-            max_instances=1,
-            misfire_grace_time=3600,
-            args=["check_land_collection_status"],
-        )
-        self.scheduler.add_job(
-            self.link_complexes_from_transactions,
-            CronTrigger(hour=4, minute=20),
+            CronTrigger(hour=3, minute=40),
             id="link_complexes_from_transactions",
             name="link complexes from transactions",
             replace_existing=True,
             coalesce=True,
             max_instances=1,
             misfire_grace_time=3600,
-            args=[90],
+            args=["link_complexes"],
         )
         self.scheduler.add_job(
-            self.fix_complex_names_from_transactions,
-            CronTrigger(hour=4, minute=40),
+            self.run_now,
+            CronTrigger(hour=4, minute=0),
             id="fix_complex_names_from_transactions",
             name="fix complex names from transactions",
             replace_existing=True,
             coalesce=True,
             max_instances=1,
             misfire_grace_time=3600,
+            args=["fix_complex_names"],
         )
         self.scheduler.add_job(
-            self.run_chamgab_autofix_apply,
-            CronTrigger(hour=4, minute=55),
+            self.run_now,
+            CronTrigger(hour=4, minute=20),
             id="chamgab_autofix_apply",
             name="chamgab autofix apply",
             replace_existing=True,
             coalesce=True,
             max_instances=1,
             misfire_grace_time=3600,
+            args=["chamgab_autofix_apply"],
         )
         if self._env_bool("CHAMGAB_GAP_RECOVERY_CRON_ENABLED", True):
             chamgab_gap_recovery_day = (
@@ -1445,11 +1462,15 @@ class DataScheduler:
                 args=["chamgab_gap_recovery_full"],
             )
         self.scheduler.add_job(
-            self.weekly_collection,
+            self.run_now,
             CronTrigger(day_of_week="mon", hour=7, minute=0),
             id="weekly_collection",
             name="weekly apartment collection",
             replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+            misfire_grace_time=3600,
+            args=["weekly"],
         )
         collect_commercial_day = os.getenv("COLLECT_COMMERCIAL_CRON_DAY_OF_WEEK", "fri").strip() or "fri"
         collect_commercial_hour = self._env_int("COLLECT_COMMERCIAL_CRON_HOUR", 2, min_value=0)
@@ -1470,10 +1491,10 @@ class DataScheduler:
             args=["collect_commercial"],
         )
         build_commercial_hour = self._env_int(
-            "BUILD_COMMERCIAL_QUALITY_SNAPSHOT_CRON_HOUR", 3, min_value=0
+            "BUILD_COMMERCIAL_QUALITY_SNAPSHOT_CRON_HOUR", 6, min_value=0
         )
         build_commercial_minute = self._env_int(
-            "BUILD_COMMERCIAL_QUALITY_SNAPSHOT_CRON_MINUTE", 10, min_value=0
+            "BUILD_COMMERCIAL_QUALITY_SNAPSHOT_CRON_MINUTE", 0, min_value=0
         )
         self.scheduler.add_job(
             self.run_now,
@@ -1486,8 +1507,8 @@ class DataScheduler:
             misfire_grace_time=3600,
             args=["build_commercial_quality_snapshot"],
         )
-        check_commercial_hour = self._env_int("CHECK_COMMERCIAL_DATA_QUALITY_CRON_HOUR", 3, min_value=0)
-        check_commercial_minute = self._env_int("CHECK_COMMERCIAL_DATA_QUALITY_CRON_MINUTE", 20, min_value=0)
+        check_commercial_hour = self._env_int("CHECK_COMMERCIAL_DATA_QUALITY_CRON_HOUR", 6, min_value=0)
+        check_commercial_minute = self._env_int("CHECK_COMMERCIAL_DATA_QUALITY_CRON_MINUTE", 10, min_value=0)
         self.scheduler.add_job(
             self.run_now,
             CronTrigger(hour=check_commercial_hour, minute=check_commercial_minute),
@@ -1499,7 +1520,20 @@ class DataScheduler:
             misfire_grace_time=3600,
             args=["check_commercial_data_quality"],
         )
-        gate_check_hour = self._env_int("CHECK_LAUNCH_READINESS_GATE_CRON_HOUR", 3, min_value=0)
+        check_land_hour = self._env_int("CHECK_LAND_COLLECTION_STATUS_CRON_HOUR", 6, min_value=0)
+        check_land_minute = self._env_int("CHECK_LAND_COLLECTION_STATUS_CRON_MINUTE", 20, min_value=0)
+        self.scheduler.add_job(
+            self.run_now,
+            CronTrigger(hour=check_land_hour, minute=check_land_minute),
+            id="check_land_collection_status",
+            name="check land collection status",
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+            misfire_grace_time=3600,
+            args=["check_land_collection_status"],
+        )
+        gate_check_hour = self._env_int("CHECK_LAUNCH_READINESS_GATE_CRON_HOUR", 6, min_value=0)
         gate_check_minute = self._env_int("CHECK_LAUNCH_READINESS_GATE_CRON_MINUTE", 30, min_value=0)
         self.scheduler.add_job(
             self.run_now,
@@ -1513,37 +1547,39 @@ class DataScheduler:
             args=["check_launch_readiness_gate"],
         )
         self.scheduler.add_job(
-            self.weekly_business_training,
+            self.run_now,
             CronTrigger(day_of_week="tue", hour=3, minute=0),
             id="weekly_business_training",
             name="weekly business training",
             replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+            misfire_grace_time=3600,
+            args=["train_business"],
         )
         self.scheduler.add_job(
-            self.monthly_collection,
+            self.run_now,
             CronTrigger(day=1, hour=8, minute=0),
             id="monthly_collection",
             name="monthly nationwide collection",
             replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+            misfire_grace_time=3600,
+            args=["monthly"],
         )
         self.scheduler.add_job(
-            self.monthly_full_training,
+            self.run_now,
             CronTrigger(day=2, hour=3, minute=0),
             id="monthly_full_training",
             name="monthly full model training",
             replace_existing=True,
-        )
-
-        self.scheduler.add_job(
-            self.collect_school_base_monthly,
-            CronTrigger(day=1, hour=5, minute=10),
-            id="collect_school_base_monthly",
-            name="school base monthly collection",
-            replace_existing=True,
             coalesce=True,
             max_instances=1,
             misfire_grace_time=3600,
+            args=["train_all"],
         )
+
         self.scheduler.add_job(
             self.run_now,
             CronTrigger(day=1, hour=4, minute=30),
@@ -1555,18 +1591,31 @@ class DataScheduler:
             misfire_grace_time=3600,
             args=["school_full_rebuild"],
         )
+        if self._env_bool("SCHOOL_MONTHLY_PARTIAL_CRON_ENABLED", False):
+            self.scheduler.add_job(
+                self.run_now,
+                CronTrigger(day=1, hour=5, minute=10),
+                id="collect_school_base_monthly",
+                name="school base monthly collection",
+                replace_existing=True,
+                coalesce=True,
+                max_instances=1,
+                misfire_grace_time=3600,
+                args=["collect_school_base_monthly"],
+            )
+            self.scheduler.add_job(
+                self.run_now,
+                CronTrigger(day=1, hour=5, minute=30),
+                id="collect_school_metrics_monthly",
+                name="school metrics monthly collection",
+                replace_existing=True,
+                coalesce=True,
+                max_instances=1,
+                misfire_grace_time=3600,
+                args=["collect_school_metrics_monthly"],
+            )
         self.scheduler.add_job(
-            self.collect_school_metrics_monthly,
-            CronTrigger(day=1, hour=5, minute=30),
-            id="collect_school_metrics_monthly",
-            name="school metrics monthly collection",
-            replace_existing=True,
-            coalesce=True,
-            max_instances=1,
-            misfire_grace_time=3600,
-        )
-        self.scheduler.add_job(
-            self.collect_school_academy_weekly,
+            self.run_now,
             CronTrigger(day_of_week="sun", hour=5, minute=0),
             id="collect_school_academy_weekly",
             name="school academy weekly collection",
@@ -1574,16 +1623,37 @@ class DataScheduler:
             coalesce=True,
             max_instances=1,
             misfire_grace_time=3600,
+            args=["collect_school_academy_weekly"],
+        )
+        build_school_marts_hour = self._env_int("BUILD_SCHOOL_MARTS_CRON_HOUR", 5, min_value=0)
+        build_school_marts_minute = self._env_int(
+            "BUILD_SCHOOL_MARTS_CRON_MINUTE", 30, min_value=0
         )
         self.scheduler.add_job(
-            self.build_school_marts_daily,
-            CronTrigger(hour=5, minute=50),
+            self.run_now,
+            CronTrigger(hour=build_school_marts_hour, minute=build_school_marts_minute),
             id="build_school_marts_daily",
             name="school marts daily build",
             replace_existing=True,
             coalesce=True,
             max_instances=1,
             misfire_grace_time=3600,
+            args=["build_school_marts_daily"],
+        )
+        school_quality_hour = self._env_int("CHECK_SCHOOL_DATA_QUALITY_CRON_HOUR", 5, min_value=0)
+        school_quality_minute = self._env_int(
+            "CHECK_SCHOOL_DATA_QUALITY_CRON_MINUTE", 45, min_value=0
+        )
+        self.scheduler.add_job(
+            self.run_now,
+            CronTrigger(hour=school_quality_hour, minute=school_quality_minute),
+            id="check_school_data_quality",
+            name="check school data quality",
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+            misfire_grace_time=3600,
+            args=["check_school_data_quality"],
         )
         if self._env_bool("SCHEDULER_WATCHDOG_ENABLED", True):
             watchdog_interval_sec = self._env_int(
@@ -1599,7 +1669,7 @@ class DataScheduler:
                 max_instances=1,
                 misfire_grace_time=max(120, watchdog_interval_sec),
             )
-            if self._env_bool("SCHEDULER_WATCHDOG_RUN_ON_START", True):
+            if self._env_bool("SCHEDULER_WATCHDOG_RUN_ON_START", False):
                 watchdog_startup_time = datetime.now() + timedelta(seconds=20)
                 self.scheduler.add_job(
                     self.watchdog_critical_pipeline,
@@ -1609,14 +1679,20 @@ class DataScheduler:
                     replace_existing=True,
                 )
 
-        catchup_time = datetime.now() + timedelta(seconds=90)
-        self.scheduler.add_job(
-            self.startup_catchup,
-            DateTrigger(run_date=catchup_time),
-            id="startup_catchup",
-            name="startup catchup",
-            replace_existing=True,
-        )
+        if self._env_bool("SCHEDULER_STARTUP_CATCHUP_ENABLED", False):
+            catchup_delay_sec = self._env_int("SCHEDULER_STARTUP_CATCHUP_DELAY_SEC", 90, min_value=10)
+            catchup_time = datetime.now() + timedelta(seconds=catchup_delay_sec)
+            self.scheduler.add_job(
+                self.run_now,
+                DateTrigger(run_date=catchup_time),
+                id="startup_catchup",
+                name="startup catchup",
+                replace_existing=True,
+                coalesce=True,
+                max_instances=1,
+                misfire_grace_time=3600,
+                args=["catchup"],
+            )
 
         self.scheduler.start()
         self.is_running = True
@@ -1657,8 +1733,6 @@ class DataScheduler:
             await self.daily_land_collection()
         elif job_type == "collect_land_locations":
             await self.collect_land_locations_chunk()
-        elif job_type == "check_land_collection_status":
-            await self.check_land_collection_status_now()
         elif job_type == "link_complexes":
             await self.link_complexes_from_transactions()
         elif job_type == "fix_complex_names":
@@ -1689,6 +1763,8 @@ class DataScheduler:
             await self.build_school_marts_daily()
         elif job_type == "check_school_data_quality":
             await self.check_school_data_quality_now()
+        elif job_type == "check_land_collection_status":
+            await self.check_land_collection_status_now()
         elif job_type == "collect_school_official_data":
             await self.collect_school_official_data(year=2023)
         elif job_type == "school_full_rebuild":

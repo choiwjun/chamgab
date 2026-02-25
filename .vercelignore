@@ -1,0 +1,12 @@
+ml-api
+worktree
+tmp
+tmp*
+logs
+reports
+playwright-report
+test-results
+.pytest_cache
+.npm-cache
+.claude
+docs
