@@ -1,5 +1,6 @@
 ﻿"""Chamgab ML API application entrypoint."""
 
+import os
 import pickle
 from contextlib import asynccontextmanager
 from pathlib import Path
