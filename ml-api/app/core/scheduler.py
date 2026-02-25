@@ -733,6 +733,12 @@ class DataScheduler:
             raise RuntimeError("check_commercial_data_quality failed")
         self.current_job_result = {"step": "check_commercial_data_quality"}
 
+    async def check_land_collection_status_now(self) -> None:
+        ok = await self._run_script("scripts.check_land_collection_status", timeout=900)
+        if not ok:
+            raise RuntimeError("check_land_collection_status failed")
+        self.current_job_result = {"step": "check_land_collection_status"}
+
     async def check_launch_readiness_gate(self) -> None:
         app_base_url = (
             os.getenv("APP_BASE_URL")
@@ -1482,6 +1488,23 @@ class DataScheduler:
             misfire_grace_time=3600,
             args=["check_commercial_data_quality"],
         )
+        check_land_status_hour = self._env_int(
+            "CHECK_LAND_COLLECTION_STATUS_CRON_HOUR", 3, min_value=0
+        )
+        check_land_status_minute = self._env_int(
+            "CHECK_LAND_COLLECTION_STATUS_CRON_MINUTE", 25, min_value=0
+        )
+        self.scheduler.add_job(
+            self.run_now,
+            CronTrigger(hour=check_land_status_hour, minute=check_land_status_minute),
+            id="check_land_collection_status",
+            name="check land collection status",
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+            misfire_grace_time=3600,
+            args=["check_land_collection_status"],
+        )
         gate_check_hour = self._env_int("CHECK_LAUNCH_READINESS_GATE_CRON_HOUR", 3, min_value=0)
         gate_check_minute = self._env_int("CHECK_LAUNCH_READINESS_GATE_CRON_MINUTE", 30, min_value=0)
         self.scheduler.add_job(
@@ -1634,6 +1657,8 @@ class DataScheduler:
             await self.build_commercial_quality_snapshot()
         elif job_type == "check_commercial_data_quality":
             await self.check_commercial_data_quality_now()
+        elif job_type == "check_land_collection_status":
+            await self.check_land_collection_status_now()
         elif job_type == "check_launch_readiness_gate":
             await self.check_launch_readiness_gate()
         elif job_type == "collect_land_daily":

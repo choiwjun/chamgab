@@ -21,6 +21,7 @@ VALID_JOB_TYPES = [
     "collect_commercial",
     "build_commercial_quality_snapshot",
     "check_commercial_data_quality",
+    "check_land_collection_status",
     "check_launch_readiness_gate",
     "collect_land_daily",
     "collect_land_locations",
@@ -41,6 +42,7 @@ VALID_JOB_TYPES = [
     "check_school_data_quality",
     "collect_school_official_data",
     "school_full_rebuild",
+    "catchup",
 ]
 
 
@@ -78,14 +80,14 @@ class RunNowRequest(BaseModel):
         ...,
         description=(
             "job type "
-            "(daily/weekly/monthly/collect_commercial/build_commercial_quality_snapshot/check_commercial_data_quality/check_launch_readiness_gate/collect_land_daily/"
+            "(daily/weekly/monthly/collect_commercial/build_commercial_quality_snapshot/check_commercial_data_quality/check_land_collection_status/check_launch_readiness_gate/collect_land_daily/"
             "collect_land_locations/"
             "link_complexes/fix_complex_names/train_business/train_all/"
             "chamgab_backfill_property_id/chamgab_audit_gap/chamgab_reanalyze_severe/"
             "chamgab_factor_backfill/chamgab_autofix_apply/chamgab_gap_recovery_full/"
             "collect_school_base_monthly/collect_school_metrics_monthly/"
             "collect_school_academy_weekly/build_school_marts_daily/check_school_data_quality/"
-            "school_full_rebuild)"
+            "collect_school_official_data/school_full_rebuild/catchup)"
         ),
     )
 
