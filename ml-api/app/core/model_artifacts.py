@@ -24,7 +24,9 @@ REQUIRED_APARTMENT_ARTIFACTS: Tuple[str, ...] = (
 OPTIONAL_APARTMENT_ARTIFACTS: Tuple[str, ...] = (
     "residual_info.pkl",
     "lgbm_model.pkl",
+    "business_model.pkl",
     "apartment_model_metrics.json",
+    "business_model_metrics.json",
 )
 
 MANIFEST_FILENAME = "manifest.json"

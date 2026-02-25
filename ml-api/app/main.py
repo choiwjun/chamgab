@@ -29,6 +29,10 @@ from app.api import (
 )
 from app.core.config import settings
 from app.core.migrate import auto_migrate
+from app.core.model_artifacts import (
+    download_apartment_model_artifacts,
+    list_missing_required_apartment_artifacts,
+)
 from app.core.scheduler import data_scheduler
 from app.services.business_model_service import business_model_service
 
@@ -46,6 +50,13 @@ RESIDUAL_PATH = MODELS_DIR / "residual_info.pkl"
 LGBM_PATH = MODELS_DIR / "lgbm_model.pkl"
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    return raw.strip().lower() not in {"0", "false", "no", "off"}
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     auto_migrate()
@@ -58,6 +69,20 @@ async def lifespan(app: FastAPI):
     app.state.lgbm_model = None
 
     try:
+        missing_required = list_missing_required_apartment_artifacts()
+        restore_on_start = _env_bool("CHAMGAB_MODEL_ARTIFACTS_RESTORE_ON_START", True)
+        if restore_on_start and missing_required:
+            try:
+                restore_summary = download_apartment_model_artifacts(include_optional=True)
+                print(
+                    "Apartment model artifact restore on startup: "
+                    f"ok={restore_summary.get('ok')} "
+                    f"downloaded={len(restore_summary.get('downloaded_files', []))} "
+                    f"missing_after={restore_summary.get('missing_required_after_download')}"
+                )
+            except Exception as exc:
+                print(f"Apartment model artifact restore on startup failed: {exc}")
+
         if MODEL_PATH.exists():
             with MODEL_PATH.open("rb") as fp:
                 app.state.model = pickle.load(fp)
