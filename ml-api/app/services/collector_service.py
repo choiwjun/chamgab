@@ -13,6 +13,7 @@ import asyncio
 import aiohttp
 import xml.etree.ElementTree as ET
 import json
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Any
@@ -388,6 +389,15 @@ class CollectorService:
             # region_code → sigungu 매핑
             code_to_name = {v: k for k, v in self.REGION_CODES.items()}
 
+            def _normalize_sigungu_name(raw: str) -> str:
+                s = (raw or "").strip()
+                if not s:
+                    return ""
+                if " " in s:
+                    return s.split(" ")[-1].strip()
+                m = re.search(r"([가-힣]{1,8}(?:구|군|시))$", s)
+                return (m.group(1) if m else s).strip()
+
             # 전체 필드 변환 (018 마이그레이션 적용 후 모든 컬럼 사용)
             rows = []
             for item in molit_results:
@@ -401,7 +411,9 @@ class CollectorService:
                     "apt_name": item.get("apt_name", ""),
                     "built_year": item.get("built_year"),
                     "jibun": item.get("jibun", ""),
-                    "sigungu": code_to_name.get(item.get("region_code", ""), ""),
+                    "sigungu": _normalize_sigungu_name(
+                        code_to_name.get(item.get("region_code", ""), "")
+                    ),
                 })
 
             # 배치 upsert (500개씩, 중복은 무시)
@@ -443,6 +455,15 @@ class CollectorService:
         # region_code → sigungu 매핑 추가
         code_to_name = {v: k for k, v in self.REGION_CODES.items()}
 
+        def _normalize_sigungu_name(raw: str) -> str:
+            s = (raw or "").strip()
+            if not s:
+                return ""
+            if " " in s:
+                return s.split(" ")[-1].strip()
+            m = re.search(r"([가-힣]{1,8}(?:구|군|시))$", s)
+            return (m.group(1) if m else s).strip()
+
         with open(LATEST_CSV_PATH, "a", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames + ["sigungu"])
             if not file_exists:
@@ -450,7 +471,9 @@ class CollectorService:
 
             for item in molit_results:
                 row = {k: item.get(k, "") for k in fieldnames}
-                row["sigungu"] = code_to_name.get(item.get("region_code", ""), "")
+                row["sigungu"] = _normalize_sigungu_name(
+                    code_to_name.get(item.get("region_code", ""), "")
+                )
                 writer.writerow(row)
 
         return str(LATEST_CSV_PATH)

@@ -216,6 +216,55 @@ MAJOR_REGIONS = {
     ],
 }
 
+INDUSTRY_DISPLAY_NAMES: Dict[str, str] = {
+    'Q01': '한식 음식점',
+    'Q02': '중식 음식점',
+    'Q03': '일식 음식점',
+    'Q04': '양식 음식점',
+    'Q05': '기타 외국식 음식점',
+    'Q06': '치킨 전문점',
+    'Q07': '패스트푸드점',
+    'Q08': '분식 전문점',
+    'Q09': '호프/주점',
+    'Q10': '카페',
+    'Q11': '제과/베이커리',
+    'Q12': '커피 전문점',
+    'Q13': '디저트 카페',
+    'Q14': '아이스크림/빙수',
+    'Q15': '도시락/간편식',
+    'D01': '슈퍼마켓',
+    'D02': '편의점',
+    'D03': '정육점',
+    'D04': '수산물',
+    'D05': '반찬가게',
+    'R01': '의류/패션',
+    'R02': '신발/가방',
+    'R03': '화장품',
+    'R04': '꽃집/화원',
+    'R05': '문구/서점',
+    'N01': '약국',
+    'N02': '안경/콘택트렌즈',
+    'N03': '건강식품',
+    'I01': '미용실',
+    'I02': '네일/피부관리',
+    'I03': '세탁소',
+    'I04': '사진 스튜디오',
+    'I05': '인테리어/건축',
+    'I06': '부동산중개',
+    'S01': '학원/교습소',
+    'S02': '헬스/피트니스',
+    'S03': '노래방/오락',
+    'S04': '세차/자동차정비',
+    'S05': '반려동물/펫샵',
+    'S06': '코인세탁/빨래방',
+    'L01': '병원/의원',
+    'L02': '치과',
+    'L03': '한의원',
+    'L04': '어린이집/유치원',
+    'L05': '장례식장',
+    'L06': '주유소',
+}
+
 # ──────────────────────────────────────────────────────
 # ALL_INDUSTRIES: 46 seed industry codes
 # ──────────────────────────────────────────────────────
@@ -456,6 +505,73 @@ REGIONAL_TRENDS: Dict[str, float] = {
 CACHE_FILE = Path(__file__).parent / 'real_store_counts.json'
 
 
+def load_dynamic_regions_map() -> Dict[str, int]:
+    """Load sigungu targets from regions(level=2) and merge with default activity map."""
+    dynamic_enabled = os.getenv('COMMERCIAL_DYNAMIC_REGIONS', 'true').strip().lower() in (
+        '1',
+        'true',
+        'yes',
+        'on',
+    )
+    if not dynamic_enabled:
+        return dict(REGIONS)
+
+    supabase_url = os.getenv('SUPABASE_URL') or os.getenv('NEXT_PUBLIC_SUPABASE_URL')
+    supabase_key = os.getenv('SUPABASE_SERVICE_KEY') or os.getenv('SUPABASE_SERVICE_ROLE_KEY')
+    if not supabase_url or not supabase_key:
+        logger.warning('Dynamic regions skipped: SUPABASE_URL/SUPABASE_SERVICE_KEY not set')
+        return dict(REGIONS)
+
+    try:
+        client = create_client(
+            supabase_url,
+            supabase_key,
+            SyncClientOptions(httpx_client=httpx.Client(trust_env=False)),
+        )
+        codes: List[str] = []
+        offset = 0
+        page_size = 1000
+        while True:
+            result = (
+                client.table('regions')
+                .select('code')
+                .eq('level', 2)
+                .range(offset, offset + page_size - 1)
+                .execute()
+            )
+            rows = result.data or []
+            if not rows:
+                break
+            for row in rows:
+                code = str(row.get('code') or '').strip()
+                if len(code) >= 5 and code[:5].isdigit():
+                    codes.append(code[:5])
+            if len(rows) < page_size:
+                break
+            offset += page_size
+
+        unique_codes = sorted(set(codes))
+        if not unique_codes:
+            logger.warning('Dynamic regions skipped: regions table returned 0 rows')
+            return dict(REGIONS)
+
+        default_level = int(os.getenv('COMMERCIAL_DEFAULT_ACTIVITY_LEVEL', '3'))
+        default_level = max(1, min(5, default_level))
+        dynamic_map: Dict[str, int] = {}
+        for code in unique_codes:
+            dynamic_map[code] = REGIONS.get(code, default_level)
+
+        logger.info(
+            'Dynamic region targeting enabled: %s sigungu loaded (legacy=%s)',
+            len(dynamic_map),
+            len(REGIONS),
+        )
+        return dynamic_map
+    except Exception as exc:
+        logger.warning('Dynamic regions load failed (%s). Using legacy region map.', exc)
+        return dict(REGIONS)
+
+
 # ======================================================
 # Phase 1: API Collection
 # ======================================================
@@ -555,12 +671,7 @@ async def collect_real_store_data(
             'medium_counts': {large_code: {medium_code: count}},
         }}
     """
-    all_codes = []
-    for codes in MAJOR_REGIONS.values():
-        all_codes.extend(codes)
-
-    if target_codes:
-        all_codes = [c for c in all_codes if c in target_codes]
+    all_codes = sorted(set(target_codes or REGIONS.keys()))
 
     total = len(all_codes)
     logger.info(f"Phase 1: Collecting real store counts for {total} regions...")
@@ -800,6 +911,7 @@ def generate_monthly_data(
             seed = f"{sigungu_code}_{ind_code}_{base_year_month}"
             category = profile['cat']
             seasonal_factor = SEASONAL_PROFILES[category][month_num - 1]
+            industry_name = INDUSTRY_DISPLAY_NAMES.get(ind_code, profile.get('name', ind_code))
 
             # -- Store count: use real API count as anchor --
             base_real_count = real_stores.get(ind_code, 0)
@@ -907,7 +1019,7 @@ def generate_monthly_data(
                 'industry_large_code': large_code,
                 'industry_medium_code': medium_code,
                 'industry_small_code': ind_code,
-                'industry_name': profile['name'],
+                'industry_name': industry_name,
                 'open_count': open_count,
                 'close_count': close_count,
                 'operating_count': store_count,
@@ -922,7 +1034,7 @@ def generate_monthly_data(
                 'industry_large_code': large_code,
                 'industry_medium_code': medium_code,
                 'industry_small_code': ind_code,
-                'industry_name': profile['name'],
+                'industry_name': industry_name,
                 'monthly_avg_sales': monthly_sales,
                 'monthly_sales_count': max(100, int(
                     store_count * stochastic_variation(seed + '_cnt', 25, 0.3, 0.05)
@@ -940,7 +1052,7 @@ def generate_monthly_data(
                 'industry_large_code': large_code,
                 'industry_medium_code': medium_code,
                 'industry_small_code': ind_code,
-                'industry_name': profile['name'],
+                'industry_name': industry_name,
                 'store_count': store_count,
                 'density_level': density,
                 'franchise_count': franchise_count,
@@ -1233,6 +1345,9 @@ async def main():
     parser.add_argument('--api-only', action='store_true', help='Only collect API data, do not generate/save')
     parser.add_argument('--clean', action='store_true', help='Delete all existing commercial data before regenerating')
     args = parser.parse_args()
+
+    global REGIONS
+    REGIONS = load_dynamic_regions_map()
 
     logger.info("=" * 60)
     logger.info("Real Store Data Collection + Calibrated Statistics Generation")
