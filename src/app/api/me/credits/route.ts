@@ -25,6 +25,31 @@ export async function GET() {
     return NextResponse.json({ error: pErr.message }, { status: 500 })
   }
 
+  // Apply reset logic client-side (mirrors consume_user_credits RPC resets)
+  // so the UI shows 0 when the reset date has passed.
+  if (profile) {
+    const today = new Date().toISOString().slice(0, 10)
+
+    if (
+      !profile.daily_credit_reset_at ||
+      profile.daily_credit_reset_at < today
+    ) {
+      profile.daily_credit_used = 0
+    }
+
+    const monthStart = new Date()
+    monthStart.setDate(1)
+    monthStart.setHours(0, 0, 0, 0)
+    const monthStartStr = monthStart.toISOString().slice(0, 10)
+
+    if (
+      !profile.monthly_credit_reset_at ||
+      profile.monthly_credit_reset_at < monthStartStr
+    ) {
+      profile.monthly_credit_used = 0
+    }
+  }
+
   const { data: events } = await supabase
     .from('credit_events')
     .select('id,product,delta,reason,created_at,meta')
