@@ -1,13 +1,23 @@
-// @TASK P3-R1-T2 - Chamgab API - 遺꾩꽍 ?붿껌
+﻿// @TASK P3-R1-T2 - Chamgab API - ?브쑴苑??遺욧퍕
 
-// ?숈쟻 ?뚮뜑留?媛뺤젣 (Supabase ?ъ슜)
+// ??덉읅 ???쐭筌?揶쏅벡??(Supabase ????
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { buildChamgabQuality } from './_quality'
+import {
+  buildChamgabQuality,
+  deriveChamgabQualityMeta,
+} from './_quality'
+import {
+  CreditConsumeError,
+  consumeCredits,
+  insufficientCreditsPayload,
+} from '@/lib/credits/consume'
+import { getCreditCost } from '@/lib/credits/cost'
+import { ENABLE_FREE_OPEN_MODE } from '@/lib/features'
 import crypto from 'crypto'
 
 const ML_API_URL = process.env.ML_API_URL || 'http://localhost:8000'
@@ -17,74 +27,12 @@ const ANON_DAILY_LIMIT = (() => {
   return Math.min(Math.max(Math.trunc(n), 1), 100)
 })()
 
-const HOME_PRICE_CREDIT_COST = (() => {
-  const n = Number(process.env.CREDIT_COST_HOME_PRICE || 2)
-  if (!Number.isFinite(n)) return 2
-  return Math.min(Math.max(Math.trunc(n), 1), 100)
-})()
-
-const FREE_OPEN_MODE =
-  process.env.FREE_OPEN_MODE === 'true' ||
-  process.env.NEXT_PUBLIC_FREE_OPEN_MODE === 'true'
+const HOME_PRICE_CREDIT_COST = getCreditCost('home_price')
 
 const ANALYSIS_PUBLIC_SELECT =
   'id,property_id,chamgab_price,min_price,max_price,confidence,analyzed_at,expires_at,created_at'
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-const CHAMGAB_QUALITY_VERSION =
-  process.env.CHAMGAB_QUALITY_VERSION || 'chamgab-quality-v1'
-
-type QualityGateStatus = 'pass' | 'warn' | 'fail'
-type QualityGrade = 'A' | 'B' | 'C' | 'D'
-
-type ChamgabQualityPayload = Awaited<ReturnType<typeof buildChamgabQuality>>
-
-function deriveChamgabQualityMeta(
-  quality: ChamgabQualityPayload,
-  analyzedAt?: unknown
-): {
-  quality_gate_status: QualityGateStatus
-  quality_grade: QualityGrade
-  quality_version: string
-  quality_flags: string[]
-  data_freshness: string | null
-} {
-  const flags = quality.quality_flags || []
-  const hasFail =
-    flags.includes('FACTOR_MISSING') ||
-    flags.includes('GAP_SEVERE') ||
-    flags.includes('NO_TRANSACTION_BENCHMARK')
-  const hasWarn =
-    flags.includes('FACTOR_INCOMPLETE') ||
-    flags.includes('GAP_WATCH') ||
-    flags.includes('LOW_CONFIDENCE')
-
-  const quality_gate_status: QualityGateStatus = hasFail
-    ? 'fail'
-    : hasWarn
-      ? 'warn'
-      : 'pass'
-
-  const quality_grade: QualityGrade =
-    quality_gate_status === 'fail'
-      ? 'D'
-      : quality_gate_status === 'warn'
-        ? 'C'
-        : flags.length === 0
-          ? 'A'
-          : 'B'
-
-  return {
-    quality_gate_status,
-    quality_grade,
-    quality_version: CHAMGAB_QUALITY_VERSION,
-    quality_flags: flags,
-    data_freshness:
-      typeof analyzedAt === 'string' && analyzedAt.trim().length > 0
-        ? analyzedAt
-        : null,
-  }
-}
 
 function getClientIp(req: NextRequest) {
   const xf = req.headers.get('x-forwarded-for')
@@ -147,11 +95,11 @@ async function logEvent(params: {
 
 /**
  * POST /api/chamgab
- * 李멸컪 遺꾩꽍 ?붿껌 (ML API ?몄텧)
+ * 筌〓㈇而??브쑴苑??遺욧퍕 (ML API ?紐꾪뀱)
  *
- * Body (??以??섎굹):
- *   - { property_id } ??留ㅻЪ ID濡?吏곸젒 遺꾩꽍
- *   - { complex_id, area_type, floor, dong?, direction? } ???⑥? 湲곕컲 遺꾩꽍
+ * Body (??餓???롪돌):
+ *   - { property_id } ??筌띲끇窺 ID嚥?筌욊낯???브쑴苑?
+ *   - { complex_id, area_type, floor, dong?, direction? } ????? 疫꿸퀡而??브쑴苑?
  */
 export async function POST(request: NextRequest) {
   try {
@@ -222,7 +170,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 罹먯떆??遺꾩꽍 寃곌낵 ?뺤씤 (force=true硫?臾댁떆)
+    // 筌?Ŋ????브쑴苑?野껉퀗???類ㅼ뵥 (force=true筌??얜똻??
     if (canUseResolvedPropertyId && shouldUseCache) {
       const { data: existingAnalysis } = await admin
         .from('chamgab_analyses')
@@ -234,31 +182,53 @@ export async function POST(request: NextRequest) {
         .single()
 
       if (existingAnalysis) {
-        if (!FREE_OPEN_MODE) {
+        if (!ENABLE_FREE_OPEN_MODE) {
           // Count cache hits too: credits/quota is per request, not per ML execution.
           // (Avoids bypassing limits by repeatedly fetching cached analyses.)
           if (actorUserId) {
-            const { data: quotaRows, error: quotaError } = await supabase.rpc(
-              'consume_user_credits',
-              {
-                p_product: 'home_price',
-                p_cost: HOME_PRICE_CREDIT_COST,
-                p_meta: {
+            try {
+              await consumeCredits({
+                supabase,
+                product: 'home_price',
+                cost: HOME_PRICE_CREDIT_COST,
+                meta: {
                   property_id: resolvedPropertyId || complex_id,
                   features,
                   cached: true,
                 },
+              })
+            } catch (error) {
+              if (
+                error instanceof CreditConsumeError &&
+                error.code === 'insufficient_credits'
+              ) {
+                await logEvent({
+                  property_id: resolvedPropertyId || String(complex_id),
+                  actor_user_id: actorUserId,
+                  status: 'error',
+                  http_status: error.status,
+                  error_code: 'CREDITS_EXCEEDED',
+                  error_message: error.message,
+                  request: {
+                    property_id: resolvedPropertyId || complex_id,
+                    features,
+                    cached: true,
+                  },
+                })
+                return NextResponse.json(
+                  insufficientCreditsPayload(error.quota),
+                  { status: error.status }
+                )
               }
-            )
 
-            if (quotaError) {
               await logEvent({
                 property_id: resolvedPropertyId || String(complex_id),
                 actor_user_id: actorUserId,
                 status: 'error',
                 http_status: 500,
                 error_code: 'CREDITS_RPC_ERROR',
-                error_message: quotaError.message,
+                error_message:
+                  error instanceof Error ? error.message : 'Credit check failed',
                 request: {
                   property_id: resolvedPropertyId || complex_id,
                   features,
@@ -268,31 +238,6 @@ export async function POST(request: NextRequest) {
               return NextResponse.json(
                 { error: 'Credit check failed' },
                 { status: 500 }
-              )
-            }
-
-            const q = Array.isArray(quotaRows) ? quotaRows[0] : null
-            if (!q?.allowed) {
-              await logEvent({
-                property_id: resolvedPropertyId || String(complex_id),
-                actor_user_id: actorUserId,
-                status: 'error',
-                http_status: 429,
-                error_code: 'CREDITS_EXCEEDED',
-                error_message: 'Insufficient credits',
-                request: {
-                  property_id: resolvedPropertyId || complex_id,
-                  features,
-                  cached: true,
-                },
-              })
-              return NextResponse.json(
-                {
-                  error: 'Insufficient credits',
-                  code: 'CREDITS_EXCEEDED',
-                  quota: q,
-                },
-                { status: 429 }
               )
             }
           } else {
@@ -376,30 +321,50 @@ export async function POST(request: NextRequest) {
           analysis: existingAnalysis,
           cached: true,
           quality,
-          ...deriveChamgabQualityMeta(quality, existingAnalysis.analyzed_at),
+          ...deriveChamgabQualityMeta(
+            quality.quality_flags || [],
+            existingAnalysis.analyzed_at
+          ),
         })
       }
     }
 
     // Atomic credit consumption (authenticated users).
-    if (!FREE_OPEN_MODE && actorUserId) {
-      const { data: quotaRows, error: quotaError } = await supabase.rpc(
-        'consume_user_credits',
-        {
-          p_product: 'home_price',
-          p_cost: HOME_PRICE_CREDIT_COST,
-          p_meta: { property_id: resolvedPropertyId || complex_id, features },
+    if (!ENABLE_FREE_OPEN_MODE && actorUserId) {
+      try {
+        await consumeCredits({
+          supabase,
+          product: 'home_price',
+          cost: HOME_PRICE_CREDIT_COST,
+          meta: { property_id: resolvedPropertyId || complex_id, features },
+        })
+      } catch (error) {
+        if (
+          error instanceof CreditConsumeError &&
+          error.code === 'insufficient_credits'
+        ) {
+          await logEvent({
+            property_id: resolvedPropertyId || String(complex_id),
+            actor_user_id: actorUserId,
+            status: 'error',
+            http_status: error.status,
+            error_code: 'CREDITS_EXCEEDED',
+            error_message: error.message,
+            request: { property_id: resolvedPropertyId || complex_id, features },
+          })
+          return NextResponse.json(insufficientCreditsPayload(error.quota), {
+            status: error.status,
+          })
         }
-      )
 
-      if (quotaError) {
         await logEvent({
           property_id: resolvedPropertyId || String(complex_id),
           actor_user_id: actorUserId,
           status: 'error',
           http_status: 500,
           error_code: 'CREDITS_RPC_ERROR',
-          error_message: quotaError.message,
+          error_message:
+            error instanceof Error ? error.message : 'Credit check failed',
           request: { property_id: resolvedPropertyId || complex_id, features },
         })
         return NextResponse.json(
@@ -407,28 +372,7 @@ export async function POST(request: NextRequest) {
           { status: 500 }
         )
       }
-
-      const q = Array.isArray(quotaRows) ? quotaRows[0] : null
-      if (!q?.allowed) {
-        await logEvent({
-          property_id: resolvedPropertyId || String(complex_id),
-          actor_user_id: actorUserId,
-          status: 'error',
-          http_status: 429,
-          error_code: 'CREDITS_EXCEEDED',
-          error_message: '?щ젅?㏃씠 遺議깊빀?덈떎.',
-          request: { property_id: resolvedPropertyId || complex_id, features },
-        })
-        return NextResponse.json(
-          {
-            error: 'Insufficient credits',
-            code: 'CREDITS_EXCEEDED',
-            quota: q,
-          },
-          { status: 429 }
-        )
-      }
-    } else if (!FREE_OPEN_MODE) {
+    } else if (!ENABLE_FREE_OPEN_MODE) {
       // Anonymous quota: service-side limit per (hashed) IP.
       const ip = getClientIp(request)
       if (!ip) {
@@ -473,7 +417,7 @@ export async function POST(request: NextRequest) {
             http_status: 429,
             error_code: 'ANON_QUOTA_EXCEEDED',
             error_message:
-              '鍮꾨줈洹몄씤 ?쇱씪 遺꾩꽍 ?쒕룄瑜?珥덇낵?덉뒿?덈떎.',
+              '??쑬以덃뉩紐꾩뵥 ??깆뵬 ?브쑴苑???뺣즲???λ뜃???됰뮸??덈뼄.',
             request: {
               property_id: resolvedPropertyId || complex_id,
               features,
@@ -497,7 +441,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ML API ?몄텧 (10珥???꾩븘??
+    // ML API ?紐꾪뀱 (10?????袁⑸툡??
     let prediction
     try {
       const controller = new AbortController()
@@ -546,7 +490,7 @@ export async function POST(request: NextRequest) {
           http_status: isTimeout ? 504 : 503,
           error_code: isTimeout ? 'TIMEOUT' : 'ML_UNAVAILABLE',
           error_message: isTimeout
-            ? '遺꾩꽍 ?붿껌 ?쒓컙??珥덇낵?섏뿀?듬땲??'
+            ? '?브쑴苑??遺욧퍕 ??볦퍢???λ뜃???뤿???щ빍??'
             : 'ML API unavailable',
           request: { property_id: resolvedPropertyId || complex_id, features },
         })
@@ -554,7 +498,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           error: isTimeout
-            ? '遺꾩꽍 ?붿껌 ?쒓컙??珥덇낵?섏뿀?듬땲??'
+            ? '?브쑴苑??遺욧퍕 ??볦퍢???λ뜃???뤿???щ빍??'
             : 'ML API unavailable',
         },
         { status: isTimeout ? 504 : 503 }
@@ -598,7 +542,7 @@ export async function POST(request: NextRequest) {
           analysis: prediction,
           saved: false,
           quality,
-          ...deriveChamgabQualityMeta(quality, null),
+          ...deriveChamgabQualityMeta(quality.quality_flags || [], null),
         })
       }
 
@@ -620,7 +564,10 @@ export async function POST(request: NextRequest) {
         analysis: newAnalysis,
         saved: true,
         quality,
-        ...deriveChamgabQualityMeta(quality, newAnalysis.analyzed_at),
+        ...deriveChamgabQualityMeta(
+          quality.quality_flags || [],
+          newAnalysis.analyzed_at
+        ),
       })
     }
 
@@ -642,7 +589,7 @@ export async function POST(request: NextRequest) {
       analysis: prediction,
       saved: false,
       quality,
-      ...deriveChamgabQualityMeta(quality, null),
+      ...deriveChamgabQualityMeta(quality.quality_flags || [], null),
     })
   } catch (error) {
     console.error('[Chamgab API] Error:', error)
@@ -692,7 +639,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       analysis,
       quality,
-      ...deriveChamgabQualityMeta(quality, analysis.analyzed_at),
+      ...deriveChamgabQualityMeta(
+        quality.quality_flags || [],
+        analysis.analyzed_at
+      ),
     })
   } catch (error) {
     console.error('[Chamgab API] GET error:', error)

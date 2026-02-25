@@ -57,14 +57,14 @@ export interface CommercialConfidenceBreakdown {
   industry_fit_adjustment?: number
 }
 
-export interface BusinessPredictionResult extends Partial<QualityMeta> {
+export interface BusinessPredictionResult extends QualityMeta {
   success_probability: number
   raw_success_probability?: number
   confidence: number
   model_confidence?: number
   confidence_breakdown?: CommercialConfidenceBreakdown
   calibration_version?: string
-  data_freshness?: CommercialDataFreshness
+  data_freshness: CommercialDataFreshness
   factors: PredictionFactor[]
   recommendation: string
   source?: 'ml_model' | 'rule_based'

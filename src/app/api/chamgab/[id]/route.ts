@@ -4,34 +4,13 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { buildChamgabQuality } from '../_quality'
+import {
+  buildChamgabQuality,
+  deriveChamgabQualityMeta,
+} from '../_quality'
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-const CHAMGAB_QUALITY_VERSION =
-  process.env.CHAMGAB_QUALITY_VERSION || 'chamgab-quality-v1'
-
-type QualityGateStatus = 'pass' | 'warn' | 'fail'
-type QualityGrade = 'A' | 'B' | 'C' | 'D'
-
-function deriveChamgabQualityMeta(qualityFlags: string[] = []): {
-  status: QualityGateStatus
-  grade: QualityGrade
-} {
-  const hasFail =
-    qualityFlags.includes('FACTOR_MISSING') ||
-    qualityFlags.includes('GAP_SEVERE') ||
-    qualityFlags.includes('NO_TRANSACTION_BENCHMARK')
-  if (hasFail) return { status: 'fail', grade: 'D' }
-
-  const hasWarn =
-    qualityFlags.includes('FACTOR_INCOMPLETE') ||
-    qualityFlags.includes('GAP_WATCH') ||
-    qualityFlags.includes('LOW_CONFIDENCE')
-  if (hasWarn) return { status: 'warn', grade: 'C' }
-
-  return { status: 'pass', grade: 'A' }
-}
 
 /**
  * GET /api/chamgab/:id
@@ -73,16 +52,15 @@ export async function GET(
       chamgabPrice: analysis.chamgab_price,
       confidence: analysis.confidence,
     })
-    const qualityMeta = deriveChamgabQualityMeta(quality.quality_flags || [])
+    const qualityMeta = deriveChamgabQualityMeta(
+      quality.quality_flags || [],
+      analysis.analyzed_at
+    )
 
     return NextResponse.json({
       analysis,
       quality,
-      quality_gate_status: qualityMeta.status,
-      quality_grade: qualityMeta.grade,
-      quality_flags: quality.quality_flags,
-      quality_version: CHAMGAB_QUALITY_VERSION,
-      data_freshness: analysis.analyzed_at,
+      ...qualityMeta,
     })
   } catch (error) {
     console.error('[Chamgab API] Error:', error)

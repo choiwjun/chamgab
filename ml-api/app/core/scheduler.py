@@ -32,7 +32,9 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 MODELS_DIR = PROJECT_ROOT / "app" / "models"
 SCRIPTS_DIR = PROJECT_ROOT / "scripts"
 LOGS_DIR = PROJECT_ROOT / "logs"
+REPORTS_DIR = PROJECT_ROOT / "reports"
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
+REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
 CRITICAL_PIPELINE_JOB_ORDER = (
     "chamgab_gap_recovery_full",
@@ -704,7 +706,7 @@ class DataScheduler:
         if not ok:
             raise RuntimeError("fix_complex_names_from_transactions failed")
 
-    async def weekly_commercial_collection(self) -> None:
+    async def collect_commercial_data_only(self) -> None:
         self.last_collection_job = f"commercial_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         ok = await self._run_script(
             "scripts.collect_business_statistics",
@@ -713,18 +715,12 @@ class DataScheduler:
         )
         if not ok:
             raise RuntimeError("collect_business_statistics failed")
-        ok_snapshot = await self._run_script(
-            "scripts.build_commercial_quality_snapshot",
-            timeout=1800,
-        )
-        if not ok_snapshot:
-            raise RuntimeError("build_commercial_quality_snapshot failed")
-        ok_quality = await self._run_script(
-            "scripts.check_commercial_data_quality",
-            timeout=900,
-        )
-        if not ok_quality:
-            raise RuntimeError("check_commercial_data_quality failed")
+        self.current_job_result = {"step": "collect_business_statistics"}
+
+    async def weekly_commercial_collection(self) -> None:
+        await self.collect_commercial_data_only()
+        await self.build_commercial_quality_snapshot()
+        await self.check_commercial_data_quality_now()
         self.current_job_result = {
             "steps": [
                 "collect_business_statistics",
@@ -746,64 +742,19 @@ class DataScheduler:
         self.current_job_result = {"step": "check_commercial_data_quality"}
 
     async def check_launch_readiness_gate(self) -> None:
-        app_base_url = (
-            os.getenv("APP_BASE_URL")
-            or os.getenv("NEXT_PUBLIC_APP_URL")
-            or os.getenv("WEB_BASE_URL")
-            or ""
-        ).strip()
-        if not app_base_url:
-            raise RuntimeError(
-                "APP_BASE_URL (or NEXT_PUBLIC_APP_URL / WEB_BASE_URL) is required"
-            )
-
-        admin_token = (
-            os.getenv("ML_ADMIN_TOKEN")
-            or os.getenv("SCHEDULER_ADMIN_TOKEN")
-            or os.getenv("ADMIN_API_TOKEN")
-            or ""
-        ).strip()
-        if not admin_token:
-            raise RuntimeError(
-                "ML_ADMIN_TOKEN (or SCHEDULER_ADMIN_TOKEN / ADMIN_API_TOKEN) is required"
-            )
-
-        base = app_base_url.rstrip("/")
-        targets = {
-            "commercial_quality_latest": "/api/admin/commercial/quality/latest",
-            "launch_readiness": "/api/admin/data-quality/launch-readiness",
-        }
-        headers = {
-            "Accept": "application/json",
-            "X-Admin-Token": admin_token,
-        }
-
-        results: Dict[str, Any] = {}
-        all_ok = True
-        for key, api_path in targets.items():
-            url = f"{base}{api_path}"
-            resp = await self._http_get_json(url, headers=headers, timeout=30)
-            results[key] = {
-                "url": url,
-                "ok": bool(resp.get("ok")) and int(resp.get("status") or 0) == 200,
-                "status": int(resp.get("status") or 0),
-                "payload": resp.get("payload"),
-                "error": resp.get("error"),
+        ok = await self._run_script("scripts.check_launch_readiness_gate", timeout=900)
+        summary = self._load_summary_json(REPORTS_DIR / "launch_readiness_gate_latest.json")
+        if summary is None:
+            summary = {
+                "generated_at": datetime.now().isoformat(),
+                "ok": ok,
+                "error": "launch_readiness_gate_latest.json missing",
             }
-            if not results[key]["ok"]:
-                all_ok = False
-
-        summary: Dict[str, Any] = {
-            "generated_at": datetime.now().isoformat(),
-            "app_base_url": base,
-            "ok": all_ok,
-            "results": results,
-        }
         self._write_summary_json(LOGS_DIR / "launch_readiness_gate_latest.json", summary)
         self.last_launch_readiness_gate_summary = summary
         self.current_job_result = summary
 
-        if not all_ok:
+        if not ok:
             raise RuntimeError("check_launch_readiness_gate failed")
 
     async def weekly_business_training(self) -> None:
@@ -1052,6 +1003,21 @@ class DataScheduler:
                 "chain_school_full_rebuild": self._env_bool(
                     "CHAMGAB_GAP_RECOVERY_CHAIN_SCHOOL_FULL_REBUILD", True
                 ),
+                "chain_collect_commercial": self._env_bool(
+                    "CHAMGAB_GAP_RECOVERY_CHAIN_COLLECT_COMMERCIAL", True
+                ),
+                "chain_build_commercial_quality_snapshot": self._env_bool(
+                    "CHAMGAB_GAP_RECOVERY_CHAIN_BUILD_COMMERCIAL_QUALITY_SNAPSHOT",
+                    True,
+                ),
+                "chain_check_commercial_data_quality": self._env_bool(
+                    "CHAMGAB_GAP_RECOVERY_CHAIN_CHECK_COMMERCIAL_DATA_QUALITY",
+                    True,
+                ),
+                "chain_check_launch_readiness_gate": self._env_bool(
+                    "CHAMGAB_GAP_RECOVERY_CHAIN_CHECK_LAUNCH_READINESS_GATE",
+                    True,
+                ),
                 "link_since_days": self._env_int(
                     "CHAMGAB_GAP_RECOVERY_LINK_SINCE_DAYS", 365, min_value=1
                 ),
@@ -1116,6 +1082,26 @@ class DataScheduler:
                 await _run_step(
                     "school_full_rebuild",
                     self.school_full_rebuild(),
+                )
+            if cfg["chain_collect_commercial"]:
+                await _run_step(
+                    "collect_commercial",
+                    self.collect_commercial_data_only(),
+                )
+            if cfg["chain_build_commercial_quality_snapshot"]:
+                await _run_step(
+                    "build_commercial_quality_snapshot",
+                    self.build_commercial_quality_snapshot(),
+                )
+            if cfg["chain_check_commercial_data_quality"]:
+                await _run_step(
+                    "check_commercial_data_quality",
+                    self.check_commercial_data_quality_now(),
+                )
+            if cfg["chain_check_launch_readiness_gate"]:
+                await _run_step(
+                    "check_launch_readiness_gate",
+                    self.check_launch_readiness_gate(),
                 )
             summary["ok"] = True
         except Exception as exc:

@@ -1,7 +1,16 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { requireApiUser } from '@/app/api/_auth'
+import { createClient } from '@/lib/supabase/server'
+import {
+  CreditConsumeError,
+  consumeCredits,
+  insufficientCreditsPayload,
+} from '@/lib/credits/consume'
+import { getCreditCost } from '@/lib/credits/cost'
+import { ENABLE_FREE_OPEN_MODE } from '@/lib/features'
 import type { LandParcel, LandTransaction } from '@/types/land'
 import { buildLandAnalysisSummary } from '@/lib/land/analysis'
 
@@ -12,7 +21,7 @@ type QualityGateStatus = 'pass' | 'warn' | 'fail'
 type QualityGrade = 'A' | 'B' | 'C' | 'D'
 
 function getSupabase() {
-  return createClient(
+  return createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL || '',
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
   )
@@ -361,6 +370,34 @@ export async function GET(request: NextRequest) {
         { error: 'pnu query param is required' },
         { status: 400 }
       )
+    }
+
+    if (!ENABLE_FREE_OPEN_MODE) {
+      const auth = await requireApiUser()
+      if ('response' in auth) return auth.response
+
+      const userSupabase = await createClient()
+      try {
+        await consumeCredits({
+          supabase: userSupabase,
+          product: 'land',
+          cost: getCreditCost('land'),
+          meta: { user_id: auth.userId, pnu },
+        })
+      } catch (error) {
+        if (
+          error instanceof CreditConsumeError &&
+          error.code === 'insufficient_credits'
+        ) {
+          return NextResponse.json(insufficientCreditsPayload(error.quota), {
+            status: error.status,
+          })
+        }
+        return NextResponse.json(
+          { error: 'Credit check failed' },
+          { status: 500 }
+        )
+      }
     }
 
     let parcel = await fetchParcelByPnu(pnu)

@@ -59,7 +59,7 @@ export interface Favorite {
 }
 
 // API Response Types
-export interface ChamgabAnalysisResponse extends Partial<QualityMeta> {
+export interface ChamgabAnalysisResponse extends QualityMeta {
   analysis: ChamgabAnalysis
   quality?: ChamgabQuality
   factors?: PriceFactor[]

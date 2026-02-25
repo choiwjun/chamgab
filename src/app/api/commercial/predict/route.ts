@@ -2,6 +2,14 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { requireApiUser } from '@/app/api/_auth'
+import { createClient } from '@/lib/supabase/server'
+import {
+  CreditConsumeError,
+  consumeCredits,
+  insufficientCreditsPayload,
+} from '@/lib/credits/consume'
+import { getCreditCost } from '@/lib/credits/cost'
+import { ENABLE_FREE_OPEN_MODE } from '@/lib/features'
 import {
   FACTOR_NAME_MAP,
   INDUSTRY_NAMES,
@@ -491,6 +499,7 @@ export async function POST(request: NextRequest) {
   if ('response' in auth) return auth.response
 
   try {
+    const userSupabase = await createClient()
     const supabase = getSupabase()
     const params = request.nextUrl.searchParams
     const districtCode = params.get('district_code') || ''
@@ -501,6 +510,34 @@ export async function POST(request: NextRequest) {
         { detail: 'district_code, industry_code is required' },
         { status: 400 }
       )
+    }
+
+    if (!ENABLE_FREE_OPEN_MODE) {
+      try {
+        await consumeCredits({
+          supabase: userSupabase,
+          product: 'commercial',
+          cost: getCreditCost('commercial'),
+          meta: {
+            user_id: auth.userId,
+            district_code: districtCode,
+            industry_code: industryCode,
+          },
+        })
+      } catch (error) {
+        if (
+          error instanceof CreditConsumeError &&
+          error.code === 'insufficient_credits'
+        ) {
+          return NextResponse.json(insufficientCreditsPayload(error.quota), {
+            status: error.status,
+          })
+        }
+        return NextResponse.json(
+          { error: 'Credit check failed' },
+          { status: 500 }
+        )
+      }
     }
 
     const { name, sido } = await getDistrictName(supabase, districtCode)

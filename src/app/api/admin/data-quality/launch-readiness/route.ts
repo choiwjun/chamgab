@@ -641,11 +641,6 @@ export async function GET(req: NextRequest) {
       }),
     ]
 
-    const apartmentPass = apartmentChecks.every((c) => c.pass)
-    const commercialPass =
-      commercialChecks.length > 0 && commercialChecks.every((c) => c.pass)
-    const schoolPass = schoolChecks.every((c) => c.pass)
-    const landPass = landChecks.every((c) => c.pass)
     const missingMetrics = [
       ...apartmentChecks,
       ...commercialChecks,
@@ -654,24 +649,39 @@ export async function GET(req: NextRequest) {
     ]
       .filter((c) => !c.available)
       .map((c) => c.key)
-    const overallPaidReadiness =
-      apartmentPass && commercialPass && schoolPass && landPass
-        ? 'GO'
-        : missingMetrics.length === 0
-          ? 'GO_WARN'
-          : 'NO_GO'
+    const toDomainGateStatus = (checks: GateCheck[]): 'PASS' | 'WARN' | 'FAIL' => {
+      if (checks.length > 0 && checks.every((check) => check.pass)) return 'PASS'
+      if (checks.some((check) => !check.available)) return 'WARN'
+      return 'FAIL'
+    }
+
+    const apartmentGateStatus = toDomainGateStatus(apartmentChecks)
+    const commercialGateStatus = toDomainGateStatus(commercialChecks)
+    const schoolGateStatus = toDomainGateStatus(schoolChecks)
+    const landGateStatus = toDomainGateStatus(landChecks)
+    const allDomainsPass =
+      apartmentGateStatus === 'PASS' &&
+      commercialGateStatus === 'PASS' &&
+      schoolGateStatus === 'PASS' &&
+      landGateStatus === 'PASS'
+    const overallGateStatus: 'PASS' | 'WARN' | 'FAIL' = allDomainsPass
+      ? 'PASS'
+      : [apartmentGateStatus, commercialGateStatus, schoolGateStatus, landGateStatus].includes(
+            'FAIL'
+          )
+        ? 'FAIL'
+        : 'WARN'
+    const overallPaidReadiness = allDomainsPass ? 'GO' : 'NO_GO'
 
     return NextResponse.json({
       as_of: new Date().toISOString(),
+      schema_version: 'launch-readiness-v2',
       status: {
-        apartment: apartmentPass ? 'GO' : 'NO_GO',
-        commercial: commercialPass ? 'GO' : 'NO_GO',
-        school: schoolPass ? 'GO_LIMITED' : 'NO_GO',
-        land: landPass ? 'GO_LIMITED' : 'NO_GO',
-        overall:
-          apartmentPass && commercialPass && schoolPass && landPass
-            ? 'GO'
-            : 'NO_GO',
+        apartment: apartmentGateStatus,
+        commercial: commercialGateStatus,
+        school: schoolGateStatus,
+        land: landGateStatus,
+        overall: overallGateStatus,
       },
       overall_paid_readiness: overallPaidReadiness,
       apartment: {
@@ -747,7 +757,8 @@ export async function GET(req: NextRequest) {
         thresholds: LAND_THRESHOLDS,
       },
       missing_metrics: missingMetrics,
-      note: 'Launch gate is metrics-only. Missing metrics are treated as FAIL until quality jobs publish them.',
+      missing_metrics_count: missingMetrics.length,
+      note: 'overall_paid_readiness uses strict policy: all PASS => GO, otherwise NO_GO.',
     })
   } catch (error) {
     const message =
