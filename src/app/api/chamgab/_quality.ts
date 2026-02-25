@@ -153,3 +153,58 @@ export async function buildChamgabQuality(
     quality_flags: qualityFlags,
   }
 }
+
+/* ── Quality Meta (gate / grade / freshness) ── */
+
+const CHAMGAB_QUALITY_VERSION =
+  process.env.CHAMGAB_QUALITY_VERSION || 'chamgab-quality-v1'
+
+export type QualityGateStatus = 'pass' | 'warn' | 'fail'
+export type QualityGrade = 'A' | 'B' | 'C' | 'D'
+
+export function deriveChamgabQualityMeta(
+  qualityFlags: string[] = [],
+  analyzedAt?: unknown
+): {
+  quality_gate_status: QualityGateStatus
+  quality_grade: QualityGrade
+  quality_version: string
+  quality_flags: string[]
+  data_freshness: string | null
+} {
+  const hasFail =
+    qualityFlags.includes('FACTOR_MISSING') ||
+    qualityFlags.includes('GAP_SEVERE') ||
+    qualityFlags.includes('NO_TRANSACTION_BENCHMARK')
+
+  const hasWarn =
+    qualityFlags.includes('FACTOR_INCOMPLETE') ||
+    qualityFlags.includes('GAP_WATCH') ||
+    qualityFlags.includes('LOW_CONFIDENCE')
+
+  const qualityGateStatus: QualityGateStatus = hasFail
+    ? 'fail'
+    : hasWarn
+      ? 'warn'
+      : 'pass'
+
+  const qualityGrade: QualityGrade =
+    qualityGateStatus === 'fail'
+      ? 'D'
+      : qualityGateStatus === 'warn'
+        ? 'C'
+        : qualityFlags.length === 0
+          ? 'A'
+          : 'B'
+
+  return {
+    quality_gate_status: qualityGateStatus,
+    quality_grade: qualityGrade,
+    quality_version: CHAMGAB_QUALITY_VERSION,
+    quality_flags: qualityFlags,
+    data_freshness:
+      typeof analyzedAt === 'string' && analyzedAt.trim().length > 0
+        ? analyzedAt
+        : null,
+  }
+}
