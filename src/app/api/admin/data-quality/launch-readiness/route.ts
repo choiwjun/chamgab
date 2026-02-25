@@ -7,8 +7,10 @@ import path from 'path'
 import { requireAdmin } from '../../_utils'
 import { createAdminClient } from '@/lib/supabase/admin'
 import {
+  computeCommercialQualitySnapshot,
   evaluateCommercialSnapshotGate,
   getLatestCommercialQualitySnapshot,
+  insertCommercialQualitySnapshot,
 } from '@/app/api/admin/commercial/quality/_snapshot'
 
 const APARTMENT_THRESHOLDS = {
@@ -283,7 +285,7 @@ export async function GET(req: NextRequest) {
       avgInferredRatioPct,
       gapAuditSummary,
       autofixSummary,
-      latestCommercialSnapshot,
+      latestCommercialSnapshotRaw,
       schoolQualityReport,
       landQualityReport,
       totalLandTransactions,
@@ -432,9 +434,29 @@ export async function GET(req: NextRequest) {
       .filter((v): v is number => v != null)
       .reduce((max, n) => (n > max ? n : max), 0)
 
-    const commercialGate = evaluateCommercialSnapshotGate(
-      latestCommercialSnapshot as Record<string, unknown> | null
-    )
+    let latestCommercialSnapshot = latestCommercialSnapshotRaw as
+      | Record<string, unknown>
+      | null
+    let commercialSnapshotRebuilt = false
+    let commercialSnapshotPersisted = latestCommercialSnapshot != null
+    if (!latestCommercialSnapshot) {
+      commercialSnapshotRebuilt = true
+      commercialSnapshotPersisted = false
+      const computed = await computeCommercialQualitySnapshot()
+      latestCommercialSnapshot = computed as unknown as Record<string, unknown>
+      try {
+        const saved = (await insertCommercialQualitySnapshot(computed)) as Record<
+          string,
+          unknown
+        >
+        latestCommercialSnapshot = saved
+        commercialSnapshotPersisted = true
+      } catch {
+        // Fallback to computed snapshot when persistence fails.
+      }
+    }
+
+    const commercialGate = evaluateCommercialSnapshotGate(latestCommercialSnapshot)
     const commercialChecks: GateCheck[] = commercialGate.checks.map(
       (check) => ({
         key: check.key,
@@ -703,6 +725,8 @@ export async function GET(req: NextRequest) {
         checks: commercialChecks,
         metrics: {
           ...(commercialGate.metrics || {}),
+          snapshot_rebuilt: commercialSnapshotRebuilt,
+          snapshot_persisted: commercialSnapshotPersisted,
           latest_base_year_month: {
             business_statistics: latestBizMonth,
             sales_statistics: latestSalesMonth,

@@ -60,7 +60,7 @@ def evaluate(payload: Dict[str, Any] | None) -> Dict[str, Any]:
 def run(args: argparse.Namespace) -> Dict[str, Any]:
     base_url = resolve_web_base_url()
     token = resolve_admin_token()
-    response = request_json(
+    latest_response = request_json(
         method="GET",
         base_url=base_url,
         path="/api/admin/commercial/quality/latest",
@@ -68,9 +68,42 @@ def run(args: argparse.Namespace) -> Dict[str, Any]:
         timeout_sec=args.timeout_sec,
     )
 
-    payload = response.get("payload") if isinstance(response.get("payload"), dict) else None
+    latest_payload = (
+        latest_response.get("payload")
+        if isinstance(latest_response.get("payload"), dict)
+        else None
+    )
+
+    rebuild_response: Dict[str, Any] | None = None
+    effective_response = latest_response
+    payload = latest_payload
+    attempted_rebuild = False
+
+    should_rebuild = args.auto_rebuild and (
+        (not latest_response["ok"])
+        or latest_payload is None
+        or latest_payload.get("error") == "snapshot_missing"
+    )
+    if should_rebuild:
+        attempted_rebuild = True
+        rebuild_response = request_json(
+            method="POST",
+            base_url=base_url,
+            path="/api/admin/commercial/quality/rebuild",
+            admin_token=token,
+            timeout_sec=args.timeout_sec,
+        )
+        rebuild_payload = (
+            rebuild_response.get("payload")
+            if isinstance(rebuild_response.get("payload"), dict)
+            else None
+        )
+        if rebuild_response["ok"] and rebuild_payload is not None:
+            effective_response = rebuild_response
+            payload = rebuild_payload
+
     evaluated = evaluate(payload)
-    hard_fail = (not response["ok"]) or (not evaluated["gate_pass"])
+    hard_fail = (not effective_response["ok"]) or (not evaluated["gate_pass"])
 
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -79,12 +112,25 @@ def run(args: argparse.Namespace) -> Dict[str, Any]:
             "gate_pass": evaluated["gate_pass"],
             "missing_metrics_count": evaluated["missing_metrics_count"],
             "checks_count": evaluated["checks_count"],
-            "source_status": response["status"],
+            "source_status": effective_response["status"],
+            "latest_source_status": latest_response["status"],
+            "attempted_rebuild": attempted_rebuild,
+            "rebuild_ok": bool(rebuild_response and rebuild_response["ok"]),
         },
         "source": {
-            "url": response["url"],
-            "status": response["status"],
-            "ok": response["ok"],
+            "url": effective_response["url"],
+            "status": effective_response["status"],
+            "ok": effective_response["ok"],
+        },
+        "latest_source": {
+            "url": latest_response["url"],
+            "status": latest_response["status"],
+            "ok": latest_response["ok"],
+        },
+        "rebuild_source": {
+            "url": rebuild_response["url"] if rebuild_response else None,
+            "status": rebuild_response["status"] if rebuild_response else None,
+            "ok": rebuild_response["ok"] if rebuild_response else None,
         },
         "checks": evaluated["checks"],
         "missing_metrics": evaluated["missing_metrics"],
@@ -98,6 +144,13 @@ def parse_args() -> argparse.Namespace:
         description="Generate commercial_data_quality_latest.json from web gate API",
     )
     parser.add_argument("--timeout-sec", type=float, default=45.0)
+    parser.add_argument(
+        "--no-auto-rebuild",
+        action="store_false",
+        dest="auto_rebuild",
+        help="Disable automatic POST /api/admin/commercial/quality/rebuild fallback.",
+    )
+    parser.set_defaults(auto_rebuild=True)
     parser.add_argument(
         "--soft-fail",
         action="store_true",
