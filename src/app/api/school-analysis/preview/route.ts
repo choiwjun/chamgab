@@ -1,9 +1,23 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
-import type { SchoolDistrictSummary } from '@/types/school-analysis'
+import type {
+  QualityFlag,
+  SchoolDistrictSummary,
+  SchoolPreviewResponse,
+} from '@/types/school-analysis'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { buildMockPreview } from '../_helpers'
+import { getSchoolAnalysisMode, schoolApiError } from '../_helpers'
+
+function asNumber(value: unknown, fallback = 0): number {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : fallback
+}
+
+function toFlags(raw: unknown): QualityFlag[] {
+  if (!Array.isArray(raw)) return []
+  return raw.filter((v): v is QualityFlag => typeof v === 'string')
+}
 
 export async function GET(request: NextRequest) {
   const districtCode =
@@ -13,10 +27,21 @@ export async function GET(request: NextRequest) {
     ? Math.min(Math.max(limitParam, 1), 300)
     : 20
 
-  let items: SchoolDistrictSummary[]
+  const mode = getSchoolAnalysisMode()
 
   try {
     const supabase = createAdminClient()
+    let gatePass = false
+
+    try {
+      const { data: gateData } = await supabase.rpc(
+        'get_school_analysis_launch_gate'
+      )
+      const gateRow = Array.isArray(gateData) ? gateData[0] : null
+      gatePass = Boolean(gateRow?.gate_pass)
+    } catch {
+      gatePass = false
+    }
 
     let query = supabase
       .from('vw_school_analysis_preview')
@@ -30,18 +55,38 @@ export async function GET(request: NextRequest) {
     }
 
     const { data, error } = await query
+    if (error) {
+      const payload = schoolApiError(
+        'pipeline_unavailable',
+        'Failed to load school preview.',
+        503
+      )
+      return NextResponse.json(payload, { status: payload.status })
+    }
 
-    if (error || !Array.isArray(data) || data.length === 0) {
-      items = buildMockPreview({ districtCode, limit })
-    } else {
-      items = data.map((row) => ({
-        district_code: row.district_code,
-        district_name: row.district_name,
-        school_count: Number(row.school_count ?? 0),
+    const rows = Array.isArray(data) ? data : []
+
+    const items: SchoolDistrictSummary[] = rows.map((row) => {
+      const officialCoverage = asNumber(
+        row.official_coverage_pct,
+        asNumber(row.official_confidence, 0)
+      )
+      const inferredRatio = asNumber(
+        row.inferred_ratio_pct,
+        Math.max(0, 100 - officialCoverage)
+      )
+      const flags = toFlags(row.quality_flags)
+
+      return {
+        district_code: String(row.district_code),
+        district_name: String(
+          row.district_name || `District ${row.district_code}`
+        ),
+        school_count: asNumber(row.school_count, 0),
         overall_score: {
-          value: Number(row.overall_score ?? 0),
+          value: asNumber(row.overall_score, 0),
           unit: 'score',
-          provenance: 'inferred',
+          provenance: officialCoverage >= 80 ? 'official' : 'inferred',
           availability: {
             available: row.overall_score != null,
             reason: row.overall_score != null ? 'available' : 'missing_source',
@@ -49,21 +94,38 @@ export async function GET(request: NextRequest) {
           updated_at: row.data_freshness || undefined,
         },
         data_freshness: row.data_freshness || new Date().toISOString(),
-        confidence_score: Number(row.confidence_score ?? 0),
+        confidence_score: asNumber(row.confidence_score, 0),
         confidence_breakdown: {
-          official_confidence: Number(row.official_confidence ?? 0),
-          inferred_confidence: Number(row.inferred_confidence ?? 0),
-          total_confidence: Number(row.confidence_score ?? 0),
-          formula_version: row.formula_version || 'v1.0.0',
+          official_confidence: asNumber(row.official_confidence, 0),
+          inferred_confidence: asNumber(row.inferred_confidence, 0),
+          total_confidence: asNumber(row.confidence_score, 0),
+          formula_version: String(row.formula_version || 'v2.0.0'),
         },
-      }))
-    }
-  } catch {
-    items = buildMockPreview({ districtCode, limit })
-  }
+        quality: {
+          official_coverage_pct: officialCoverage,
+          inferred_ratio_pct: inferredRatio,
+          flags,
+        },
+      }
+    })
 
-  return NextResponse.json({
-    items,
-    generated_at: new Date().toISOString(),
-  })
+    const response: SchoolPreviewResponse = {
+      items,
+      generated_at: new Date().toISOString(),
+      meta: {
+        mode,
+        quality_version: 'v2.0.0',
+        readiness: mode === 'open' && gatePass ? 'go' : 'hold',
+      },
+    }
+
+    return NextResponse.json(response)
+  } catch {
+    const payload = schoolApiError(
+      'pipeline_unavailable',
+      'School preview pipeline is unavailable.',
+      503
+    )
+    return NextResponse.json(payload, { status: payload.status })
+  }
 }
