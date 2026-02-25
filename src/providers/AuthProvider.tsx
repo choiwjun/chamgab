@@ -161,12 +161,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
         data: { session: null },
         error: null,
       })
-      const {
-        data: { user: currentUser },
-      } = await withTimeout(supabase.auth.getUser(), {
+      const userRes = await withTimeout(supabase.auth.getUser(), {
         data: { user: null },
         error: null,
-      })
+      } as Awaited<ReturnType<typeof supabase.auth.getUser>>)
+      const currentUser = userRes.data.user
 
       setUser(currentUser)
 
