@@ -1,6 +1,6 @@
-'use client'
+﻿'use client'
 
-// @TASK P3-S4 - 매물 상세 클라이언트 컴포넌트
+// @TASK P3-S4 - 留ㅻЪ ?곸꽭 ?대씪?댁뼵??而댄룷?뚰듃
 import { useState, useEffect } from 'react'
 import {
   Heart,
@@ -14,6 +14,7 @@ import { ChamgabCard } from '@/components/property/ChamgabCard'
 import { PriceFactors } from '@/components/property/PriceFactors'
 import { SimilarTransactions } from '@/components/property/SimilarTransactions'
 import { InvestmentScore } from '@/components/property/InvestmentScore'
+import type { ChamgabQuality } from '@/types/chamgab'
 
 interface Property {
   id: string
@@ -70,6 +71,16 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
   const [isFavorite, setIsFavorite] = useState(false)
   const [favoriteId, setFavoriteId] = useState<string | null>(null)
   const [analysis, setAnalysis] = useState<Analysis | null>(null)
+  const [analysisQuality, setAnalysisQuality] = useState<ChamgabQuality | null>(
+    null
+  )
+  const [analysisGateStatus, setAnalysisGateStatus] = useState<
+    'pass' | 'warn' | 'fail' | null
+  >(null)
+  const [analysisGrade, setAnalysisGrade] = useState<
+    'A' | 'B' | 'C' | 'D' | null
+  >(null)
+  const [analysisFlags, setAnalysisFlags] = useState<string[]>([])
   const [factors, setFactors] = useState<Factor[]>([])
   const [similarTransactions, setSimilarTransactions] = useState<Transaction[]>(
     []
@@ -78,7 +89,7 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
   const [isRequesting, setIsRequesting] = useState(false)
   const [analysisError, setAnalysisError] = useState<string | null>(null)
 
-  // 분석 요청
+  // 遺꾩꽍 ?붿껌
   const handleRequestAnalysis = async () => {
     setIsRequesting(true)
     setAnalysisError(null)
@@ -91,14 +102,43 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
-        throw new Error(err.error || 'Analysis request failed')
+        const errorCode =
+          typeof err?.code === 'string' && err.code.trim().length > 0
+            ? err.code
+            : null
+        const serverMessage =
+          typeof err?.error === 'string' && err.error.trim().length > 0
+            ? err.error
+            : null
+        const messageByCode =
+          errorCode === 'AUTH_REQUIRED'
+            ? '濡쒓렇?몄씠 ?꾩슂??湲곕뒫?낅땲?? 濡쒓렇?????ㅼ떆 ?쒕룄?댁＜?몄슂.'
+            : errorCode === 'ANON_QUOTA_EXCEEDED'
+              ? '鍮꾨줈洹몄씤 ?댁슜 ?쒕룄瑜?珥덇낵?덉뒿?덈떎. 濡쒓렇????怨꾩냽 ?댁슜?댁＜?몄슂.'
+              : errorCode === 'CREDITS_EXCEEDED' ||
+                  errorCode === 'insufficient_credits'
+                ? '?щ젅?㏃씠 遺議깊빀?덈떎. ?뚮옖???뺤씤?댁＜?몄슂.'
+                : null
+        const fallbackMessage =
+          res.status === 401
+            ? '濡쒓렇?몄씠 ?꾩슂??湲곕뒫?낅땲?? 濡쒓렇?????ㅼ떆 ?쒕룄?댁＜?몄슂.'
+            : res.status === 429
+              ? '?붿껌 ?쒕룄瑜?珥덇낵?덉뒿?덈떎. ?좎떆 ???ㅼ떆 ?쒕룄?댁＜?몄슂.'
+              : 'Analysis request failed'
+        throw new Error(messageByCode || serverMessage || fallbackMessage)
       }
 
       const result = await res.json()
       if (result.analysis) {
         setAnalysis(result.analysis)
+        setAnalysisQuality(result.quality || null)
+        setAnalysisGateStatus(result.quality_gate_status || null)
+        setAnalysisGrade(result.quality_grade || null)
+        setAnalysisFlags(
+          result.quality_flags || result.quality?.quality_flags || []
+        )
 
-        // 분석 결과에 ID가 있으면 가격 요인도 조회
+        // 遺꾩꽍 寃곌낵??ID媛 ?덉쑝硫?媛寃??붿씤??議고쉶
         if (result.analysis.id) {
           const factorsRes = await fetch(
             `/api/chamgab/${result.analysis.id}/factors?limit=10`
@@ -111,26 +151,44 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
       }
     } catch (error) {
       console.error('Analysis request failed:', error)
+      if (error instanceof Error && error.message) {
+        setAnalysisError(error.message)
+        return
+      }
       setAnalysisError(
-        '분석 요청 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'
+        '遺꾩꽍 ?붿껌 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎. ?좎떆 ???ㅼ떆 ?쒕룄?댁＜?몄슂.'
       )
     } finally {
       setIsRequesting(false)
     }
   }
 
-  // 데이터 로드
+  // ?곗씠??濡쒕뱶
   useEffect(() => {
     async function loadData() {
       setIsLoading(true)
+      setAnalysis(null)
+      setAnalysisQuality(null)
+      setAnalysisGateStatus(null)
+      setAnalysisGrade(null)
+      setAnalysisFlags([])
+      setFactors([])
       try {
-        // 참값 분석 조회
+        // 李멸컪 遺꾩꽍 議고쉶
         const analysisRes = await fetch(`/api/chamgab/${property.id}`)
         if (analysisRes.ok) {
           const analysisData = await analysisRes.json()
-          setAnalysis(analysisData.analysis)
+          setAnalysis(analysisData.analysis || null)
+          setAnalysisQuality(analysisData.quality || null)
+          setAnalysisGateStatus(analysisData.quality_gate_status || null)
+          setAnalysisGrade(analysisData.quality_grade || null)
+          setAnalysisFlags(
+            analysisData.quality_flags ||
+              analysisData.quality?.quality_flags ||
+              []
+          )
 
-          // 가격 요인 조회
+          // 媛寃??붿씤 議고쉶
           if (analysisData.analysis?.id) {
             const factorsRes = await fetch(
               `/api/chamgab/${analysisData.analysis.id}/factors?limit=10`
@@ -142,14 +200,14 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
           }
         }
 
-        // 유사 거래 조회
+        // ?좎궗 嫄곕옒 議고쉶
         const similarRes = await fetch(`/api/properties/${property.id}/similar`)
         if (similarRes.ok) {
           const similarData = await similarRes.json()
           setSimilarTransactions(similarData.transactions || [])
         }
 
-        // 관심 매물 여부 확인 (비로그인 시 건너뜀)
+        // 愿??留ㅻЪ ?щ? ?뺤씤 (鍮꾨줈洹몄씤 ??嫄대꼫?)
         try {
           const favRes = await fetch('/api/favorites')
           if (favRes.ok) {
@@ -163,9 +221,9 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
               setFavoriteId(found.id)
             }
           }
-          // 401은 비로그인 상태 - 정상
+          // 401? 鍮꾨줈洹몄씤 ?곹깭 - ?뺤긽
         } catch {
-          // 네트워크 에러 무시
+          // ?ㅽ듃?뚰겕 ?먮윭 臾댁떆
         }
       } catch (error) {
         console.error('Failed to load data:', error)
@@ -177,7 +235,7 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
     loadData()
   }, [property.id])
 
-  // 관심 매물 토글
+  // 愿??留ㅻЪ ?좉?
   const toggleFavorite = async () => {
     try {
       if (isFavorite && favoriteId) {
@@ -201,30 +259,30 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
     }
   }
 
-  // 매물 유형 한글 변환
+  // 留ㅻЪ ?좏삎 ?쒓? 蹂??
   const propertyTypeKo: Record<string, string> = {
-    apt: '아파트',
-    officetel: '오피스텔',
-    villa: '빌라',
-    store: '상가',
-    land: '토지',
-    building: '빌딩',
+    apt: 'Apartment',
+    officetel: 'Officetel',
+    villa: 'Villa',
+    store: 'Store',
+    land: 'Land',
+    building: 'Building',
   }
 
   return (
     <div className="min-h-screen bg-white pb-24">
-      {/* 헤더 섹션 */}
+      {/* ?ㅻ뜑 ?뱀뀡 */}
       <div className="border-b border-gray-200 bg-white">
         <div className="px-6 py-8">
-          {/* 섹션 레이블 */}
+          {/* ?뱀뀡 ?덉씠釉?*/}
           <div className="mb-6 flex items-center gap-3">
             <span className="h-px w-8 bg-blue-500" />
             <span className="text-xs font-medium tracking-wide text-gray-500">
-              매물 상세정보
+              留ㅻЪ ?곸꽭?뺣낫
             </span>
           </div>
 
-          {/* 타입 배지 */}
+          {/* ???諛곗? */}
           <div className="mb-4 flex items-center gap-3">
             <span className="rounded-lg border border-blue-500/20 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-600">
               {propertyTypeKo[property.property_type] || property.property_type}
@@ -236,27 +294,27 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
             )}
           </div>
 
-          {/* 매물명 */}
+          {/* 留ㅻЪ紐?*/}
           <h1 className="mb-3 text-2xl font-bold text-[#191F28] md:text-3xl">
             {property.name}
           </h1>
 
-          {/* 주소 */}
+          {/* 二쇱냼 */}
           <div className="flex items-center gap-2 text-[#4E5968]">
             <MapPin className="h-4 w-4" />
             <span className="text-sm">{property.address}</span>
           </div>
         </div>
 
-        {/* 상세 정보 그리드 */}
+        {/* ?곸꽭 ?뺣낫 洹몃━??*/}
         <div className="grid grid-cols-3 divide-x divide-gray-200 border-t border-gray-200">
           {property.area_exclusive && (
             <div className="px-4 py-5 text-center">
               <Ruler className="mx-auto mb-2 h-4 w-4 text-blue-500" />
               <p className="text-lg font-bold text-[#191F28]">
-                {property.area_exclusive}㎡
+                {property.area_exclusive}??
               </p>
-              <p className="mt-1 text-xs font-medium text-gray-500">전용면적</p>
+              <p className="mt-1 text-xs font-medium text-gray-500">?꾩슜硫댁쟻</p>
             </div>
           )}
           {property.built_year && (
@@ -265,7 +323,9 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
               <p className="text-lg font-bold text-[#191F28]">
                 {property.built_year}
               </p>
-              <p className="mt-1 text-xs font-medium text-gray-500">준공년도</p>
+              <p className="mt-1 text-xs font-medium text-gray-500">
+                Built year
+              </p>
             </div>
           )}
           {property.floors && (
@@ -274,19 +334,19 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
               <p className="text-lg font-bold text-[#191F28]">
                 {property.floors}F
               </p>
-              <p className="mt-1 text-xs font-medium text-gray-500">층수</p>
+              <p className="mt-1 text-xs font-medium text-gray-500">痢듭닔</p>
             </div>
           )}
         </div>
       </div>
 
-      {/* 참값 분석 카드 */}
+      {/* 李멸컪 遺꾩꽍 移대뱶 */}
       <div className="mt-2 border-b border-gray-200 bg-white">
         <div className="px-6 py-8">
           <div className="mb-6 flex items-center gap-3">
             <span className="h-px w-8 bg-blue-500" />
             <span className="text-xs font-medium tracking-wide text-gray-500">
-              AI 분석
+              AI 遺꾩꽍
             </span>
           </div>
           {analysisError && (
@@ -296,20 +356,24 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
           )}
           <ChamgabCard
             analysis={analysis || undefined}
+            quality={analysisQuality || undefined}
+            qualityGateStatus={analysisGateStatus || undefined}
+            qualityGrade={analysisGrade || undefined}
+            qualityFlags={analysisFlags}
             isLoading={isLoading || isRequesting}
             onRequestAnalysis={handleRequestAnalysis}
           />
         </div>
       </div>
 
-      {/* 가격 요인 */}
+      {/* 媛寃??붿씤 */}
       {factors.length > 0 && (
         <div className="mt-2 border-b border-gray-200 bg-white">
           <div className="px-6 py-8">
             <div className="mb-6 flex items-center gap-3">
               <span className="h-px w-8 bg-blue-500" />
               <span className="text-xs font-medium tracking-wide text-gray-500">
-                가격 영향 요인
+                媛寃??곹뼢 ?붿씤
               </span>
             </div>
             <PriceFactors
@@ -318,34 +382,34 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
               isPremium={false}
               isLoading={isLoading}
               onUpgrade={() => {
-                // 업그레이드 로직
+                // ?낃렇?덉씠??濡쒖쭅
               }}
             />
           </div>
         </div>
       )}
 
-      {/* 투자 점수 */}
+      {/* ?ъ옄 ?먯닔 */}
       <div className="mt-2 border-b border-gray-200 bg-white">
         <div className="px-6 py-8">
           <div className="mb-6 flex items-center gap-3">
             <span className="h-px w-8 bg-blue-500" />
             <span className="text-xs font-medium tracking-wide text-gray-500">
-              투자 분석
+              ?ъ옄 遺꾩꽍
             </span>
           </div>
           <InvestmentScore propertyId={property.id} />
         </div>
       </div>
 
-      {/* 유사 거래 */}
+      {/* ?좎궗 嫄곕옒 */}
       {similarTransactions.length > 0 && (
         <div className="mt-2 border-b border-gray-200 bg-white">
           <div className="px-6 py-8">
             <div className="mb-6 flex items-center gap-3">
               <span className="h-px w-8 bg-blue-500" />
               <span className="text-xs font-medium tracking-wide text-gray-500">
-                유사 거래 내역
+                ?좎궗 嫄곕옒 ?댁뿭
               </span>
             </div>
             <SimilarTransactions
@@ -356,7 +420,7 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
         </div>
       )}
 
-      {/* 하단 CTA 버튼 */}
+      {/* ?섎떒 CTA 踰꾪듉 */}
       <div className="fixed bottom-0 left-0 right-0 border-t border-gray-200 bg-white px-6 py-4 shadow-lg">
         <div className="mx-auto flex max-w-2xl gap-3">
           <button
@@ -373,7 +437,7 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
             <GitCompare className="h-5 w-5" />
           </button>
           <button className="flex-1 rounded-lg bg-blue-500 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#1B64DA]">
-            문의하기
+            臾몄쓽?섍린
           </button>
         </div>
       </div>

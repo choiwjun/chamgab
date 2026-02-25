@@ -1,21 +1,33 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
-type ApiAuthOk = { userId: string }
-type ApiAuthFailed = { response: NextResponse }
+type ApiUser = {
+  userId: string
+  email: string | null
+}
 
-export async function requireApiUser(): Promise<ApiAuthOk | ApiAuthFailed> {
+type ApiUnauthorized = {
+  response: NextResponse
+}
+
+export async function requireApiUser(): Promise<ApiUser | ApiUnauthorized> {
   const supabase = await createClient()
   const {
     data: { user },
     error,
   } = await supabase.auth.getUser()
 
-  if (error || !user) {
+  if (error || !user?.id) {
     return {
-      response: NextResponse.json({ error: 'unauthorized' }, { status: 401 }),
+      response: NextResponse.json(
+        { error: 'not_authenticated', code: 'AUTH_REQUIRED' },
+        { status: 401 }
+      ),
     }
   }
 
-  return { userId: user.id }
+  return {
+    userId: user.id,
+    email: user.email ?? null,
+  }
 }

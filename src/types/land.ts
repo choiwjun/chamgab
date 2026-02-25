@@ -100,7 +100,7 @@ export interface LandSearchParams {
   limit?: number
 }
 
-export interface LandAnalysisResponse extends Partial<QualityMeta> {
+export interface LandAnalysisResponse extends QualityMeta {
   pnu: string
   analysis: {
     overall_score: number | null
