@@ -3,6 +3,15 @@ export const runtime = 'nodejs'
 
 import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
+import { requireApiUser } from '@/app/api/_auth'
+import { createClient } from '@/lib/supabase/server'
+import {
+  CreditConsumeError,
+  consumeCredits,
+  insufficientCreditsPayload,
+} from '@/lib/credits/consume'
+import { getCreditCost } from '@/lib/credits/cost'
+import { ENABLE_FREE_OPEN_MODE } from '@/lib/features'
 import type {
   AcademyEcosystem,
   DataQualitySummary,
@@ -15,10 +24,68 @@ import type {
   SchoolQualityScore,
 } from '@/types/school-analysis'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { buildMockReport, normalizeDistrictCode } from '../_helpers'
+import {
+  createRequestHash,
+  getSchoolAnalysisMode,
+  normalizeDistrictCode,
+  schoolApiError,
+} from '../_helpers'
 
 type CreateReportBody = {
   district_code?: string
+}
+
+type QualityGateStatus = 'pass' | 'warn' | 'fail'
+type QualityGrade = 'A' | 'B' | 'C' | 'D'
+
+const SCHOOL_QUALITY_VERSION =
+  process.env.SCHOOL_QUALITY_VERSION || 'school-quality-v1'
+
+class SchoolApiException extends Error {
+  constructor(
+    public code:
+      | 'insufficient_official_data'
+      | 'preview_only_mode'
+      | 'pipeline_unavailable',
+    message: string,
+    public status: number
+  ) {
+    super(message)
+  }
+}
+
+function asNumber(value: unknown): number | null {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
+function round(v: number, p = 1) {
+  const f = 10 ** p
+  return Math.round(v * f) / f
+}
+
+function normalizedWeightedScore(
+  values: Array<{ value: number | null; weight: number }>
+): number | null {
+  const valid = values.filter((item) => item.value !== null)
+  if (valid.length === 0) return null
+
+  const totalWeight = valid.reduce((sum, item) => sum + item.weight, 0)
+  if (totalWeight <= 0) return null
+
+  const weighted = valid.reduce(
+    (sum, item) => sum + (item.value as number) * item.weight,
+    0
+  )
+  return round(weighted / totalWeight, 1)
+}
+
+function avg(rows: unknown[], field: string): number | null {
+  const vals = rows
+    .map((row) => asNumber((row as Record<string, unknown>)[field]))
+    .filter((v): v is number => v !== null)
+  if (vals.length === 0) return null
+  return round(vals.reduce((s, v) => s + v, 0) / vals.length, 1)
 }
 
 function mv(
@@ -40,72 +107,232 @@ function mv(
   }
 }
 
-function round(v: number, p = 1) {
-  const f = 10 ** p
-  return Math.round(v * f) / f
+function isRecent(ts: string | null | undefined, maxDays: number): boolean {
+  if (!ts) return false
+  const parsed = Date.parse(ts)
+  if (!Number.isFinite(parsed)) return false
+  const ageMs = Date.now() - parsed
+  return ageMs <= maxDays * 24 * 60 * 60 * 1000
+}
+
+function extractCoverage(preview: Record<string, unknown> | undefined): number {
+  if (!preview) return 0
+  const explicit = asNumber(preview.official_coverage_pct)
+  if (explicit !== null) return explicit
+  const fallback = asNumber(preview.official_confidence)
+  return fallback ?? 0
+}
+
+function deriveSchoolQualityMeta(report: SchoolAnalysisReport): {
+  quality_gate_status: QualityGateStatus
+  quality_grade: QualityGrade
+  quality_flags: string[]
+  quality_version: string
+  data_freshness: string | null
+} {
+  const coverageRaw =
+    report.data_quality?.coverage_rate ??
+    report.confidence_breakdown.official_confidence
+  const inferredRatio = Math.max(0, 100 - (coverageRaw ?? 0))
+  const flags: string[] = []
+
+  if ((coverageRaw ?? 0) < 95) flags.push('insufficient_official_data')
+  if (inferredRatio > 20) flags.push('high_inferred_ratio')
+  if (!isRecent(report.data_freshness, 45)) flags.push('stale_data')
+  if (report.confidence_score < 70) flags.push('low_confidence')
+
+  const hasFail = (coverageRaw ?? 0) < 80 || report.confidence_score < 55
+  const quality_gate_status: QualityGateStatus = hasFail
+    ? 'fail'
+    : flags.length > 0
+      ? 'warn'
+      : 'pass'
+
+  const quality_grade: QualityGrade =
+    quality_gate_status === 'fail'
+      ? 'D'
+      : quality_gate_status === 'warn'
+        ? 'C'
+        : report.confidence_score >= 85
+          ? 'A'
+          : 'B'
+
+  return {
+    quality_gate_status,
+    quality_grade,
+    quality_flags: flags,
+    quality_version: SCHOOL_QUALITY_VERSION,
+    data_freshness: report.data_freshness || null,
+  }
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiUser()
+  if ('response' in auth) return auth.response
+
   let body: CreateReportBody
   try {
     body = (await request.json()) as CreateReportBody
   } catch {
-    return NextResponse.json({ error: 'invalid_json' }, { status: 400 })
+    const payload = schoolApiError('invalid_request', 'Invalid JSON body.', 400)
+    return NextResponse.json(payload, { status: payload.status })
   }
 
   const districtCode = normalizeDistrictCode(body.district_code)
+  const mode = getSchoolAnalysisMode()
 
   try {
-    const supabase = createAdminClient()
+    if (mode !== 'open') {
+      throw new SchoolApiException(
+        'preview_only_mode',
+        'School analysis detail is temporarily limited to preview mode.',
+        409
+      )
+    }
 
-    // 1. District info from preview view
-    const { data: previewRows } = await supabase
+    if (!ENABLE_FREE_OPEN_MODE) {
+      const userSupabase = await createClient()
+      try {
+        await consumeCredits({
+          supabase: userSupabase,
+          product: 'school',
+          cost: getCreditCost('school'),
+          meta: {
+            user_id: auth.userId,
+            district_code: districtCode,
+          },
+        })
+      } catch (error) {
+        if (
+          error instanceof CreditConsumeError &&
+          error.code === 'insufficient_credits'
+        ) {
+          return NextResponse.json(insufficientCreditsPayload(error.quota), {
+            status: error.status,
+          })
+        }
+        return NextResponse.json(
+          { error: 'Credit check failed' },
+          { status: 500 }
+        )
+      }
+    }
+
+    const supabase = createAdminClient()
+    const requestHash = createRequestHash({
+      districtCode,
+      version: 'school_report_v2',
+    })
+
+    const { data: existingRow, error: existingError } = await supabase
+      .from('school_analysis_reports')
+      .select('id,report_payload,data_freshness')
+      .eq('user_id', auth.userId)
+      .eq('request_hash', requestHash)
+      .maybeSingle()
+
+    if (existingError) {
+      throw new SchoolApiException(
+        'pipeline_unavailable',
+        `Report cache lookup failed: ${existingError.message}`,
+        503
+      )
+    }
+
+    const existingReport = existingRow?.report_payload as
+      | SchoolAnalysisReport
+      | undefined
+    if (
+      existingRow?.id &&
+      existingReport &&
+      isRecent(existingRow.data_freshness as string | null, 45)
+    ) {
+      return NextResponse.json({
+        report: existingReport,
+        cached: true,
+        ...deriveSchoolQualityMeta(existingReport),
+      })
+    }
+
+    const { data: previewRows, error: previewError } = await supabase
       .from('vw_school_analysis_preview')
       .select('*')
       .eq('district_code', districtCode)
       .limit(1)
 
-    const preview = previewRows?.[0]
-    if (!preview) {
-      // Fallback to mock if district not found in DB
-      const report = buildMockReport({ userId: null, districtCode })
-      return NextResponse.json(
-        { report: report as SchoolAnalysisReport, cached: false },
-        { status: 201 }
+    if (previewError) {
+      throw new SchoolApiException(
+        'pipeline_unavailable',
+        `Preview query failed: ${previewError.message}`,
+        503
       )
     }
 
-    // 2. School quality per school in this district
-    const { data: schoolRows } = await supabase
+    const preview = previewRows?.[0] as Record<string, unknown> | undefined
+    if (!preview) {
+      throw new SchoolApiException(
+        'insufficient_official_data',
+        'No school preview data exists for this district.',
+        409
+      )
+    }
+
+    const officialCoverage = extractCoverage(preview)
+    const hasLowOfficialCoverage = officialCoverage < 95
+
+    const { data: schoolRows, error: schoolError } = await supabase
       .from('vw_school_quality_latest')
       .select('*')
       .eq('district_code', districtCode)
 
-    // 3. Academy ecosystem for this sigungu
-    const sigunguCode = districtCode // district_code == sigungu_code in our schema
-    const { data: academyRows } = await supabase
+    if (schoolError) {
+      throw new SchoolApiException(
+        'pipeline_unavailable',
+        `School quality query failed: ${schoolError.message}`,
+        503
+      )
+    }
+
+    const schools = (schoolRows || []) as Record<string, unknown>[]
+    if (schools.length === 0) {
+      throw new SchoolApiException(
+        'insufficient_official_data',
+        'No schools available for this district.',
+        409
+      )
+    }
+
+    const { data: academyRows, error: academyError } = await supabase
       .from('vw_academy_ecosystem_by_sigungu')
       .select('*')
-      .eq('sigungu_code', sigunguCode)
+      .eq('sigungu_code', districtCode)
       .limit(1)
 
-    const academy = academyRows?.[0]
-    const schools = schoolRows || []
+    if (academyError) {
+      throw new SchoolApiException(
+        'pipeline_unavailable',
+        `Academy ecosystem query failed: ${academyError.message}`,
+        503
+      )
+    }
 
-    // 4. Fetch is_active + official matching status for data quality
-    const schoolIds = schools.map((s) => s.school_id as string)
+    const academy = (academyRows?.[0] || null) as Record<string, unknown> | null
+
+    const schoolIds = schools
+      .map((s) => String(s.school_id || ''))
+      .filter((id) => id.length > 0)
 
     const { data: activeRows } =
       schoolIds.length > 0
         ? await supabase
             .from('schools')
             .select('school_id,is_active')
-            .in('school_id', schoolIds.slice(0, 500))
+            .in('school_id', schoolIds.slice(0, 1000))
         : { data: [] }
 
     const activeMap = new Map<string, boolean>()
     for (const r of activeRows || []) {
-      activeMap.set(r.school_id, r.is_active ?? true)
+      activeMap.set(String(r.school_id), Boolean(r.is_active ?? true))
     }
 
     const { data: metricsRows } =
@@ -113,16 +340,19 @@ export async function POST(request: NextRequest) {
         ? await supabase
             .from('school_metrics_official')
             .select('school_id,metrics')
-            .in('school_id', schoolIds.slice(0, 500))
+            .in('school_id', schoolIds.slice(0, 1000))
             .order('metric_year', { ascending: false })
         : { data: [] }
 
-    // Deduplicate: keep only latest per school_id
     const officialSet = new Set<string>()
     for (const r of metricsRows || []) {
       const metrics = (r.metrics ?? {}) as Record<string, unknown>
-      if (typeof metrics.schoolinfo_schul_code === 'string') {
-        officialSet.add(r.school_id)
+      const hasOfficial =
+        typeof metrics.schoolinfo_schul_code === 'string' ||
+        typeof metrics.achievement_score === 'number' ||
+        typeof metrics.progression_outcome_score === 'number'
+      if (hasOfficial) {
+        officialSet.add(String(r.school_id))
       }
     }
 
@@ -151,68 +381,21 @@ export async function POST(request: NextRequest) {
         totalSchools > 0 ? round((officialCount / totalSchools) * 100, 1) : 0,
     }
 
-    // Build school quality averages
-    const schoolCount = schools.length
-    const avgAchievement =
-      schoolCount > 0
-        ? round(
-            schools.reduce(
-              (s, r) => s + (Number(r.achievement_score) || 0),
-              0
-            ) / schoolCount,
-            1
-          )
-        : null
-    const avgProgression =
-      schoolCount > 0
-        ? round(
-            schools.reduce(
-              (s, r) => s + (Number(r.progression_outcome_score) || 0),
-              0
-            ) / schoolCount,
-            1
-          )
-        : null
-    const avgEnvironment =
-      schoolCount > 0
-        ? round(
-            schools.reduce(
-              (s, r) => s + (Number(r.education_environment_score) || 0),
-              0
-            ) / schoolCount,
-            1
-          )
-        : null
-    const avgSafety =
-      schoolCount > 0
-        ? round(
-            schools.reduce(
-              (s, r) => s + (Number(r.safety_life_score) || 0),
-              0
-            ) / schoolCount,
-            1
-          )
-        : null
-    const avgPrograms =
-      schoolCount > 0
-        ? round(
-            schools.reduce((s, r) => s + (Number(r.program_score) || 0), 0) /
-              schoolCount,
-            1
-          )
-        : null
+    const hasLowDistrictCoverage = dataQuality.coverage_rate < 95
 
-    const qualityOverall =
-      avgAchievement !== null
-        ? round(
-            (avgAchievement ?? 0) * 0.3 +
-              (avgProgression ?? 0) * 0.25 +
-              (avgEnvironment ?? 0) * 0.15 +
-              (avgSafety ?? 0) * 0.15 +
-              (avgPrograms ?? 0) * 0.15,
-            1
-          )
-        : null
+    const avgAchievement = avg(schools, 'achievement_score')
+    const avgProgression = avg(schools, 'progression_outcome_score')
+    const avgEnvironment = avg(schools, 'education_environment_score')
+    const avgSafety = avg(schools, 'safety_life_score')
+    const avgPrograms = avg(schools, 'program_score')
+
+    const qualityOverall = normalizedWeightedScore([
+      { value: avgAchievement, weight: 0.3 },
+      { value: avgProgression, weight: 0.25 },
+      { value: avgEnvironment, weight: 0.15 },
+      { value: avgSafety, weight: 0.15 },
+      { value: avgPrograms, weight: 0.15 },
+    ])
 
     const schoolQuality: SchoolQualityScore = {
       overall: mv(qualityOverall, 'official'),
@@ -223,47 +406,10 @@ export async function POST(request: NextRequest) {
       programs: mv(avgPrograms, 'inferred'),
     }
 
-    // Build progression averages
-    const avgGeneral =
-      schoolCount > 0
-        ? round(
-            schools.reduce(
-              (s, r) => s + (Number(r.general_highschool_rate) || 0),
-              0
-            ) / schoolCount,
-            1
-          )
-        : null
-    const avgSpecial =
-      schoolCount > 0
-        ? round(
-            schools.reduce(
-              (s, r) => s + (Number(r.special_purpose_highschool_rate) || 0),
-              0
-            ) / schoolCount,
-            1
-          )
-        : null
-    const avgAutonomy =
-      schoolCount > 0
-        ? round(
-            schools.reduce(
-              (s, r) => s + (Number(r.autonomy_highschool_rate) || 0),
-              0
-            ) / schoolCount,
-            1
-          )
-        : null
-    const avgCollege =
-      schoolCount > 0
-        ? round(
-            schools.reduce(
-              (s, r) => s + (Number(r.college_progression_rate) || 0),
-              0
-            ) / schoolCount,
-            1
-          )
-        : null
+    const avgGeneral = avg(schools, 'general_highschool_rate')
+    const avgSpecial = avg(schools, 'special_purpose_highschool_rate')
+    const avgAutonomy = avg(schools, 'autonomy_highschool_rate')
+    const avgCollege = avg(schools, 'college_progression_rate')
 
     const progression: ProgressionStats = {
       general_highschool_rate: mv(avgGeneral, 'inferred', '%'),
@@ -272,78 +418,81 @@ export async function POST(request: NextRequest) {
       college_progression_rate: mv(avgCollege, 'inferred', '%'),
     }
 
-    // Build academy ecosystem
-    const density = academy ? Number(academy.density_score) || 0 : null
-    const diversity = academy
-      ? Number(academy.subject_diversity_score) || 0
-      : null
-    const feeAfford = academy ? Number(academy.fee_affordability_score) : null
-    const accessibilityScore = 70 // placeholder
-    const academyOverall =
-      density !== null
-        ? round(
-            (density ?? 0) * 0.35 +
-              (diversity ?? 0) * 0.25 +
-              accessibilityScore * 0.2 +
-              (feeAfford ?? 55) * 0.2,
-            1
-          )
-        : null
+    const density = academy ? asNumber(academy.density_score) : null
+    const diversity = academy ? asNumber(academy.subject_diversity_score) : null
+    const accessibility = academy ? asNumber(academy.accessibility_score) : null
+    const feeAfford = academy ? asNumber(academy.fee_affordability_score) : null
+
+    const academyOverall = normalizedWeightedScore([
+      { value: density, weight: 0.35 },
+      { value: diversity, weight: 0.25 },
+      { value: accessibility, weight: 0.2 },
+      { value: feeAfford, weight: 0.2 },
+    ])
 
     const academyEcosystem: AcademyEcosystem = {
       overall: mv(academyOverall, 'inferred'),
       density: mv(density, 'official'),
       subject_diversity: mv(diversity, 'inferred'),
-      accessibility: mv(accessibilityScore, 'inferred'),
+      accessibility: mv(accessibility, 'inferred'),
       fee_affordability: mv(feeAfford, 'official'),
     }
 
-    const commuteSafetyScore = Number(preview.commute_safety_score) || 70
+    const commuteSafetyScore = asNumber(preview.commute_safety_score)
     const commuteSafety = mv(commuteSafetyScore, 'inferred')
 
-    const overallScore = round(
-      (qualityOverall ?? 0) * 0.45 +
-        (academyOverall ?? 0) * 0.35 +
-        commuteSafetyScore * 0.2,
-      1
-    )
+    const overallScore = normalizedWeightedScore([
+      { value: qualityOverall, weight: 0.45 },
+      { value: academyOverall, weight: 0.35 },
+      { value: commuteSafetyScore, weight: 0.2 },
+    ])
 
-    const officialConf = Number(preview.official_confidence) || 0
-    const inferredConf = Number(preview.inferred_confidence) || 0
+    const officialConf = asNumber(preview.official_confidence) ?? 0
+    const inferredConf = asNumber(preview.inferred_confidence) ?? 0
+    const totalConf = asNumber(preview.confidence_score) ?? 0
 
-    // Build school list
     const schoolList: SchoolOverview[] = schools.slice(0, 50).map((s) => {
-      const ach = Number(s.achievement_score) || 0
-      const prog = Number(s.progression_outcome_score) || 0
-      const env = Number(s.education_environment_score) || 0
-      const saf = Number(s.safety_life_score) || 0
-      const prg = Number(s.program_score) || 0
-      const score = round(
-        ach * 0.3 + prog * 0.25 + env * 0.15 + saf * 0.15 + prg * 0.15,
-        1
-      )
+      const score = normalizedWeightedScore([
+        { value: asNumber(s.achievement_score), weight: 0.3 },
+        { value: asNumber(s.progression_outcome_score), weight: 0.25 },
+        { value: asNumber(s.education_environment_score), weight: 0.15 },
+        { value: asNumber(s.safety_life_score), weight: 0.15 },
+        { value: asNumber(s.program_score), weight: 0.15 },
+      ])
+
+      const schoolId = String(s.school_id || '')
       return {
-        school_id: s.school_id,
-        school_name: s.school_name,
-        school_level: s.school_level || 'other',
+        school_id: schoolId,
+        school_name: String(s.school_name || `School ${schoolId}`),
+        school_level: String(s.school_level || 'other') as
+          | 'elementary'
+          | 'middle'
+          | 'high'
+          | 'other',
         overall_score: mv(score, 'official'),
-        data_status: getDataStatus(s.school_id),
+        data_status: getDataStatus(schoolId),
       }
     })
 
+    const reportId = existingRow?.id || crypto.randomUUID()
+    const districtName = String(
+      preview.district_name || `District ${districtCode}`
+    )
+
     const report: SchoolAnalysisReport = {
-      id: crypto.randomUUID(),
-      user_id: null,
+      id: reportId,
+      user_id: auth.userId,
       district_code: districtCode,
-      district_name: preview.district_name || `District ${districtCode}`,
+      district_name: districtName,
       generated_at: new Date().toISOString(),
-      data_freshness: preview.data_freshness || new Date().toISOString(),
-      confidence_score: Number(preview.confidence_score) || 0,
+      data_freshness:
+        (preview.data_freshness as string | null) || new Date().toISOString(),
+      confidence_score: totalConf,
       confidence_breakdown: {
         official_confidence: officialConf,
         inferred_confidence: inferredConf,
-        total_confidence: Number(preview.confidence_score) || 0,
-        formula_version: preview.formula_version || 'v1.0.0',
+        total_confidence: totalConf,
+        formula_version: String(preview.formula_version || 'v2.0.0'),
       },
       overall_score: mv(overallScore, 'inferred'),
       school_quality: schoolQuality,
@@ -354,16 +503,81 @@ export async function POST(request: NextRequest) {
       data_quality: dataQuality,
     }
 
-    return NextResponse.json({ report, cached: false }, { status: 201 })
-  } catch (err) {
-    console.error(
-      '[school-analysis/reports] DB query failed, falling back to mock:',
-      err
-    )
-    const report = buildMockReport({ userId: null, districtCode })
+    // In open mode, low coverage is surfaced in quality metadata instead of
+    // hard-blocking report generation with HTTP 409.
+    if (hasLowOfficialCoverage || hasLowDistrictCoverage) {
+      report.confidence_score = round(
+        Math.min(
+          report.confidence_score,
+          Math.max(30, (officialCoverage + dataQuality.coverage_rate) / 2)
+        ),
+        1
+      )
+      report.confidence_breakdown.total_confidence = report.confidence_score
+    }
+
+    if (existingRow?.id) {
+      const { error: updateError } = await supabase
+        .from('school_analysis_reports')
+        .update({
+          district_name: districtName,
+          report_payload: report,
+          data_freshness: report.data_freshness,
+          confidence_score: report.confidence_score,
+          formula_version: report.confidence_breakdown.formula_version,
+        })
+        .eq('id', existingRow.id)
+
+      if (updateError) {
+        throw new SchoolApiException(
+          'pipeline_unavailable',
+          `Failed to update report cache: ${updateError.message}`,
+          503
+        )
+      }
+    } else {
+      const { error: insertError } = await supabase
+        .from('school_analysis_reports')
+        .insert({
+          id: reportId,
+          user_id: auth.userId,
+          district_code: districtCode,
+          district_name: districtName,
+          request_hash: requestHash,
+          report_payload: report,
+          data_freshness: report.data_freshness,
+          confidence_score: report.confidence_score,
+          formula_version: report.confidence_breakdown.formula_version,
+        })
+
+      if (insertError) {
+        throw new SchoolApiException(
+          'pipeline_unavailable',
+          `Failed to save report cache: ${insertError.message}`,
+          503
+        )
+      }
+    }
+
     return NextResponse.json(
-      { report: report as SchoolAnalysisReport, cached: false },
+      {
+        report,
+        cached: false,
+        ...deriveSchoolQualityMeta(report),
+      },
       { status: 201 }
     )
+  } catch (err) {
+    if (err instanceof SchoolApiException) {
+      const payload = schoolApiError(err.code, err.message, err.status)
+      return NextResponse.json(payload, { status: err.status })
+    }
+
+    const payload = schoolApiError(
+      'pipeline_unavailable',
+      'School analysis pipeline unavailable.',
+      503
+    )
+    return NextResponse.json(payload, { status: payload.status })
   }
 }

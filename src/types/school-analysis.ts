@@ -1,6 +1,22 @@
+import type { QualityMeta } from './quality'
+
 export type MetricProvenance = 'official' | 'inferred'
+export type SchoolAnalysisMode = 'preview_only' | 'open'
+export type ApiErrorCode =
+  | 'insufficient_official_data'
+  | 'preview_only_mode'
+  | 'report_not_found'
+  | 'school_not_found'
+  | 'pipeline_unavailable'
+  | 'invalid_request'
 
 export type SchoolDataStatus = 'official' | 'name_mismatch' | 'inactive'
+export type QualityFlag =
+  | 'insufficient_official_data'
+  | 'high_inferred_ratio'
+  | 'stale_data'
+  | 'low_coverage'
+  | 'missing_metrics'
 
 export interface DataQualitySummary {
   total_schools: number
@@ -72,6 +88,19 @@ export interface SchoolDistrictSummary {
   data_freshness: string
   confidence_score: number
   confidence_breakdown: ConfidenceBreakdown
+  quality?: DistrictQuality
+}
+
+export interface DistrictQuality {
+  official_coverage_pct: number
+  inferred_ratio_pct: number
+  flags: QualityFlag[]
+}
+
+export interface SchoolReadinessMeta {
+  mode: SchoolAnalysisMode
+  quality_version: string
+  readiness: 'go' | 'hold'
 }
 
 export interface SchoolOverview {
@@ -124,7 +153,18 @@ export interface SchoolPreviewParams {
   limit?: number
 }
 
+export interface SchoolPreviewResponse {
+  items: SchoolDistrictSummary[]
+  generated_at: string
+  meta: SchoolReadinessMeta
+}
+
 export interface CreateSchoolReportParams {
   district_code: string
   school_ids?: string[]
+}
+
+export interface SchoolReportResponse extends QualityMeta {
+  report: SchoolAnalysisReport
+  cached: boolean
 }

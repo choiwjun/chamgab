@@ -9,6 +9,8 @@ import os
 import pickle
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -16,7 +18,12 @@ from typing import Any, Dict, Optional
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
+from app.core.model_artifacts import (
+    download_apartment_model_artifacts,
+    upload_apartment_model_artifacts,
+)
 from app.services.analyzer_service import analyzer_service
 from app.services.business_model_service import business_model_service
 from app.services.collector_service import collector_service
@@ -25,7 +32,22 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 MODELS_DIR = PROJECT_ROOT / "app" / "models"
 SCRIPTS_DIR = PROJECT_ROOT / "scripts"
 LOGS_DIR = PROJECT_ROOT / "logs"
+REPORTS_DIR = PROJECT_ROOT / "reports"
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
+REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+CRITICAL_PIPELINE_JOB_ORDER = (
+    "chamgab_gap_recovery_full",
+    "school_full_rebuild",
+    "check_school_data_quality",
+    "collect_commercial",
+    "build_commercial_quality_snapshot",
+    "check_commercial_data_quality",
+    "check_land_collection_status",
+    "check_launch_readiness_gate",
+)
+
+DEFAULT_AUTO_RETRY_JOB_TYPES = CRITICAL_PIPELINE_JOB_ORDER
 
 
 class DataScheduler:
@@ -54,11 +76,22 @@ class DataScheduler:
         self.last_chamgab_audit_summary: Optional[Dict[str, Any]] = None
         self.last_chamgab_reanalyze_summary: Optional[Dict[str, Any]] = None
         self.last_tx_property_backfill_summary: Optional[Dict[str, Any]] = None
+        self.last_chamgab_factor_backfill_summary: Optional[Dict[str, Any]] = None
         self.last_chamgab_autofix_summary: Optional[Dict[str, Any]] = None
+        self.last_chamgab_gap_recovery_summary: Optional[Dict[str, Any]] = None
+        self.last_launch_readiness_gate_summary: Optional[Dict[str, Any]] = None
+        self.last_job_status_by_type: Dict[str, Dict[str, Any]] = {}
+        self.last_watchdog_run_at: Optional[str] = None
+        self.last_watchdog_action: Optional[Dict[str, Any]] = None
 
         self._run_lock = asyncio.Lock()
+        self._watchdog_lock = asyncio.Lock()
         self._chamgab_autofix_lock = asyncio.Lock()
+        self._watchdog_requeue_attempts: Dict[str, int] = {}
+        self._watchdog_state_path = LOGS_DIR / "scheduler_watchdog_state_latest.json"
         self._app = None
+
+        self._load_scheduler_state()
 
     def set_app(self, app) -> None:
         self._app = app
@@ -96,6 +129,100 @@ class DataScheduler:
     def _write_summary_json(self, path: Path, summary: Dict[str, Any]) -> None:
         path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
 
+    def _parse_iso_datetime(self, value: Any) -> Optional[datetime]:
+        if not value or not isinstance(value, str):
+            return None
+        try:
+            normalized = value.replace("Z", "+00:00")
+            return datetime.fromisoformat(normalized)
+        except Exception:
+            return None
+
+    def _load_scheduler_state(self) -> None:
+        payload = self._load_summary_json(self._watchdog_state_path)
+        if not isinstance(payload, dict):
+            return
+
+        last_job_status_by_type = payload.get("last_job_status_by_type")
+        if isinstance(last_job_status_by_type, dict):
+            self.last_job_status_by_type = {
+                str(k): v for k, v in last_job_status_by_type.items() if isinstance(v, dict)
+            }
+
+        watchdog_attempts = payload.get("watchdog_requeue_attempts")
+        if isinstance(watchdog_attempts, dict):
+            parsed_attempts: Dict[str, int] = {}
+            for key, value in watchdog_attempts.items():
+                try:
+                    parsed_attempts[str(key)] = max(0, int(value))
+                except Exception:
+                    continue
+            self._watchdog_requeue_attempts = parsed_attempts
+
+        last_watchdog_run_at = payload.get("last_watchdog_run_at")
+        if isinstance(last_watchdog_run_at, str):
+            self.last_watchdog_run_at = last_watchdog_run_at
+
+        last_watchdog_action = payload.get("last_watchdog_action")
+        if isinstance(last_watchdog_action, dict):
+            self.last_watchdog_action = last_watchdog_action
+
+    def _persist_scheduler_state(self) -> None:
+        payload: Dict[str, Any] = {
+            "generated_at": datetime.now().isoformat(),
+            "last_job_status_by_type": self.last_job_status_by_type,
+            "watchdog_requeue_attempts": self._watchdog_requeue_attempts,
+            "last_watchdog_run_at": self.last_watchdog_run_at,
+            "last_watchdog_action": self.last_watchdog_action,
+        }
+        try:
+            self._write_summary_json(self._watchdog_state_path, payload)
+        except Exception as exc:
+            print(f"[scheduler] failed to persist scheduler state: {exc}")
+
+    def _watchdog_job_order(self) -> list[str]:
+        raw = (os.getenv("SCHEDULER_WATCHDOG_JOB_ORDER") or "").strip()
+        if not raw:
+            return list(CRITICAL_PIPELINE_JOB_ORDER)
+        parsed = [item.strip() for item in raw.split(",") if item.strip()]
+        return parsed or list(CRITICAL_PIPELINE_JOB_ORDER)
+
+    def _record_job_outcome(
+        self,
+        *,
+        job_type: str,
+        started_at: Optional[str],
+        finished_at: Optional[str],
+        ok: Optional[bool],
+        error: Optional[str],
+    ) -> None:
+        self.last_job_status_by_type[job_type] = {
+            "job_type": job_type,
+            "started_at": started_at,
+            "finished_at": finished_at,
+            "ok": ok,
+            "error": error,
+        }
+        if ok:
+            self._watchdog_requeue_attempts[job_type] = 0
+        self._persist_scheduler_state()
+
+    def _queue_run_now_job(self, job_type: str, *, source: str, delay_sec: int = 2) -> str:
+        run_at = datetime.now() + timedelta(seconds=max(1, delay_sec))
+        queue_job_id = f"{source}_{job_type}"
+        self.scheduler.add_job(
+            self.run_now,
+            DateTrigger(run_date=run_at),
+            id=queue_job_id,
+            name=f"{source} queue {job_type}",
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+            misfire_grace_time=300,
+            args=[job_type],
+        )
+        return queue_job_id
+
     def _env_int(self, key: str, default: int, *, min_value: int = 0) -> int:
         raw = os.getenv(key)
         if raw is None or raw.strip() == "":
@@ -115,6 +242,96 @@ class DataScheduler:
         except ValueError:
             return default
         return max(min_value, val)
+
+    def _env_bool(self, key: str, default: bool) -> bool:
+        raw = os.getenv(key)
+        if raw is None or raw.strip() == "":
+            return default
+        normalized = raw.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+        return default
+
+    def _retry_job_types(self) -> set[str]:
+        raw = (os.getenv("SCHEDULER_AUTO_RETRY_JOB_TYPES") or "").strip()
+        if not raw:
+            return set(DEFAULT_AUTO_RETRY_JOB_TYPES)
+        return {item.strip() for item in raw.split(",") if item.strip()}
+
+    def _attach_retry_meta(
+        self,
+        *,
+        job_type: str,
+        enabled: bool,
+        attempts_configured: int,
+        attempts_made: int,
+        backoff_enabled: bool,
+        base_delay_sec: int,
+        attempt_logs: list[Dict[str, Any]],
+    ) -> None:
+        payload = {
+            "job_type": job_type,
+            "enabled": enabled,
+            "attempts_configured": attempts_configured,
+            "attempts_made": attempts_made,
+            "backoff_enabled": backoff_enabled,
+            "base_delay_sec": base_delay_sec,
+            "attempt_logs": attempt_logs,
+        }
+        if isinstance(self.current_job_result, dict):
+            self.current_job_result = {**self.current_job_result, "_retry": payload}
+        else:
+            self.current_job_result = {"_retry": payload}
+
+    async def _http_get_json(
+        self,
+        url: str,
+        *,
+        headers: Optional[Dict[str, str]] = None,
+        timeout: int = 30,
+    ) -> Dict[str, Any]:
+        req_headers = headers or {}
+
+        def _fetch() -> Dict[str, Any]:
+            req = urllib.request.Request(url=url, method="GET", headers=req_headers)
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    body = resp.read().decode("utf-8", errors="replace")
+                    payload = json.loads(body) if body else {}
+                    return {
+                        "ok": True,
+                        "status": int(resp.getcode() or 200),
+                        "payload": payload,
+                        "error": None,
+                    }
+            except urllib.error.HTTPError as exc:
+                raw = ""
+                try:
+                    raw = exc.read().decode("utf-8", errors="replace")
+                except Exception:
+                    raw = ""
+                payload = None
+                try:
+                    payload = json.loads(raw) if raw else None
+                except Exception:
+                    payload = None
+                return {
+                    "ok": False,
+                    "status": int(exc.code or 500),
+                    "payload": payload,
+                    "error": raw or str(exc),
+                }
+            except Exception as exc:
+                return {
+                    "ok": False,
+                    "status": 0,
+                    "payload": None,
+                    "error": str(exc),
+                }
+
+        return await asyncio.to_thread(_fetch)
 
     async def _reload_models(self) -> None:
         if not self._app:
@@ -147,6 +364,103 @@ class DataScheduler:
                 business_model_service.load(str(business_model_path))
         except Exception as exc:
             print(f"[scheduler] model reload failed: {exc}")
+
+    def _required_apartment_model_artifacts(self) -> dict[str, Path]:
+        return {
+            "xgboost_model.pkl": MODELS_DIR / "xgboost_model.pkl",
+            "feature_artifacts.pkl": MODELS_DIR / "feature_artifacts.pkl",
+            "shap_explainer.pkl": MODELS_DIR / "shap_explainer.pkl",
+        }
+
+    def _missing_apartment_model_artifacts(self) -> list[str]:
+        required = self._required_apartment_model_artifacts()
+        return [name for name, path in required.items() if not path.exists()]
+
+    async def _ensure_apartment_model_artifacts(self) -> None:
+        missing_before = self._missing_apartment_model_artifacts()
+        if not missing_before:
+            return
+
+        restore_enabled = self._env_bool(
+            "CHAMGAB_MODEL_ARTIFACTS_RESTORE_ENABLED", True
+        )
+        if restore_enabled:
+            try:
+                restore_summary = await asyncio.to_thread(
+                    download_apartment_model_artifacts
+                )
+                print(
+                    "[scheduler] apartment artifact restore attempt: "
+                    f"ok={restore_summary.get('ok')} "
+                    f"downloaded={len(restore_summary.get('downloaded_files', []))} "
+                    f"missing_after={restore_summary.get('missing_required_after_download')}"
+                )
+            except Exception as exc:
+                restore_summary = {
+                    "ok": False,
+                    "error": str(exc),
+                    "downloaded_files": [],
+                }
+                print(f"[scheduler] apartment artifact restore failed: {exc}")
+
+            if isinstance(self.current_job_result, dict):
+                self.current_job_result["model_artifact_restore"] = restore_summary
+            else:
+                self.current_job_result = {"model_artifact_restore": restore_summary}
+
+            missing_after_restore = self._missing_apartment_model_artifacts()
+            if not missing_after_restore:
+                await self._reload_models()
+                return
+
+        auto_bootstrap = self._env_bool("CHAMGAB_FACTOR_BACKFILL_AUTO_BOOTSTRAP_MODEL", True)
+        if not auto_bootstrap:
+            raise RuntimeError(
+                "missing apartment model artifacts: "
+                + ", ".join(sorted(missing_before))
+            )
+
+        bootstrap_timeout = self._env_int(
+            "CHAMGAB_MODEL_BOOTSTRAP_TIMEOUT_SEC",
+            21600,
+            min_value=60,
+        )
+        ok_train = await self._run_script(
+            "scripts.train_model",
+            timeout=bootstrap_timeout,
+        )
+        if not ok_train:
+            raise RuntimeError("train_model failed while bootstrapping apartment model artifacts")
+
+        upload_after_bootstrap = self._env_bool(
+            "CHAMGAB_MODEL_ARTIFACTS_UPLOAD_AFTER_BOOTSTRAP", True
+        )
+        if upload_after_bootstrap:
+            try:
+                upload_summary = await asyncio.to_thread(
+                    upload_apartment_model_artifacts,
+                    True,
+                )
+                print(
+                    "[scheduler] apartment artifact upload completed: "
+                    f"files={upload_summary.get('uploaded_files')}"
+                )
+            except Exception as exc:
+                upload_summary = {"ok": False, "error": str(exc)}
+                print(f"[scheduler] apartment artifact upload failed: {exc}")
+
+            if isinstance(self.current_job_result, dict):
+                self.current_job_result["model_artifact_upload"] = upload_summary
+            else:
+                self.current_job_result = {"model_artifact_upload": upload_summary}
+
+        await self._reload_models()
+        missing_after = self._missing_apartment_model_artifacts()
+        if missing_after:
+            raise RuntimeError(
+                "missing apartment model artifacts after bootstrap: "
+                + ", ".join(sorted(missing_after))
+            )
 
     async def daily_collection(self) -> None:
         now = datetime.now()
@@ -238,18 +552,139 @@ class DataScheduler:
         self.last_collection_job = job_id
 
         try:
+            step_results: list[str] = []
+            land_tx_group = self._env_int("LAND_TX_GROUP", 0, min_value=0)
+            land_tx_limit = self._env_int("LAND_TX_CHUNK_LIMIT", 900, min_value=50)
+            land_price_limit = self._env_int("LAND_PRICE_CHUNK_LIMIT", 500, min_value=50)
+            land_price_sleep_ms = self._env_int("LAND_PRICE_SLEEP_MS", 120, min_value=0)
+            land_price_sigungu = (os.getenv("LAND_PRICE_SIGUNGU") or "").strip()
+            land_characteristics_limit = self._env_int(
+                "LAND_CHARACTERISTICS_CHUNK_LIMIT", 500, min_value=50
+            )
+            land_characteristics_sleep_ms = self._env_int(
+                "LAND_CHARACTERISTICS_SLEEP_MS", 120, min_value=0
+            )
+            land_characteristics_sigungu = (
+                os.getenv("LAND_CHARACTERISTICS_SIGUNGU") or ""
+            ).strip()
+
             ok = await self._run_script(
                 "scripts.collect_land_transactions",
-                args=["--group", "0", "--resume", "--limit", "900"],
+                args=[
+                    "--group",
+                    str(land_tx_group),
+                    "--resume",
+                    "--limit",
+                    str(land_tx_limit),
+                ],
                 timeout=7200,
             )
             if not ok:
                 self.last_land_collection_ok = False
                 self.last_land_collection_error = "collect_land_transactions failed"
                 raise RuntimeError("collect_land_transactions failed")
+            step_results.append("collect_land_transactions")
+
+            ok = await self._run_script(
+                "scripts.create_land_parcels",
+                timeout=3600,
+            )
+            if not ok:
+                self.last_land_collection_ok = False
+                self.last_land_collection_error = "create_land_parcels failed"
+                raise RuntimeError("create_land_parcels failed")
+            step_results.append("create_land_parcels")
+
+            price_args = [
+                "--year",
+                str(datetime.now().year),
+                "--limit",
+                str(land_price_limit),
+                "--resume",
+                "--sleep-ms",
+                str(land_price_sleep_ms),
+            ]
+            if land_price_sigungu:
+                price_args.extend(["--sigungu", land_price_sigungu])
+            ok = await self._run_script(
+                "scripts.collect_land_prices",
+                args=price_args,
+                timeout=7200,
+            )
+            if not ok:
+                self.last_land_collection_ok = False
+                self.last_land_collection_error = "collect_land_prices failed"
+                raise RuntimeError("collect_land_prices failed")
+            step_results.append("collect_land_prices")
+
+            characteristics_args = [
+                "--limit",
+                str(land_characteristics_limit),
+                "--resume",
+                "--sleep-ms",
+                str(land_characteristics_sleep_ms),
+            ]
+            if land_characteristics_sigungu:
+                characteristics_args.extend(["--sigungu", land_characteristics_sigungu])
+            ok = await self._run_script(
+                "scripts.collect_land_characteristics",
+                args=characteristics_args,
+                timeout=7200,
+            )
+            if not ok:
+                self.last_land_collection_ok = False
+                self.last_land_collection_error = "collect_land_characteristics failed"
+                raise RuntimeError("collect_land_characteristics failed")
+            step_results.append("collect_land_characteristics")
+
+            ok = await self._run_script(
+                "scripts.check_land_collection_status",
+                timeout=900,
+            )
+            if not ok:
+                self.last_land_collection_ok = False
+                self.last_land_collection_error = "check_land_collection_status failed"
+                raise RuntimeError("check_land_collection_status failed")
+            step_results.append("check_land_collection_status")
+
             self.last_land_collection_ok = True
+            self.current_job_result = {"steps": step_results}
         finally:
             self.last_land_collection_finished_at = datetime.now().isoformat()
+
+    async def collect_land_locations_chunk(self) -> None:
+        sigungu = (os.getenv("LAND_LOCATION_SIGUNGU") or "").strip()
+        limit = self._env_int("LAND_LOCATION_CHUNK_LIMIT", 500, min_value=50)
+        sleep_ms = self._env_int("LAND_LOCATION_SLEEP_MS", 180, min_value=0)
+        timeout_sec = self._env_int("LAND_LOCATION_TIMEOUT_SEC", 12, min_value=3)
+        timeout = self._env_int("LAND_LOCATION_JOB_TIMEOUT_SEC", 3600, min_value=300)
+
+        args = [
+            "--limit",
+            str(limit),
+            "--resume",
+            "--sleep-ms",
+            str(sleep_ms),
+            "--timeout-sec",
+            str(timeout_sec),
+        ]
+        if sigungu:
+            args.extend(["--sigungu", sigungu])
+
+        ok = await self._run_script(
+            "scripts.collect_land_parcel_locations",
+            args=args,
+            timeout=timeout,
+        )
+        if not ok:
+            raise RuntimeError("collect_land_parcel_locations failed")
+        self.current_job_result = {
+            "step": "collect_land_parcel_locations",
+            "sigungu": sigungu or None,
+            "limit": limit,
+            "sleep_ms": sleep_ms,
+            "timeout_sec": timeout_sec,
+        }
 
     async def link_complexes_from_transactions(self, since_days: int = 365) -> None:
         self.last_collection_job = f"link_complexes_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -271,15 +706,56 @@ class DataScheduler:
         if not ok:
             raise RuntimeError("fix_complex_names_from_transactions failed")
 
-    async def weekly_commercial_collection(self) -> None:
+    async def collect_commercial_data_only(self) -> None:
         self.last_collection_job = f"commercial_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         ok = await self._run_script(
             "scripts.collect_business_statistics",
             args=["--months", "24"],
-            timeout=3600,
+            timeout=7200,
         )
         if not ok:
             raise RuntimeError("collect_business_statistics failed")
+        self.current_job_result = {"step": "collect_business_statistics"}
+
+    async def weekly_commercial_collection(self) -> None:
+        await self.collect_commercial_data_only()
+        await self.build_commercial_quality_snapshot()
+        await self.check_commercial_data_quality_now()
+        self.current_job_result = {
+            "steps": [
+                "collect_business_statistics",
+                "build_commercial_quality_snapshot",
+                "check_commercial_data_quality",
+            ]
+        }
+
+    async def build_commercial_quality_snapshot(self) -> None:
+        ok = await self._run_script("scripts.build_commercial_quality_snapshot", timeout=1800)
+        if not ok:
+            raise RuntimeError("build_commercial_quality_snapshot failed")
+        self.current_job_result = {"step": "build_commercial_quality_snapshot"}
+
+    async def check_commercial_data_quality_now(self) -> None:
+        ok = await self._run_script("scripts.check_commercial_data_quality", timeout=900)
+        if not ok:
+            raise RuntimeError("check_commercial_data_quality failed")
+        self.current_job_result = {"step": "check_commercial_data_quality"}
+
+    async def check_launch_readiness_gate(self) -> None:
+        ok = await self._run_script("scripts.check_launch_readiness_gate", timeout=900)
+        summary = self._load_summary_json(REPORTS_DIR / "launch_readiness_gate_latest.json")
+        if summary is None:
+            summary = {
+                "generated_at": datetime.now().isoformat(),
+                "ok": ok,
+                "error": "launch_readiness_gate_latest.json missing",
+            }
+        self._write_summary_json(LOGS_DIR / "launch_readiness_gate_latest.json", summary)
+        self.last_launch_readiness_gate_summary = summary
+        self.current_job_result = summary
+
+        if not ok:
+            raise RuntimeError("check_launch_readiness_gate failed")
 
     async def weekly_business_training(self) -> None:
         self.last_training_job = f"train_biz_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -300,7 +776,9 @@ class DataScheduler:
 
     async def monthly_full_training(self) -> None:
         self.last_training_job = f"train_all_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        await self._run_script("scripts.train_model", timeout=900)
+        ok_train = await self._run_script("scripts.train_model", timeout=900)
+        if not ok_train:
+            raise RuntimeError("train_model failed")
 
         ok_prepare = await self._run_script("scripts.prepare_business_training_data", timeout=900)
         if ok_prepare:
@@ -342,6 +820,46 @@ class DataScheduler:
 
         summary = self._load_summary_json(LOGS_DIR / "chamgab_reanalyze_summary_latest.json")
         self.last_chamgab_reanalyze_summary = summary
+        self.current_job_result = summary
+
+    async def run_chamgab_factor_backfill(self) -> None:
+        factor_count = self._env_int("CHAMGAB_FACTOR_TARGET", 10, min_value=1)
+        max_retries = self._env_int("CHAMGAB_FACTOR_BACKFILL_MAX_RETRIES", 2, min_value=0)
+        limit = self._env_int("CHAMGAB_FACTOR_BACKFILL_LIMIT", 0, min_value=0)
+        sleep_ms = self._env_int("CHAMGAB_FACTOR_BACKFILL_SLEEP_MS", 0, min_value=0)
+        latest_per_property = self._env_bool(
+            "CHAMGAB_FACTOR_BACKFILL_LATEST_PER_PROPERTY", True
+        )
+        dry_run = self._env_bool("CHAMGAB_FACTOR_BACKFILL_DRY_RUN", False)
+        timeout = self._env_int("CHAMGAB_FACTOR_BACKFILL_TIMEOUT_SEC", 21600, min_value=60)
+
+        await self._ensure_apartment_model_artifacts()
+
+        args = [
+            "--factor-count",
+            str(factor_count),
+            "--max-retries",
+            str(max_retries),
+            "--limit",
+            str(limit),
+            "--sleep-ms",
+            str(sleep_ms),
+        ]
+        if latest_per_property:
+            args.append("--latest-per-property")
+        if dry_run:
+            args.append("--dry-run")
+
+        ok = await self._run_script(
+            "scripts.backfill_missing_price_factors",
+            args=args,
+            timeout=timeout,
+        )
+        if not ok:
+            raise RuntimeError("backfill_missing_price_factors failed")
+
+        summary = self._load_summary_json(LOGS_DIR / "chamgab_factor_backfill_latest.json")
+        self.last_chamgab_factor_backfill_summary = summary
         self.current_job_result = summary
 
     async def run_chamgab_autofix_apply(self) -> None:
@@ -461,6 +979,149 @@ class DataScheduler:
             self.last_chamgab_autofix_summary = summary
             self.current_job_result = summary
 
+    async def run_chamgab_gap_recovery_full(self) -> None:
+        summary: Dict[str, Any] = {
+            "generated_at": datetime.now().isoformat(),
+            "mode": "apply",
+            "steps": [],
+            "config": {
+                "run_link_complexes": self._env_bool(
+                    "CHAMGAB_GAP_RECOVERY_RUN_LINK_COMPLEXES", True
+                ),
+                "run_fix_complex_names": self._env_bool(
+                    "CHAMGAB_GAP_RECOVERY_RUN_FIX_COMPLEX_NAMES", True
+                ),
+                "run_property_backfill": self._env_bool(
+                    "CHAMGAB_GAP_RECOVERY_RUN_PROPERTY_BACKFILL", True
+                ),
+                "run_factor_backfill": self._env_bool(
+                    "CHAMGAB_GAP_RECOVERY_RUN_FACTOR_BACKFILL", True
+                ),
+                "run_autofix_apply": self._env_bool(
+                    "CHAMGAB_GAP_RECOVERY_RUN_AUTOFIX_APPLY", True
+                ),
+                "chain_school_full_rebuild": self._env_bool(
+                    "CHAMGAB_GAP_RECOVERY_CHAIN_SCHOOL_FULL_REBUILD", True
+                ),
+                "chain_collect_commercial": self._env_bool(
+                    "CHAMGAB_GAP_RECOVERY_CHAIN_COLLECT_COMMERCIAL", True
+                ),
+                "chain_build_commercial_quality_snapshot": self._env_bool(
+                    "CHAMGAB_GAP_RECOVERY_CHAIN_BUILD_COMMERCIAL_QUALITY_SNAPSHOT",
+                    True,
+                ),
+                "chain_check_commercial_data_quality": self._env_bool(
+                    "CHAMGAB_GAP_RECOVERY_CHAIN_CHECK_COMMERCIAL_DATA_QUALITY",
+                    True,
+                ),
+                "chain_check_launch_readiness_gate": self._env_bool(
+                    "CHAMGAB_GAP_RECOVERY_CHAIN_CHECK_LAUNCH_READINESS_GATE",
+                    True,
+                ),
+                "link_since_days": self._env_int(
+                    "CHAMGAB_GAP_RECOVERY_LINK_SINCE_DAYS", 365, min_value=1
+                ),
+                "fix_since_days": self._env_int(
+                    "CHAMGAB_GAP_RECOVERY_FIX_SINCE_DAYS", 365, min_value=1
+                ),
+            },
+        }
+
+        async def _run_step(step_name: str, coro) -> None:
+            started_at = datetime.now()
+            try:
+                await coro
+                summary["steps"].append(
+                    {
+                        "step": step_name,
+                        "ok": True,
+                        "started_at": started_at.isoformat(),
+                        "finished_at": datetime.now().isoformat(),
+                    }
+                )
+            except Exception as exc:
+                summary["steps"].append(
+                    {
+                        "step": step_name,
+                        "ok": False,
+                        "started_at": started_at.isoformat(),
+                        "finished_at": datetime.now().isoformat(),
+                        "error": str(exc),
+                    }
+                )
+                raise
+
+        try:
+            cfg = summary["config"]
+            if cfg["run_link_complexes"]:
+                await _run_step(
+                    "link_complexes",
+                    self.link_complexes_from_transactions(since_days=cfg["link_since_days"]),
+                )
+            if cfg["run_fix_complex_names"]:
+                await _run_step(
+                    "fix_complex_names",
+                    self.fix_complex_names_from_transactions(since_days=cfg["fix_since_days"]),
+                )
+            if cfg["run_property_backfill"]:
+                await _run_step(
+                    "chamgab_backfill_property_id",
+                    self.run_transactions_property_backfill(),
+                )
+            if cfg["run_factor_backfill"]:
+                await _run_step(
+                    "chamgab_factor_backfill",
+                    self.run_chamgab_factor_backfill(),
+                )
+            if cfg["run_autofix_apply"]:
+                await _run_step(
+                    "chamgab_autofix_apply",
+                    self.run_chamgab_autofix_apply(),
+                )
+            if cfg["chain_school_full_rebuild"]:
+                await _run_step(
+                    "school_full_rebuild",
+                    self.school_full_rebuild(),
+                )
+            if cfg["chain_collect_commercial"]:
+                await _run_step(
+                    "collect_commercial",
+                    self.collect_commercial_data_only(),
+                )
+            if cfg["chain_build_commercial_quality_snapshot"]:
+                await _run_step(
+                    "build_commercial_quality_snapshot",
+                    self.build_commercial_quality_snapshot(),
+                )
+            if cfg["chain_check_commercial_data_quality"]:
+                await _run_step(
+                    "check_commercial_data_quality",
+                    self.check_commercial_data_quality_now(),
+                )
+            if cfg["chain_check_launch_readiness_gate"]:
+                await _run_step(
+                    "check_launch_readiness_gate",
+                    self.check_launch_readiness_gate(),
+                )
+            summary["ok"] = True
+        except Exception as exc:
+            summary["ok"] = False
+            summary["error"] = str(exc)
+            raise
+        finally:
+            summary["result"] = {
+                "last_tx_property_backfill_summary": self.last_tx_property_backfill_summary,
+                "last_chamgab_factor_backfill_summary": self.last_chamgab_factor_backfill_summary,
+                "last_chamgab_autofix_summary": self.last_chamgab_autofix_summary,
+                "last_chamgab_audit_summary": self.last_chamgab_audit_summary,
+                "last_chamgab_reanalyze_summary": self.last_chamgab_reanalyze_summary,
+            }
+            summary["finished_at"] = datetime.now().isoformat()
+
+            self._write_summary_json(LOGS_DIR / "chamgab_gap_recovery_summary_latest.json", summary)
+            self.last_chamgab_gap_recovery_summary = summary
+            self.current_job_result = summary
+
     async def collect_school_base_monthly(self) -> None:
         self.last_collection_job = f"school_base_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         ok = await self._run_script("scripts.collect_school_districts", timeout=1200)
@@ -482,8 +1143,25 @@ class DataScheduler:
         if not ok_progression:
             raise RuntimeError("collect_school_progression failed")
 
+        ok_official = await self._run_script(
+            "scripts.collect_school_official_data", timeout=3600
+        )
+        if not ok_official:
+            raise RuntimeError("collect_school_official_data failed")
+
+        ok_advancement = await self._run_script(
+            "scripts.collect_advancement_stats", timeout=1800
+        )
+        if not ok_advancement:
+            raise RuntimeError("collect_advancement_stats failed")
+
         self.current_job_result = {
-            "steps": ["collect_school_metrics_official", "collect_school_progression"]
+            "steps": [
+                "collect_school_metrics_official",
+                "collect_school_progression",
+                "collect_school_official_data",
+                "collect_advancement_stats",
+            ]
         }
 
     async def collect_school_academy_weekly(self) -> None:
@@ -516,6 +1194,29 @@ class DataScheduler:
             raise RuntimeError("check_school_data_quality failed")
         self.current_job_result = {"step": "check_school_data_quality"}
 
+    async def check_land_collection_status_now(self) -> None:
+        ok = await self._run_script("scripts.check_land_collection_status", timeout=900)
+        if not ok:
+            raise RuntimeError("check_land_collection_status failed")
+        self.current_job_result = {"step": "check_land_collection_status"}
+
+    async def school_full_rebuild(self) -> None:
+        self.last_collection_job = f"school_full_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        await self.collect_school_base_monthly()
+        await self.collect_school_metrics_monthly()
+        await self.collect_school_academy_weekly()
+        await self.build_school_marts_daily()
+        await self.check_school_data_quality_now()
+        self.current_job_result = {
+            "steps": [
+                "collect_school_base_monthly",
+                "collect_school_metrics_monthly",
+                "collect_school_academy_weekly",
+                "build_school_marts_daily",
+                "check_school_data_quality",
+            ]
+        }
+
     async def collect_school_official_data(self, year: int = 2023) -> None:
         """schoolinfo.go.kr에서 전국 학교 공식 데이터 수집 (grad_rate, avg_class_size 등)."""
         self.last_collection_job = f"school_official_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -534,6 +1235,108 @@ class DataScheduler:
         except Exception as exc:
             print(f"[scheduler] startup catchup failed: {exc}")
 
+    async def watchdog_critical_pipeline(self) -> None:
+        now = datetime.now()
+        action: Dict[str, Any] = {
+            "action": "noop",
+            "reason": "no_action_required",
+            "checked_at": now.isoformat(),
+            "job_type": None,
+        }
+
+        if not self._env_bool("SCHEDULER_WATCHDOG_ENABLED", True):
+            action = {
+                "action": "skip",
+                "reason": "watchdog_disabled",
+                "checked_at": now.isoformat(),
+                "job_type": None,
+            }
+            self.last_watchdog_run_at = now.isoformat()
+            self.last_watchdog_action = action
+            self._persist_scheduler_state()
+            return
+
+        if self.current_job_running or self._run_lock.locked():
+            action = {
+                "action": "skip",
+                "reason": "job_running",
+                "checked_at": now.isoformat(),
+                "job_type": self.current_job_type,
+            }
+            self.last_watchdog_run_at = now.isoformat()
+            self.last_watchdog_action = action
+            self._persist_scheduler_state()
+            return
+
+        async with self._watchdog_lock:
+            now = datetime.now()
+            job_order = self._watchdog_job_order()
+            queue_missing = self._env_bool("SCHEDULER_WATCHDOG_QUEUE_MISSING_JOBS", True)
+            requeue_failed = self._env_bool("SCHEDULER_WATCHDOG_REQUEUE_FAILED", True)
+            cooldown_sec = self._env_int("SCHEDULER_WATCHDOG_COOLDOWN_SEC", 300, min_value=30)
+            max_requeue_per_job = self._env_int(
+                "SCHEDULER_WATCHDOG_MAX_REQUEUE_PER_JOB", 12, min_value=1
+            )
+            queue_delay_sec = self._env_int("SCHEDULER_WATCHDOG_QUEUE_DELAY_SEC", 2, min_value=1)
+
+            for job_type in job_order:
+                status = self.last_job_status_by_type.get(job_type)
+                status_ok = status.get("ok") if isinstance(status, dict) else None
+
+                if status_ok is True:
+                    continue
+                if status_ok is False and not requeue_failed:
+                    continue
+                if status_ok is None and not queue_missing:
+                    continue
+
+                finished_at = self._parse_iso_datetime((status or {}).get("finished_at"))
+                if finished_at:
+                    elapsed_sec = (now - finished_at).total_seconds()
+                    if elapsed_sec < float(cooldown_sec):
+                        action = {
+                            "action": "wait",
+                            "reason": "cooldown",
+                            "checked_at": now.isoformat(),
+                            "job_type": job_type,
+                            "elapsed_sec": round(elapsed_sec, 1),
+                            "cooldown_sec": cooldown_sec,
+                        }
+                        break
+
+                attempts = int(self._watchdog_requeue_attempts.get(job_type, 0) or 0)
+                if attempts >= max_requeue_per_job:
+                    action = {
+                        "action": "blocked",
+                        "reason": "max_requeue_reached",
+                        "checked_at": now.isoformat(),
+                        "job_type": job_type,
+                        "attempts": attempts,
+                        "max_requeue_per_job": max_requeue_per_job,
+                    }
+                    break
+
+                queue_job_id = self._queue_run_now_job(
+                    job_type,
+                    source="watchdog_queue",
+                    delay_sec=queue_delay_sec,
+                )
+                self._watchdog_requeue_attempts[job_type] = attempts + 1
+                action = {
+                    "action": "queued",
+                    "reason": "last_failed" if status_ok is False else "missing_success",
+                    "checked_at": now.isoformat(),
+                    "job_type": job_type,
+                    "queue_job_id": queue_job_id,
+                    "attempts": self._watchdog_requeue_attempts[job_type],
+                    "max_requeue_per_job": max_requeue_per_job,
+                }
+                break
+
+            self.last_watchdog_run_at = now.isoformat()
+            self.last_watchdog_action = action
+            self._persist_scheduler_state()
+
     def start(self) -> None:
         if self.is_running:
             return
@@ -545,15 +1348,45 @@ class DataScheduler:
             name="daily apartment collection",
             replace_existing=True,
         )
+        land_collection_hour = self._env_int("LAND_COLLECTION_CRON_HOUR", 6, min_value=0)
+        land_collection_minute = self._env_int("LAND_COLLECTION_CRON_MINUTE", 20, min_value=0)
         self.scheduler.add_job(
-            self.daily_land_collection,
-            CronTrigger(hour=0, minute=0),
+            self.run_now,
+            CronTrigger(hour=land_collection_hour, minute=land_collection_minute),
             id="daily_land_collection",
             name="daily land collection",
             replace_existing=True,
             coalesce=True,
             max_instances=1,
             misfire_grace_time=3600,
+            args=["collect_land_daily"],
+        )
+        if self._env_bool("LAND_LOCATION_CRON_ENABLED", True):
+            land_location_hour = self._env_int("LAND_LOCATION_CRON_HOUR", 7, min_value=0)
+            land_location_minute = self._env_int("LAND_LOCATION_CRON_MINUTE", 10, min_value=0)
+            self.scheduler.add_job(
+                self.run_now,
+                CronTrigger(hour=land_location_hour, minute=land_location_minute),
+                id="collect_land_locations",
+                name="collect land parcel locations",
+                replace_existing=True,
+                coalesce=True,
+                max_instances=1,
+                misfire_grace_time=3600,
+                args=["collect_land_locations"],
+            )
+        land_quality_hour = self._env_int("LAND_QUALITY_CHECK_CRON_HOUR", 7, min_value=0)
+        land_quality_minute = self._env_int("LAND_QUALITY_CHECK_CRON_MINUTE", 30, min_value=0)
+        self.scheduler.add_job(
+            self.run_now,
+            CronTrigger(hour=land_quality_hour, minute=land_quality_minute),
+            id="check_land_collection_status",
+            name="check land collection status",
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+            misfire_grace_time=3600,
+            args=["check_land_collection_status"],
         )
         self.scheduler.add_job(
             self.link_complexes_from_transactions,
@@ -586,6 +1419,31 @@ class DataScheduler:
             max_instances=1,
             misfire_grace_time=3600,
         )
+        if self._env_bool("CHAMGAB_GAP_RECOVERY_CRON_ENABLED", True):
+            chamgab_gap_recovery_day = (
+                os.getenv("CHAMGAB_GAP_RECOVERY_CRON_DAY_OF_WEEK", "sun").strip() or "sun"
+            )
+            chamgab_gap_recovery_hour = self._env_int(
+                "CHAMGAB_GAP_RECOVERY_CRON_HOUR", 1, min_value=0
+            )
+            chamgab_gap_recovery_minute = self._env_int(
+                "CHAMGAB_GAP_RECOVERY_CRON_MINUTE", 10, min_value=0
+            )
+            self.scheduler.add_job(
+                self.run_now,
+                CronTrigger(
+                    day_of_week=chamgab_gap_recovery_day,
+                    hour=chamgab_gap_recovery_hour,
+                    minute=chamgab_gap_recovery_minute,
+                ),
+                id="chamgab_gap_recovery_full",
+                name="chamgab gap recovery full",
+                replace_existing=True,
+                coalesce=True,
+                max_instances=1,
+                misfire_grace_time=3600,
+                args=["chamgab_gap_recovery_full"],
+            )
         self.scheduler.add_job(
             self.weekly_collection,
             CronTrigger(day_of_week="mon", hour=7, minute=0),
@@ -593,12 +1451,66 @@ class DataScheduler:
             name="weekly apartment collection",
             replace_existing=True,
         )
+        collect_commercial_day = os.getenv("COLLECT_COMMERCIAL_CRON_DAY_OF_WEEK", "fri").strip() or "fri"
+        collect_commercial_hour = self._env_int("COLLECT_COMMERCIAL_CRON_HOUR", 2, min_value=0)
+        collect_commercial_minute = self._env_int("COLLECT_COMMERCIAL_CRON_MINUTE", 0, min_value=0)
         self.scheduler.add_job(
-            self.weekly_commercial_collection,
-            CronTrigger(day_of_week="fri", hour=2, minute=0),
-            id="weekly_commercial_collection",
-            name="weekly commercial collection",
+            self.run_now,
+            CronTrigger(
+                day_of_week=collect_commercial_day,
+                hour=collect_commercial_hour,
+                minute=collect_commercial_minute,
+            ),
+            id="collect_commercial",
+            name="collect commercial",
             replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+            misfire_grace_time=3600,
+            args=["collect_commercial"],
+        )
+        build_commercial_hour = self._env_int(
+            "BUILD_COMMERCIAL_QUALITY_SNAPSHOT_CRON_HOUR", 3, min_value=0
+        )
+        build_commercial_minute = self._env_int(
+            "BUILD_COMMERCIAL_QUALITY_SNAPSHOT_CRON_MINUTE", 10, min_value=0
+        )
+        self.scheduler.add_job(
+            self.run_now,
+            CronTrigger(hour=build_commercial_hour, minute=build_commercial_minute),
+            id="build_commercial_quality_snapshot",
+            name="build commercial quality snapshot",
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+            misfire_grace_time=3600,
+            args=["build_commercial_quality_snapshot"],
+        )
+        check_commercial_hour = self._env_int("CHECK_COMMERCIAL_DATA_QUALITY_CRON_HOUR", 3, min_value=0)
+        check_commercial_minute = self._env_int("CHECK_COMMERCIAL_DATA_QUALITY_CRON_MINUTE", 20, min_value=0)
+        self.scheduler.add_job(
+            self.run_now,
+            CronTrigger(hour=check_commercial_hour, minute=check_commercial_minute),
+            id="check_commercial_data_quality",
+            name="check commercial data quality",
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+            misfire_grace_time=3600,
+            args=["check_commercial_data_quality"],
+        )
+        gate_check_hour = self._env_int("CHECK_LAUNCH_READINESS_GATE_CRON_HOUR", 3, min_value=0)
+        gate_check_minute = self._env_int("CHECK_LAUNCH_READINESS_GATE_CRON_MINUTE", 30, min_value=0)
+        self.scheduler.add_job(
+            self.run_now,
+            CronTrigger(hour=gate_check_hour, minute=gate_check_minute),
+            id="check_launch_readiness_gate",
+            name="check launch readiness gate",
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+            misfire_grace_time=3600,
+            args=["check_launch_readiness_gate"],
         )
         self.scheduler.add_job(
             self.weekly_business_training,
@@ -633,6 +1545,17 @@ class DataScheduler:
             misfire_grace_time=3600,
         )
         self.scheduler.add_job(
+            self.run_now,
+            CronTrigger(day=1, hour=4, minute=30),
+            id="school_full_rebuild",
+            name="school full rebuild",
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+            misfire_grace_time=3600,
+            args=["school_full_rebuild"],
+        )
+        self.scheduler.add_job(
             self.collect_school_metrics_monthly,
             CronTrigger(day=1, hour=5, minute=30),
             id="collect_school_metrics_monthly",
@@ -662,6 +1585,29 @@ class DataScheduler:
             max_instances=1,
             misfire_grace_time=3600,
         )
+        if self._env_bool("SCHEDULER_WATCHDOG_ENABLED", True):
+            watchdog_interval_sec = self._env_int(
+                "SCHEDULER_WATCHDOG_INTERVAL_SEC", 180, min_value=30
+            )
+            self.scheduler.add_job(
+                self.watchdog_critical_pipeline,
+                IntervalTrigger(seconds=watchdog_interval_sec),
+                id="watchdog_critical_pipeline",
+                name="watchdog critical pipeline",
+                replace_existing=True,
+                coalesce=True,
+                max_instances=1,
+                misfire_grace_time=max(120, watchdog_interval_sec),
+            )
+            if self._env_bool("SCHEDULER_WATCHDOG_RUN_ON_START", True):
+                watchdog_startup_time = datetime.now() + timedelta(seconds=20)
+                self.scheduler.add_job(
+                    self.watchdog_critical_pipeline,
+                    DateTrigger(run_date=watchdog_startup_time),
+                    id="watchdog_critical_pipeline_bootstrap",
+                    name="watchdog critical pipeline bootstrap",
+                    replace_existing=True,
+                )
 
         catchup_time = datetime.now() + timedelta(seconds=90)
         self.scheduler.add_job(
@@ -692,6 +1638,66 @@ class DataScheduler:
             for job in self.scheduler.get_jobs()
         ]
 
+    async def _run_job_once(self, job_type: str) -> None:
+        if job_type == "daily":
+            await self.daily_collection()
+        elif job_type == "weekly":
+            await self.weekly_collection()
+        elif job_type == "monthly":
+            await self.monthly_collection()
+        elif job_type == "collect_commercial":
+            await self.weekly_commercial_collection()
+        elif job_type == "build_commercial_quality_snapshot":
+            await self.build_commercial_quality_snapshot()
+        elif job_type == "check_commercial_data_quality":
+            await self.check_commercial_data_quality_now()
+        elif job_type == "check_launch_readiness_gate":
+            await self.check_launch_readiness_gate()
+        elif job_type == "collect_land_daily":
+            await self.daily_land_collection()
+        elif job_type == "collect_land_locations":
+            await self.collect_land_locations_chunk()
+        elif job_type == "check_land_collection_status":
+            await self.check_land_collection_status_now()
+        elif job_type == "link_complexes":
+            await self.link_complexes_from_transactions()
+        elif job_type == "fix_complex_names":
+            await self.fix_complex_names_from_transactions()
+        elif job_type == "train_business":
+            await self.weekly_business_training()
+        elif job_type == "train_all":
+            await self.monthly_full_training()
+        elif job_type == "chamgab_backfill_property_id":
+            await self.run_transactions_property_backfill()
+        elif job_type == "chamgab_audit_gap":
+            await self.run_chamgab_gap_audit()
+        elif job_type == "chamgab_reanalyze_severe":
+            await self.run_chamgab_reanalyze_severe()
+        elif job_type == "chamgab_factor_backfill":
+            await self.run_chamgab_factor_backfill()
+        elif job_type == "chamgab_autofix_apply":
+            await self.run_chamgab_autofix_apply()
+        elif job_type == "chamgab_gap_recovery_full":
+            await self.run_chamgab_gap_recovery_full()
+        elif job_type == "collect_school_base_monthly":
+            await self.collect_school_base_monthly()
+        elif job_type == "collect_school_metrics_monthly":
+            await self.collect_school_metrics_monthly()
+        elif job_type == "collect_school_academy_weekly":
+            await self.collect_school_academy_weekly()
+        elif job_type == "build_school_marts_daily":
+            await self.build_school_marts_daily()
+        elif job_type == "check_school_data_quality":
+            await self.check_school_data_quality_now()
+        elif job_type == "collect_school_official_data":
+            await self.collect_school_official_data(year=2023)
+        elif job_type == "school_full_rebuild":
+            await self.school_full_rebuild()
+        elif job_type == "catchup":
+            await self.startup_catchup()
+        else:
+            raise ValueError(f"Unknown job type: {job_type}")
+
     async def run_now(self, job_type: str) -> None:
         async with self._run_lock:
             self.current_job_running = True
@@ -702,58 +1708,80 @@ class DataScheduler:
             self.current_job_error = None
             self.current_job_result = None
 
-            try:
-                if job_type == "daily":
-                    await self.daily_collection()
-                elif job_type == "weekly":
-                    await self.weekly_collection()
-                elif job_type == "monthly":
-                    await self.monthly_collection()
-                elif job_type == "collect_commercial":
-                    await self.weekly_commercial_collection()
-                elif job_type == "collect_land_daily":
-                    await self.daily_land_collection()
-                elif job_type == "link_complexes":
-                    await self.link_complexes_from_transactions()
-                elif job_type == "fix_complex_names":
-                    await self.fix_complex_names_from_transactions()
-                elif job_type == "train_business":
-                    await self.weekly_business_training()
-                elif job_type == "train_all":
-                    await self.monthly_full_training()
-                elif job_type == "chamgab_backfill_property_id":
-                    await self.run_transactions_property_backfill()
-                elif job_type == "chamgab_audit_gap":
-                    await self.run_chamgab_gap_audit()
-                elif job_type == "chamgab_reanalyze_severe":
-                    await self.run_chamgab_reanalyze_severe()
-                elif job_type == "chamgab_autofix_apply":
-                    await self.run_chamgab_autofix_apply()
-                elif job_type == "collect_school_base_monthly":
-                    await self.collect_school_base_monthly()
-                elif job_type == "collect_school_metrics_monthly":
-                    await self.collect_school_metrics_monthly()
-                elif job_type == "collect_school_academy_weekly":
-                    await self.collect_school_academy_weekly()
-                elif job_type == "build_school_marts_daily":
-                    await self.build_school_marts_daily()
-                elif job_type == "check_school_data_quality":
-                    await self.check_school_data_quality_now()
-                elif job_type == "collect_school_official_data":
-                    await self.collect_school_official_data(year=2023)
-                elif job_type == "catchup":
-                    await self.startup_catchup()
-                else:
-                    raise ValueError(f"Unknown job type: {job_type}")
+            auto_retry_enabled = self._env_bool("SCHEDULER_AUTO_RETRY_ENABLED", True)
+            retryable_job_types = self._retry_job_types()
+            max_attempts = self._env_int("SCHEDULER_AUTO_RETRY_MAX_ATTEMPTS", 2, min_value=1)
+            base_delay_sec = self._env_int("SCHEDULER_AUTO_RETRY_DELAY_SEC", 60, min_value=1)
+            exp_backoff = self._env_bool("SCHEDULER_AUTO_RETRY_EXP_BACKOFF", True)
+            retry_enabled_for_job = auto_retry_enabled and job_type in retryable_job_types
+            attempts_allowed = max_attempts if retry_enabled_for_job else 1
 
-                self.current_job_ok = True
+            attempt_logs: list[Dict[str, Any]] = []
+            attempts_made = 0
+
+            try:
+                for attempt in range(1, attempts_allowed + 1):
+                    attempts_made = attempt
+                    attempt_started_at = datetime.now().isoformat()
+                    try:
+                        await self._run_job_once(job_type)
+                        attempt_logs.append(
+                            {
+                                "attempt": attempt,
+                                "ok": True,
+                                "started_at": attempt_started_at,
+                                "finished_at": datetime.now().isoformat(),
+                                "error": None,
+                            }
+                        )
+                        self.current_job_ok = True
+                        self.current_job_error = None
+                        break
+                    except Exception as exc:
+                        self.current_job_ok = False
+                        self.current_job_error = str(exc)
+                        attempt_logs.append(
+                            {
+                                "attempt": attempt,
+                                "ok": False,
+                                "started_at": attempt_started_at,
+                                "finished_at": datetime.now().isoformat(),
+                                "error": str(exc),
+                            }
+                        )
+                        if attempt >= attempts_allowed:
+                            raise
+
+                        delay_sec = (
+                            base_delay_sec * (2 ** (attempt - 1))
+                            if exp_backoff
+                            else base_delay_sec
+                        )
+                        await asyncio.sleep(delay_sec)
             except Exception as exc:
                 self.current_job_ok = False
                 self.current_job_error = str(exc)
                 raise
             finally:
+                self._attach_retry_meta(
+                    job_type=job_type,
+                    enabled=retry_enabled_for_job,
+                    attempts_configured=attempts_allowed,
+                    attempts_made=attempts_made,
+                    backoff_enabled=exp_backoff,
+                    base_delay_sec=base_delay_sec,
+                    attempt_logs=attempt_logs,
+                )
                 self.current_job_running = False
-                self.current_job_finished_at = datetime.now().isoformat()
+                finished_at = datetime.now().isoformat()
+                self.current_job_finished_at = finished_at
+                self._record_job_outcome(
+                    job_type=job_type,
+                    started_at=self.current_job_started_at,
+                    finished_at=finished_at,
+                    ok=self.current_job_ok,
+                    error=self.current_job_error,
+                )
 
 
 data_scheduler = DataScheduler()

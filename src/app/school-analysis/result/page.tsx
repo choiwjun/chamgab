@@ -12,8 +12,9 @@ import {
 import type {
   MetricValue,
   SchoolAnalysisReport,
-  SchoolDataStatus,
+  SchoolReportResponse,
 } from '@/types/school-analysis'
+import { QualityGateNotice } from '@/components/ui/QualityGateNotice'
 
 function MetricRow({ label, metric }: { label: string; metric: MetricValue }) {
   return (
@@ -30,96 +31,15 @@ function MetricRow({ label, metric }: { label: string; metric: MetricValue }) {
   )
 }
 
-const STATUS_CONFIG: Record<
-  SchoolDataStatus,
-  { label: string; bg: string; text: string }
-> = {
-  official: { label: '공식', bg: 'bg-[#E8FAF0]', text: 'text-[#00C471]' },
-  name_mismatch: { label: '추정', bg: 'bg-[#FEF3C7]', text: 'text-[#D97706]' },
-  inactive: { label: '폐교', bg: 'bg-[#F2F4F6]', text: 'text-[#8B95A1]' },
-}
-
-function DataStatusBadge({ status }: { status?: SchoolDataStatus }) {
-  if (!status) return null
-  const cfg = STATUS_CONFIG[status]
-  return (
-    <span
-      className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${cfg.bg} ${cfg.text}`}
-    >
-      {cfg.label}
-    </span>
-  )
-}
-
-function DataQualityCard({ report }: { report: SchoolAnalysisReport }) {
-  const dq = report.data_quality
-  if (!dq) return null
-
-  return (
-    <section className="mb-4 rounded-2xl border border-[#E5E8EB] bg-white p-5">
-      <h2 className="mb-3 text-sm font-semibold text-[#191F28]">데이터 품질</h2>
-
-      {/* Coverage progress bar */}
-      <div className="mb-4">
-        <div className="mb-1 flex items-center justify-between text-xs">
-          <span className="text-[#4E5968]">공식 데이터 커버리지</span>
-          <span className="font-semibold text-[#191F28]">
-            {dq.coverage_rate.toFixed(1)}%
-          </span>
-        </div>
-        <div className="h-2 w-full overflow-hidden rounded-full bg-[#F2F4F6]">
-          <div
-            className="h-full rounded-full bg-[#3182F6] transition-all"
-            style={{ width: `${Math.min(dq.coverage_rate, 100)}%` }}
-          />
-        </div>
-      </div>
-
-      {/* Status breakdown */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between text-sm">
-          <div className="flex items-center gap-2">
-            <span className="inline-block h-2 w-2 rounded-full bg-[#00C471]" />
-            <span className="text-[#4E5968]">공식 데이터 확인</span>
-          </div>
-          <span className="font-medium text-[#191F28]">
-            {dq.official_count}개교
-          </span>
-        </div>
-        <div className="flex items-center justify-between text-sm">
-          <div className="flex items-center gap-2">
-            <span className="inline-block h-2 w-2 rounded-full bg-[#F59E0B]" />
-            <span className="text-[#4E5968]">학교명 불일치</span>
-          </div>
-          <span className="font-medium text-[#191F28]">
-            {dq.name_mismatch_count}개교
-          </span>
-        </div>
-        <div className="flex items-center justify-between text-sm">
-          <div className="flex items-center gap-2">
-            <span className="inline-block h-2 w-2 rounded-full bg-[#8B95A1]" />
-            <span className="text-[#4E5968]">폐교/비활성</span>
-          </div>
-          <span className="font-medium text-[#191F28]">
-            {dq.inactive_count}개교
-          </span>
-        </div>
-      </div>
-
-      <p className="mt-3 text-xs leading-relaxed text-[#8B95A1]">
-        학교알리미 API에서 학교명이 일치하지 않는 학교는 추정 데이터를
-        사용합니다.
-      </p>
-    </section>
-  )
-}
-
 function SchoolAnalysisResultContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const districtCode = searchParams.get('district') || '11680'
 
   const [report, setReport] = useState<SchoolAnalysisReport | null>(null)
+  const [reportQuality, setReportQuality] = useState<
+    Partial<SchoolReportResponse>
+  >({})
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isSharing, setIsSharing] = useState(false)
@@ -133,12 +53,25 @@ function SchoolAnalysisResultContent() {
           district_code: districtCode,
         })
         setReport(response.report)
+        setReportQuality({
+          quality_gate_status: response.quality_gate_status,
+          quality_grade: response.quality_grade,
+          quality_flags: response.quality_flags,
+        })
       } catch (err) {
-        const message =
-          err instanceof APIError
-            ? err.message
-            : 'Failed to create school report.'
-        setError(message)
+        if (err instanceof APIError) {
+          if (err.code === 'preview_only_mode') {
+            setError('현재 학군분석은 프리뷰만 운영 중입니다.')
+          } else if (err.code === 'insufficient_official_data') {
+            setError(
+              '공식 데이터 커버리지가 부족해 상세 리포트를 생성할 수 없습니다.'
+            )
+          } else {
+            setError(err.message)
+          }
+        } else {
+          setError('Failed to create school report.')
+        }
       } finally {
         setIsLoading(false)
       }
@@ -159,16 +92,11 @@ function SchoolAnalysisResultContent() {
     try {
       const response = await createShareToken(report.id, report.district_code)
       if (navigator.share) {
-        await navigator.share({
-          title,
-          url: response.share_url,
-        })
+        await navigator.share({ title, url: response.share_url })
       } else {
         await navigator.clipboard.writeText(response.share_url)
         window.alert('공유 링크가 복사되었습니다.')
       }
-    } catch {
-      // no-op
     } finally {
       setIsSharing(false)
     }
@@ -179,9 +107,7 @@ function SchoolAnalysisResultContent() {
       <div className="flex min-h-screen items-center justify-center bg-[#F8FAFC]">
         <div className="text-center">
           <Loader2 className="mx-auto h-10 w-10 animate-spin text-[#2563EB]" />
-          <p className="mt-3 text-sm text-[#6B7280]">
-            상세 리포트를 생성 중입니다.
-          </p>
+          <p className="mt-3 text-sm text-[#6B7280]">상세 리포트 생성 중...</p>
         </div>
       </div>
     )
@@ -239,18 +165,22 @@ function SchoolAnalysisResultContent() {
           </div>
         </div>
 
+        <QualityGateNotice
+          status={reportQuality.quality_gate_status}
+          grade={reportQuality.quality_grade}
+          flags={reportQuality.quality_flags}
+          className="mb-6"
+        />
+
         <section className="mb-4 rounded-2xl border border-[#DBEAFE] bg-white p-6">
           <h2 className="text-sm font-semibold text-[#1D4ED8]">종합 점수</h2>
           <p className="mt-2 text-4xl font-bold text-[#1E3A8A]">
-            {report.overall_score.value?.toFixed(1)}
+            {report.overall_score.value?.toFixed(1) ?? '-'}
           </p>
           <p className="mt-2 text-xs text-[#6B7280]">
-            공식 지표 + 추정 지표 혼합 산식 (
-            {report.confidence_breakdown.formula_version})
+            confidence formula {report.confidence_breakdown.formula_version}
           </p>
         </section>
-
-        <DataQualityCard report={report} />
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <section className="rounded-2xl border border-[#E5E7EB] bg-white p-4">
@@ -277,19 +207,19 @@ function SchoolAnalysisResultContent() {
               진학 경로
             </h3>
             <MetricRow
-              label="일반고 비율"
+              label="일반고"
               metric={report.progression.general_highschool_rate}
             />
             <MetricRow
-              label="특목/자사 비율"
+              label="특목고"
               metric={report.progression.special_purpose_highschool_rate}
             />
             <MetricRow
-              label="자율고 비율"
+              label="자사고"
               metric={report.progression.autonomy_highschool_rate}
             />
             <MetricRow
-              label="대학 진학률"
+              label="대학 진학"
               metric={report.progression.college_progression_rate}
             />
           </section>
@@ -317,50 +247,33 @@ function SchoolAnalysisResultContent() {
             <h3 className="mb-2 text-sm font-semibold text-[#111827]">
               통학/안전
             </h3>
-            <MetricRow label="통학/안전 점수" metric={report.commute_safety} />
-            <MetricRow
-              label="공식 신뢰도"
-              metric={report.school_quality.overall}
-            />
-            <MetricRow
-              label="추정 신뢰도"
-              metric={report.academy_ecosystem.overall}
-            />
+            <MetricRow label="점수" metric={report.commute_safety} />
           </section>
         </div>
 
         <section className="mt-4 rounded-2xl border border-[#E5E7EB] bg-white p-4">
           <h3 className="mb-3 text-sm font-semibold text-[#111827]">
-            대상 학교
+            학교 목록
           </h3>
-          <ul className="space-y-2">
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {report.schools.map((school) => (
-              <li
+              <Link
                 key={school.school_id}
-                className="flex items-center justify-between rounded-lg border border-[#F3F4F6] px-3 py-2"
+                href={
+                  `/school-analysis/schools/${encodeURIComponent(school.school_id)}` as never
+                }
+                className="rounded-lg border border-[#E5E7EB] p-3 hover:border-[#93C5FD]"
               >
-                <div className="flex items-center gap-2">
-                  <div>
-                    <p className="text-sm font-medium text-[#111827]">
-                      {school.school_name}
-                    </p>
-                    <p className="text-xs text-[#6B7280]">
-                      {school.school_level}
-                    </p>
-                  </div>
-                  <DataStatusBadge status={school.data_status} />
-                </div>
-                <Link
-                  href={
-                    `/school-analysis/schools/${encodeURIComponent(school.school_id)}` as never
-                  }
-                  className="text-sm font-medium text-[#1D4ED8]"
-                >
-                  학교 상세
-                </Link>
-              </li>
+                <p className="text-sm font-semibold text-[#111827]">
+                  {school.school_name}
+                </p>
+                <p className="mt-1 text-xs text-[#8B95A1]">
+                  {school.school_level} |{' '}
+                  {school.overall_score.value?.toFixed(1) ?? '-'}
+                </p>
+              </Link>
             ))}
-          </ul>
+          </div>
         </section>
       </div>
     </div>
@@ -372,12 +285,7 @@ export default function SchoolAnalysisResultPage() {
     <Suspense
       fallback={
         <div className="flex min-h-screen items-center justify-center bg-[#F8FAFC]">
-          <div className="text-center">
-            <Loader2 className="mx-auto h-10 w-10 animate-spin text-[#2563EB]" />
-            <p className="mt-3 text-sm text-[#6B7280]">
-              상세 리포트를 불러오는 중입니다.
-            </p>
-          </div>
+          <Loader2 className="h-10 w-10 animate-spin text-[#2563EB]" />
         </div>
       }
     >

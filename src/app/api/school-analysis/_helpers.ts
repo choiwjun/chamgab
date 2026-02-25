@@ -2,66 +2,17 @@ import 'server-only'
 
 import crypto from 'crypto'
 import type {
-  AcademyEcosystem,
-  AvailabilityBlock,
-  ConfidenceBreakdown,
+  ApiErrorCode,
   MetricProvenance,
   MetricValue,
-  ProgressionStats,
+  SchoolAnalysisMode,
   SchoolAnalysisReport,
+  SchoolDataStatus,
   SchoolDetail,
   SchoolDistrictSummary,
-  SchoolQualityScore,
   SchoolLevel,
+  SchoolOverview,
 } from '@/types/school-analysis'
-
-const DISTRICT_NAME_MAP: Record<string, string> = {
-  '11680': '서울특별시 강남구',
-  '11440': '서울특별시 마포구',
-  '41135': '경기도 성남시 분당구',
-  '28177': '인천광역시 연수구',
-  '26440': '부산광역시 해운대구',
-}
-
-const UUID_REGEX =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-
-function clamp(n: number, min: number, max: number) {
-  return Math.min(Math.max(n, min), max)
-}
-
-function round(value: number, precision = 1) {
-  const factor = 10 ** precision
-  return Math.round(value * factor) / factor
-}
-
-function seededValue(seed: string, min: number, max: number, precision = 1) {
-  const hash = crypto.createHash('sha256').update(seed).digest()
-  const raw = hash.readUInt32BE(0) / 0xffffffff
-  const scaled = min + (max - min) * raw
-  return round(scaled, precision)
-}
-
-function metric(
-  value: number | null,
-  provenance: MetricProvenance,
-  unit = 'score',
-  note?: string
-): MetricValue {
-  const availability: AvailabilityBlock = {
-    available: value !== null,
-    reason: value === null ? 'missing_source' : 'available',
-    note,
-  }
-
-  return {
-    value,
-    unit,
-    provenance,
-    availability,
-    updated_at: new Date().toISOString(),
-  }
-}
 
 export function normalizeDistrictCode(input: unknown): string {
   const raw = typeof input === 'string' ? input.trim() : ''
@@ -70,317 +21,7 @@ export function normalizeDistrictCode(input: unknown): string {
 }
 
 export function districtNameFor(code: string): string {
-  return DISTRICT_NAME_MAP[code] || `District ${code}`
-}
-
-function buildConfidence(seedKey: string): ConfidenceBreakdown {
-  const official = seededValue(`${seedKey}:official`, 72, 95, 1)
-  const inferred = seededValue(`${seedKey}:inferred`, 58, 88, 1)
-  const total = round(official * 0.7 + inferred * 0.3, 1)
-
-  return {
-    official_confidence: official,
-    inferred_confidence: inferred,
-    total_confidence: total,
-    formula_version: 'v1.0.0',
-  }
-}
-
-function buildSchoolQuality(seedKey: string): SchoolQualityScore {
-  const achievement = seededValue(`${seedKey}:achievement`, 65, 96)
-  const progressionOutcome = seededValue(`${seedKey}:progression`, 61, 94)
-  const environment = seededValue(`${seedKey}:environment`, 60, 92)
-  const safetyLife = seededValue(`${seedKey}:safety`, 66, 96)
-  const programs = seededValue(`${seedKey}:programs`, 58, 93)
-
-  const overall = round(
-    achievement * 0.3 +
-      progressionOutcome * 0.25 +
-      environment * 0.15 +
-      safetyLife * 0.15 +
-      programs * 0.15,
-    1
-  )
-
-  return {
-    overall: metric(overall, 'official'),
-    achievement: metric(achievement, 'official'),
-    progression_outcome: metric(progressionOutcome, 'official'),
-    education_environment: metric(environment, 'official'),
-    safety_life: metric(safetyLife, 'official'),
-    programs: metric(
-      programs,
-      'inferred',
-      'score',
-      'Program diversity is inferred from published activity records.'
-    ),
-  }
-}
-
-function buildProgression(seedKey: string): ProgressionStats {
-  return {
-    general_highschool_rate: metric(
-      seededValue(`${seedKey}:progression:general`, 48, 89),
-      'official',
-      '%'
-    ),
-    special_purpose_highschool_rate: metric(
-      seededValue(`${seedKey}:progression:special`, 3, 19),
-      'official',
-      '%'
-    ),
-    autonomy_highschool_rate: metric(
-      seededValue(`${seedKey}:progression:autonomy`, 4, 23),
-      'official',
-      '%'
-    ),
-    college_progression_rate: metric(
-      seededValue(`${seedKey}:progression:college`, 54, 92),
-      'inferred',
-      '%',
-      'College progression for the latest term is partially inferred from historic trend.'
-    ),
-  }
-}
-
-function buildAcademyEcosystem(seedKey: string): AcademyEcosystem {
-  const density = seededValue(`${seedKey}:academy:density`, 58, 97)
-  const diversity = seededValue(`${seedKey}:academy:diversity`, 54, 95)
-  const accessibility = seededValue(`${seedKey}:academy:accessibility`, 56, 96)
-  const feeAffordability = seededValue(`${seedKey}:academy:fee`, 43, 85)
-
-  const overall = round(
-    density * 0.35 +
-      diversity * 0.25 +
-      accessibility * 0.2 +
-      feeAffordability * 0.2,
-    1
-  )
-
-  return {
-    overall: metric(overall, 'inferred'),
-    density: metric(density, 'official'),
-    subject_diversity: metric(diversity, 'inferred'),
-    accessibility: metric(accessibility, 'inferred'),
-    fee_affordability: metric(feeAffordability, 'official'),
-  }
-}
-
-function normalizeReportId(reportId?: string): string {
-  if (reportId && UUID_REGEX.test(reportId)) return reportId
-  return crypto.randomUUID()
-}
-
-function getShareTokenSecret(): string {
-  return (
-    process.env.SCHOOL_ANALYSIS_SHARE_SECRET ||
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    'school-analysis-dev-secret'
-  )
-}
-
-function base64urlEncode(input: string): string {
-  return Buffer.from(input, 'utf8').toString('base64url')
-}
-
-function base64urlDecode(input: string): string | null {
-  try {
-    return Buffer.from(input, 'base64url').toString('utf8')
-  } catch {
-    return null
-  }
-}
-
-type PublicShareTokenPayload = {
-  v: 'sa1'
-  district_code: string
-  exp: number
-}
-
-export function createPublicShareToken(
-  districtCode: string,
-  expiresInSeconds = 30 * 24 * 60 * 60
-): { token: string; expires_at: string } {
-  const exp = Math.floor(Date.now() / 1000) + expiresInSeconds
-  const payload: PublicShareTokenPayload = {
-    v: 'sa1',
-    district_code: normalizeDistrictCode(districtCode),
-    exp,
-  }
-
-  const encodedPayload = base64urlEncode(JSON.stringify(payload))
-  const signature = crypto
-    .createHmac('sha256', getShareTokenSecret())
-    .update(encodedPayload)
-    .digest('base64url')
-
-  return {
-    token: `${encodedPayload}.${signature}`,
-    expires_at: new Date(exp * 1000).toISOString(),
-  }
-}
-
-export function readPublicShareToken(
-  token: string
-): { district_code: string; expires_at: string } | null {
-  const [encodedPayload, signature] = token.split('.')
-  if (!encodedPayload || !signature) return null
-
-  const expectedSignature = crypto
-    .createHmac('sha256', getShareTokenSecret())
-    .update(encodedPayload)
-    .digest('base64url')
-
-  const signatureBuf = Buffer.from(signature)
-  const expectedSignatureBuf = Buffer.from(expectedSignature)
-  if (signatureBuf.length !== expectedSignatureBuf.length) return null
-  if (!crypto.timingSafeEqual(signatureBuf, expectedSignatureBuf)) return null
-
-  const decodedPayload = base64urlDecode(encodedPayload)
-  if (!decodedPayload) return null
-
-  let payload: PublicShareTokenPayload
-  try {
-    payload = JSON.parse(decodedPayload) as PublicShareTokenPayload
-  } catch {
-    return null
-  }
-
-  if (payload.v !== 'sa1') return null
-  if (!payload.district_code || typeof payload.district_code !== 'string')
-    return null
-  if (typeof payload.exp !== 'number' || !Number.isFinite(payload.exp))
-    return null
-  if (payload.exp <= Math.floor(Date.now() / 1000)) return null
-
-  return {
-    district_code: normalizeDistrictCode(payload.district_code),
-    expires_at: new Date(payload.exp * 1000).toISOString(),
-  }
-}
-
-export function buildMockReport(params: {
-  reportId?: string
-  userId: string | null
-  districtCode: string
-}): SchoolAnalysisReport {
-  const districtCode = normalizeDistrictCode(params.districtCode)
-  const districtName = districtNameFor(districtCode)
-  const seedKey = `${districtCode}:${params.userId ?? 'public'}`
-
-  const schoolQuality = buildSchoolQuality(seedKey)
-  const progression = buildProgression(seedKey)
-  const academyEcosystem = buildAcademyEcosystem(seedKey)
-  const commuteSafety = metric(
-    seededValue(`${seedKey}:commute`, 52, 95),
-    'inferred'
-  )
-
-  const schoolQualityScore = schoolQuality.overall.value ?? 0
-  const academyScore = academyEcosystem.overall.value ?? 0
-  const commuteScore = commuteSafety.value ?? 0
-  const overall = round(
-    schoolQualityScore * 0.45 + academyScore * 0.35 + commuteScore * 0.2,
-    1
-  )
-
-  const confidence = buildConfidence(seedKey)
-  const freshness = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-  const reportId = normalizeReportId(params.reportId)
-
-  const levels: SchoolLevel[] = ['elementary', 'middle', 'high']
-  const schools = levels.map((level, index) => {
-    const score = seededValue(`${seedKey}:school:${level}`, 55, 96)
-    return {
-      school_id: `${districtCode}-${level}-${index + 1}`,
-      school_name: `${districtName} ${level.toUpperCase()} ${index + 1}`,
-      school_level: level,
-      overall_score: metric(score, 'official'),
-    }
-  })
-
-  return {
-    id: reportId,
-    user_id: params.userId,
-    district_code: districtCode,
-    district_name: districtName,
-    generated_at: new Date().toISOString(),
-    data_freshness: freshness,
-    confidence_score: confidence.total_confidence,
-    confidence_breakdown: confidence,
-    overall_score: metric(overall, 'inferred'),
-    school_quality: schoolQuality,
-    progression,
-    academy_ecosystem: academyEcosystem,
-    commute_safety: commuteSafety,
-    schools,
-  }
-}
-
-export function buildMockPreview(params: {
-  districtCode?: string
-  limit?: number
-}): SchoolDistrictSummary[] {
-  const allDistrictCodes = Object.keys(DISTRICT_NAME_MAP)
-  const requested = params.districtCode
-    ? [normalizeDistrictCode(params.districtCode)]
-    : allDistrictCodes
-
-  const limit = clamp(params.limit ?? 10, 1, 30)
-  const sliced = requested.slice(0, limit)
-
-  return sliced.map((districtCode) => {
-    const report = buildMockReport({
-      districtCode,
-      userId: null,
-      reportId: undefined,
-    })
-
-    return {
-      district_code: districtCode,
-      district_name: report.district_name,
-      school_count: report.schools.length,
-      overall_score: report.overall_score,
-      data_freshness: report.data_freshness,
-      confidence_score: report.confidence_score,
-      confidence_breakdown: report.confidence_breakdown,
-    }
-  })
-}
-
-export function buildMockSchoolDetail(schoolId: string): SchoolDetail {
-  const districtCode = schoolId.split('-')[0] || '11680'
-  const districtName = districtNameFor(districtCode)
-  const seedKey = `school:${schoolId}`
-
-  const schoolLevelToken = schoolId.toLowerCase()
-  const schoolLevel: SchoolLevel = schoolLevelToken.includes('middle')
-    ? 'middle'
-    : schoolLevelToken.includes('high')
-      ? 'high'
-      : schoolLevelToken.includes('elementary')
-        ? 'elementary'
-        : 'other'
-
-  const confidence = buildConfidence(seedKey)
-
-  return {
-    school_id: schoolId,
-    school_name: `School ${schoolId}`,
-    school_level: schoolLevel,
-    district_code: districtCode,
-    district_name: districtName,
-    address: `${districtName}, Main-ro ${Math.trunc(seededValue(seedKey, 10, 200, 0))}`,
-    location: {
-      lat: round(seededValue(`${seedKey}:lat`, 35.0, 37.8), 6),
-      lng: round(seededValue(`${seedKey}:lng`, 126.7, 129.2), 6),
-    },
-    data_freshness: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-    confidence_breakdown: confidence,
-    quality: buildSchoolQuality(seedKey),
-    progression: buildProgression(seedKey),
-  }
+  return `District ${code}`
 }
 
 export function createRequestHash(payload: unknown): string {
@@ -388,4 +29,269 @@ export function createRequestHash(payload: unknown): string {
     .createHash('sha256')
     .update(JSON.stringify(payload))
     .digest('hex')
+}
+
+export function getSchoolAnalysisMode(): SchoolAnalysisMode {
+  const raw = (process.env.SCHOOL_ANALYSIS_MODE || '').trim().toLowerCase()
+  if (raw === 'open' || raw === 'preview_only') {
+    return raw
+  }
+
+  const freeOpenMode = (process.env.FREE_OPEN_MODE || '').trim().toLowerCase()
+  if (freeOpenMode === 'true') return 'open'
+
+  // Default open to avoid accidental 409 lock when mode env is not set.
+  return 'open'
+}
+
+export function schoolApiError(
+  code: ApiErrorCode,
+  message: string,
+  status: number
+): {
+  error: string
+  code: ApiErrorCode
+  mode: SchoolAnalysisMode
+  status: number
+} {
+  return {
+    error: message,
+    code,
+    mode: getSchoolAnalysisMode(),
+    status,
+  }
+}
+
+const SHARE_TTL_HOURS = 72
+const SHARE_SECRET =
+  process.env.SCHOOL_SHARE_TOKEN_SECRET ||
+  process.env.ML_ADMIN_TOKEN ||
+  'school-share-dev-secret'
+
+function toBase64Url(input: Buffer | string): string {
+  const raw = Buffer.isBuffer(input) ? input : Buffer.from(input, 'utf-8')
+  return raw
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '')
+}
+
+function fromBase64Url(input: string): Buffer {
+  const normalized = input.replace(/-/g, '+').replace(/_/g, '/')
+  const pad = normalized.length % 4
+  const padded = normalized + (pad === 0 ? '' : '='.repeat(4 - pad))
+  return Buffer.from(padded, 'base64')
+}
+
+function metric(
+  value: number | null,
+  provenance: MetricProvenance,
+  unit = 'score',
+  note?: string
+): MetricValue {
+  return {
+    value,
+    unit,
+    provenance,
+    availability: {
+      available: value !== null,
+      reason: value !== null ? 'available' : 'missing_source',
+      note,
+    },
+    updated_at: new Date().toISOString(),
+  }
+}
+
+function normalizeLevel(index: number): SchoolLevel {
+  const levels: SchoolLevel[] = ['elementary', 'middle', 'high']
+  return levels[index % levels.length] || 'other'
+}
+
+function defaultSchools(districtCode: string): SchoolOverview[] {
+  const names = ['Central', 'Riverside', 'Skyline']
+  return names.map((name, index) => {
+    const schoolId = `${districtCode}-${index + 1}`
+    const status: SchoolDataStatus[] = ['official', 'official', 'name_mismatch']
+    return {
+      school_id: schoolId,
+      school_name: `${name} School`,
+      school_level: normalizeLevel(index),
+      overall_score: metric(72 - index * 2, 'inferred'),
+      data_status: status[index] || 'official',
+    }
+  })
+}
+
+export function buildMockPreview(params: {
+  districtCode?: string
+  limit?: number
+}): SchoolDistrictSummary[] {
+  const limit = Math.min(Math.max(params.limit ?? 20, 1), 300)
+  const baseCode = normalizeDistrictCode(params.districtCode)
+
+  return Array.from({ length: Math.min(limit, 5) }, (_, index) => {
+    const code = params.districtCode ? baseCode : `${baseCode.slice(0, 4)}${80 + index}`
+    const score = 74 - index * 1.5
+    const coverage = Math.max(80, 96 - index * 3)
+    return {
+      district_code: code,
+      district_name: districtNameFor(code),
+      school_count: 8 + index,
+      overall_score: metric(score, 'inferred'),
+      data_freshness: new Date().toISOString(),
+      confidence_score: Math.max(55, coverage - 10),
+      confidence_breakdown: {
+        official_confidence: coverage,
+        inferred_confidence: 100 - coverage,
+        total_confidence: Math.max(55, coverage - 10),
+        formula_version: 'v2.0.0',
+      },
+      quality: {
+        official_coverage_pct: coverage,
+        inferred_ratio_pct: Math.max(0, 100 - coverage),
+        flags: coverage >= 95 ? [] : ['insufficient_official_data'],
+      },
+    }
+  })
+}
+
+export function buildMockReport(params: {
+  userId: string | null
+  districtCode: string
+}): SchoolAnalysisReport {
+  const districtCode = normalizeDistrictCode(params.districtCode)
+  const schools = defaultSchools(districtCode)
+  const generatedAt = new Date().toISOString()
+
+  return {
+    id: crypto.randomUUID(),
+    user_id: params.userId,
+    district_code: districtCode,
+    district_name: districtNameFor(districtCode),
+    generated_at: generatedAt,
+    data_freshness: generatedAt,
+    confidence_score: 74,
+    confidence_breakdown: {
+      official_confidence: 88,
+      inferred_confidence: 12,
+      total_confidence: 74,
+      formula_version: 'v2.0.0',
+    },
+    overall_score: metric(75, 'inferred'),
+    school_quality: {
+      overall: metric(74, 'official'),
+      achievement: metric(73, 'official'),
+      progression_outcome: metric(71, 'official'),
+      education_environment: metric(76, 'inferred'),
+      safety_life: metric(79, 'inferred'),
+      programs: metric(68, 'inferred'),
+    },
+    progression: {
+      general_highschool_rate: metric(58, 'inferred', '%'),
+      special_purpose_highschool_rate: metric(17, 'inferred', '%'),
+      autonomy_highschool_rate: metric(11, 'inferred', '%'),
+      college_progression_rate: metric(69, 'inferred', '%'),
+    },
+    academy_ecosystem: {
+      overall: metric(72, 'inferred'),
+      density: metric(70, 'official'),
+      subject_diversity: metric(68, 'inferred'),
+      accessibility: metric(74, 'inferred'),
+      fee_affordability: metric(66, 'official'),
+    },
+    commute_safety: metric(77, 'inferred'),
+    schools,
+    data_quality: {
+      total_schools: schools.length,
+      official_count: schools.filter((school) => school.data_status === 'official')
+        .length,
+      name_mismatch_count: schools.filter(
+        (school) => school.data_status === 'name_mismatch'
+      ).length,
+      inactive_count: schools.filter((school) => school.data_status === 'inactive')
+        .length,
+      coverage_rate: 88,
+    },
+  }
+}
+
+export function buildMockSchoolDetail(schoolId: string): SchoolDetail {
+  const districtCode = '11680'
+  const report = buildMockReport({ userId: null, districtCode })
+  const school = report.schools.find((item) => item.school_id === schoolId)
+  const selected = school || report.schools[0]
+
+  return {
+    school_id: schoolId,
+    school_name: selected.school_name,
+    school_level: selected.school_level,
+    district_code: districtCode,
+    district_name: report.district_name,
+    address: `${report.district_name} Sample road 1`,
+    location: null,
+    data_freshness: report.data_freshness,
+    confidence_breakdown: report.confidence_breakdown,
+    quality: report.school_quality,
+    progression: report.progression,
+    data_status: selected.data_status,
+    is_active: selected.data_status !== 'inactive',
+  }
+}
+
+export function createPublicShareToken(districtCode: string): {
+  token: string
+  expires_at: string
+} {
+  const expiresAt = new Date(Date.now() + SHARE_TTL_HOURS * 60 * 60 * 1000)
+  const payload = {
+    district_code: normalizeDistrictCode(districtCode),
+    exp: expiresAt.toISOString(),
+  }
+  const encodedPayload = toBase64Url(JSON.stringify(payload))
+  const signature = toBase64Url(
+    crypto.createHmac('sha256', SHARE_SECRET).update(encodedPayload).digest()
+  )
+
+  return {
+    token: `v1.${encodedPayload}.${signature}`,
+    expires_at: expiresAt.toISOString(),
+  }
+}
+
+export function readPublicShareToken(
+  token: string
+): { district_code: string; expires_at: string } | null {
+  const parts = token.split('.')
+  if (parts.length !== 3 || parts[0] !== 'v1') return null
+
+  const encodedPayload = parts[1] || ''
+  const encodedSignature = parts[2] || ''
+
+  const expectedSignature = toBase64Url(
+    crypto.createHmac('sha256', SHARE_SECRET).update(encodedPayload).digest()
+  )
+  if (expectedSignature !== encodedSignature) return null
+
+  try {
+    const payload = JSON.parse(fromBase64Url(encodedPayload).toString('utf-8')) as {
+      district_code?: string
+      exp?: string
+    }
+
+    const districtCode = normalizeDistrictCode(payload.district_code)
+    const expiresAt = typeof payload.exp === 'string' ? payload.exp : ''
+    if (!expiresAt) return null
+
+    const expiresDate = new Date(expiresAt)
+    if (!Number.isFinite(expiresDate.getTime())) return null
+    if (expiresDate.getTime() <= Date.now()) return null
+
+    return {
+      district_code: districtCode,
+      expires_at: expiresDate.toISOString(),
+    }
+  } catch {
+    return null
+  }
 }
