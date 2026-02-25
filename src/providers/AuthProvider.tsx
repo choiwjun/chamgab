@@ -146,12 +146,27 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const refreshUser = useCallback(async () => {
     setIsLoading(true)
     try {
+      const timeoutMs = 8000
+      const withTimeout = <T,>(p: Promise<T>, fallback: T): Promise<T> =>
+        Promise.race([
+          p,
+          new Promise<T>((resolve) =>
+            setTimeout(() => resolve(fallback), timeoutMs)
+          ),
+        ])
+
       const {
         data: { session },
-      } = await supabase.auth.getSession()
+      } = await withTimeout(supabase.auth.getSession(), {
+        data: { session: null },
+        error: null,
+      })
       const {
         data: { user: currentUser },
-      } = await supabase.auth.getUser()
+      } = await withTimeout(supabase.auth.getUser(), {
+        data: { user: null },
+        error: null,
+      })
 
       setUser(currentUser)
 

@@ -75,6 +75,16 @@ function isPrefixRouteMatch(pathname: string, route: string) {
  * 3. 로그인 상태에서 Auth 페이지 접근 시 리다이렉트
  */
 export async function middleware(request: NextRequest) {
+  const pathname = request.nextUrl.pathname
+
+  // OAuth code가 루트에 떨어진 경우 /auth/callback으로 전달
+  const code = request.nextUrl.searchParams.get('code')
+  if (code && pathname === '/') {
+    const callbackUrl = new URL('/auth/callback', request.url)
+    callbackUrl.searchParams.set('code', code)
+    return NextResponse.redirect(callbackUrl)
+  }
+
   let response = NextResponse.next({
     request: {
       headers: request.headers,
@@ -121,8 +131,6 @@ export async function middleware(request: NextRequest) {
     'getSession'
   )
   const user = session?.user ?? null
-
-  const pathname = request.nextUrl.pathname
 
   // 보호된 라우트 접근 제어
   const isAuthRoute = AUTH_ROUTES.some((route) => isRouteMatch(pathname, route))
