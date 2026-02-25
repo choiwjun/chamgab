@@ -6,8 +6,9 @@ import { requireAdmin } from '../../../_utils'
 import {
   COMMERCIAL_CALIBRATION_VERSION,
   COMMERCIAL_QUALITY_VERSION,
+  computeCommercialQualitySnapshot,
   evaluateCommercialSnapshotGate,
-  getLatestCommercialQualitySnapshot,
+  insertCommercialQualitySnapshot,
 } from '../_snapshot'
 
 function hasInternalAdminToken(req: NextRequest): boolean {
@@ -30,39 +31,26 @@ function hasInternalAdminToken(req: NextRequest): boolean {
   }
 }
 
-export async function GET(req: NextRequest) {
+export async function POST(req: NextRequest) {
   if (!hasInternalAdminToken(req)) {
     const gate = await requireAdmin(req)
     if (!gate.ok) return gate.res
   }
 
   try {
-    const snapshot = (await getLatestCommercialQualitySnapshot()) as
-      | Record<string, unknown>
-      | null
+    const computed = await computeCommercialQualitySnapshot()
+    const saved = (await insertCommercialQualitySnapshot(computed)) as Record<
+      string,
+      unknown
+    >
+    const gate = evaluateCommercialSnapshotGate(saved)
 
-    if (!snapshot) {
-      return NextResponse.json(
-        {
-          as_of: new Date().toISOString(),
-          error: 'snapshot_missing',
-          pass: false,
-          checks: [],
-          metrics: null,
-          quality_version: COMMERCIAL_QUALITY_VERSION,
-          calibration_version: COMMERCIAL_CALIBRATION_VERSION,
-        },
-        { status: 404 }
-      )
-    }
-
-    const gate = evaluateCommercialSnapshotGate(snapshot)
     return NextResponse.json({
       as_of: new Date().toISOString(),
       pass: gate.pass,
       checks: gate.checks,
       metrics: gate.metrics,
-      snapshot,
+      snapshot: saved,
       quality_version: COMMERCIAL_QUALITY_VERSION,
       calibration_version: COMMERCIAL_CALIBRATION_VERSION,
     })
@@ -72,7 +60,7 @@ export async function GET(req: NextRequest) {
         error:
           error instanceof Error
             ? error.message
-            : 'failed to read commercial quality snapshot',
+            : 'failed to rebuild commercial quality snapshot',
       },
       { status: 500 }
     )

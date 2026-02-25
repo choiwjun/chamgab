@@ -4,6 +4,14 @@ export const runtime = 'nodejs'
 import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireApiUser } from '@/app/api/_auth'
+import { createClient } from '@/lib/supabase/server'
+import {
+  CreditConsumeError,
+  consumeCredits,
+  insufficientCreditsPayload,
+} from '@/lib/credits/consume'
+import { getCreditCost } from '@/lib/credits/cost'
+import { ENABLE_FREE_OPEN_MODE } from '@/lib/features'
 import type {
   AcademyEcosystem,
   DataQualitySummary,
@@ -131,6 +139,34 @@ export async function POST(request: NextRequest) {
         'School analysis detail is temporarily limited to preview mode.',
         409
       )
+    }
+
+    if (!ENABLE_FREE_OPEN_MODE) {
+      const userSupabase = await createClient()
+      try {
+        await consumeCredits({
+          supabase: userSupabase,
+          product: 'school',
+          cost: getCreditCost('school'),
+          meta: {
+            user_id: auth.userId,
+            district_code: districtCode,
+          },
+        })
+      } catch (error) {
+        if (
+          error instanceof CreditConsumeError &&
+          error.code === 'insufficient_credits'
+        ) {
+          return NextResponse.json(insufficientCreditsPayload(error.quota), {
+            status: error.status,
+          })
+        }
+        return NextResponse.json(
+          { error: 'Credit check failed' },
+          { status: 500 }
+        )
+      }
     }
 
     const supabase = createAdminClient()

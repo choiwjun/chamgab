@@ -1,3 +1,5 @@
+import type { QualityMeta } from './quality'
+
 export type MetricProvenance = 'official' | 'inferred'
 export type SchoolAnalysisMode = 'preview_only' | 'open'
 export type ApiErrorCode =
@@ -160,4 +162,9 @@ export interface SchoolPreviewResponse {
 export interface CreateSchoolReportParams {
   district_code: string
   school_ids?: string[]
+}
+
+export interface SchoolReportResponse extends QualityMeta {
+  report: SchoolAnalysisReport
+  cached: boolean
 }

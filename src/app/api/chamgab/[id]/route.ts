@@ -1,34 +1,41 @@
-// @TASK P3-R1-T2 - Chamgab API - 분석 결과 조회
+// @TASK P3-R1-T2 - Chamgab API - analysis lookup
 
-// 동적 렌더링 강제 (Supabase 사용)
 export const dynamic = 'force-dynamic'
 
-import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import {
+  buildChamgabQuality,
+  deriveChamgabQualityMeta,
+} from '../_quality'
 
-function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-  )
-}
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 /**
  * GET /api/chamgab/:id
- * 특정 매물의 참값 분석 결과 조회 (id = propertyId)
+ * Returns latest non-expired analysis by property_id.
+ * Sensitive fields (e.g. user_id) are intentionally excluded.
  */
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = getSupabase()
     const { id: propertyId } = await params
+    if (!UUID_REGEX.test(propertyId)) {
+      return NextResponse.json(
+        { error: 'invalid_property_id' },
+        { status: 400 }
+      )
+    }
 
-    // 유효한 분석 결과 조회 (만료되지 않은 것)
-    const { data: analysis, error } = await supabase
+    const admin = createAdminClient()
+    const { data: analysis, error } = await admin
       .from('chamgab_analyses')
-      .select('*')
+      .select(
+        'id,property_id,chamgab_price,min_price,max_price,confidence,analyzed_at,expires_at,created_at'
+      )
       .eq('property_id', propertyId)
       .gt('expires_at', new Date().toISOString())
       .order('analyzed_at', { ascending: false })
@@ -36,11 +43,25 @@ export async function GET(
       .single()
 
     if (error || !analysis) {
-      // 분석 결과 없음 (정상 응답 - 아직 분석 안 됨)
       return NextResponse.json({ analysis: null })
     }
 
-    return NextResponse.json({ analysis })
+    const quality = await buildChamgabQuality(admin, {
+      analysisId: analysis.id,
+      propertyId: analysis.property_id,
+      chamgabPrice: analysis.chamgab_price,
+      confidence: analysis.confidence,
+    })
+    const qualityMeta = deriveChamgabQualityMeta(
+      quality.quality_flags || [],
+      analysis.analyzed_at
+    )
+
+    return NextResponse.json({
+      analysis,
+      quality,
+      ...qualityMeta,
+    })
   } catch (error) {
     console.error('[Chamgab API] Error:', error)
     return NextResponse.json(
