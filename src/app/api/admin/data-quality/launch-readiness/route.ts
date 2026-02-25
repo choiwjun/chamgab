@@ -92,6 +92,15 @@ function toNumber(value: unknown): number | null {
   return null
 }
 
+function checkValue(
+  checks: Record<string, unknown> | undefined,
+  key: string,
+  valueKey: string
+): number | null {
+  const check = checks?.[key] as Record<string, unknown> | undefined
+  return toNumber(check?.[valueKey])
+}
+
 function pct(
   numerator: number | null,
   denominator: number | null
@@ -276,6 +285,7 @@ export async function GET(req: NextRequest) {
       autofixSummary,
       latestCommercialSnapshot,
       schoolQualityReport,
+      landQualityReport,
       totalLandTransactions,
       linkedLandTransactions,
       cancelledLandTransactions,
@@ -322,6 +332,7 @@ export async function GET(req: NextRequest) {
       readJsonSafe('ml-api/logs/chamgab_autofix_summary_latest.json'),
       getLatestCommercialQualitySnapshot(),
       readJsonSafe('ml-api/reports/school_data_quality_latest.json'),
+      readJsonSafe('ml-api/reports/land_collection_status_latest.json'),
       countExact(
         admin
           .from('land_transactions')
@@ -512,29 +523,81 @@ export async function GET(req: NextRequest) {
       }),
     ]
 
-    const landParcelLinkRatePct = pct(
-      linkedLandTransactions,
-      totalLandTransactions
+    const landChecksData =
+      (landQualityReport?.checks as Record<string, unknown> | undefined) || {}
+    const reportLandSidoCoverage = checkValue(
+      landChecksData,
+      'land_sido_coverage',
+      'value'
     )
-    const landParcelLocationFillRatePct = pct(
-      landParcelsWithLocation,
-      totalLandParcels
+    const reportLandParcelLinkRatePct = checkValue(
+      landChecksData,
+      'land_parcel_link_rate',
+      'value_pct'
     )
-    const landPricesCoveragePct = pct(landPricesParcels, totalLandParcels)
-    const landCharacteristicsCoveragePct = pct(
-      landCharacteristicsParcels,
-      totalLandParcels
+    const reportLandParcelLocationFillRatePct = checkValue(
+      landChecksData,
+      'land_parcel_location_fill_rate',
+      'value_pct'
     )
+    const reportLandPricesCoveragePct = checkValue(
+      landChecksData,
+      'land_prices_coverage',
+      'value_pct'
+    )
+    const reportLandCharacteristicsCoveragePct = checkValue(
+      landChecksData,
+      'land_characteristics_coverage',
+      'value_pct'
+    )
+    const landQualityGeneratedAt =
+      typeof landQualityReport?.generated_at === 'string'
+        ? landQualityReport.generated_at
+        : null
+
+    const landSidoCoverageMetric = reportLandSidoCoverage ?? landSidoCoverage
+    const landParcelLinkRatePct =
+      reportLandParcelLinkRatePct ??
+      pct(linkedLandTransactions, totalLandTransactions)
+    const landParcelLocationFillRatePct =
+      reportLandParcelLocationFillRatePct ??
+      pct(landParcelsWithLocation, totalLandParcels)
+    const landPricesCoveragePct =
+      reportLandPricesCoveragePct ?? pct(landPricesParcels, totalLandParcels)
+    const landCharacteristicsCoveragePct =
+      reportLandCharacteristicsCoveragePct ??
+      pct(landCharacteristicsParcels, totalLandParcels)
     const cancelledExclusionRatePct = totalLandTransactions > 0 ? 100 : null
+
+    const landSidoCoverageSource =
+      reportLandSidoCoverage != null
+        ? 'ml-api/reports/land_collection_status_latest.json'
+        : 'db:land_transactions.sido'
+    const landParcelLinkRateSource =
+      reportLandParcelLinkRatePct != null
+        ? 'ml-api/reports/land_collection_status_latest.json'
+        : 'db:land_transactions.parcel_id'
+    const landParcelLocationFillRateSource =
+      reportLandParcelLocationFillRatePct != null
+        ? 'ml-api/reports/land_collection_status_latest.json'
+        : 'db:land_parcels.location'
+    const landPricesCoverageSource =
+      reportLandPricesCoveragePct != null
+        ? 'ml-api/reports/land_collection_status_latest.json'
+        : 'db:land_prices.parcel_id'
+    const landCharacteristicsCoverageSource =
+      reportLandCharacteristicsCoveragePct != null
+        ? 'ml-api/reports/land_collection_status_latest.json'
+        : 'db:land_characteristics.parcel_id'
 
     const landChecks: GateCheck[] = [
       asCheck({
         key: 'land_sido_coverage',
         label: 'Land sido coverage',
-        value: landSidoCoverage,
+        value: landSidoCoverageMetric,
         target: `>= ${LAND_THRESHOLDS.sidoCoverageMin}`,
         passWhen: (n) => n >= LAND_THRESHOLDS.sidoCoverageMin,
-        source: 'db:land_transactions.sido',
+        source: landSidoCoverageSource,
       }),
       asCheck({
         key: 'land_parcel_link_rate_pct',
@@ -542,7 +605,7 @@ export async function GET(req: NextRequest) {
         value: landParcelLinkRatePct,
         target: `>= ${LAND_THRESHOLDS.parcelLinkRatePctMin}`,
         passWhen: (n) => n >= LAND_THRESHOLDS.parcelLinkRatePctMin,
-        source: 'db:land_transactions.parcel_id',
+        source: landParcelLinkRateSource,
       }),
       asCheck({
         key: 'land_parcel_location_fill_rate_pct',
@@ -550,7 +613,7 @@ export async function GET(req: NextRequest) {
         value: landParcelLocationFillRatePct,
         target: `>= ${LAND_THRESHOLDS.parcelLocationFillRatePctMin}`,
         passWhen: (n) => n >= LAND_THRESHOLDS.parcelLocationFillRatePctMin,
-        source: 'db:land_parcels.location',
+        source: landParcelLocationFillRateSource,
       }),
       asCheck({
         key: 'land_prices_coverage_pct',
@@ -558,7 +621,7 @@ export async function GET(req: NextRequest) {
         value: landPricesCoveragePct,
         target: `>= ${LAND_THRESHOLDS.landPricesCoveragePctMin}`,
         passWhen: (n) => n >= LAND_THRESHOLDS.landPricesCoveragePctMin,
-        source: 'db:land_prices.parcel_id',
+        source: landPricesCoverageSource,
       }),
       asCheck({
         key: 'land_characteristics_coverage_pct',
@@ -566,7 +629,7 @@ export async function GET(req: NextRequest) {
         value: landCharacteristicsCoveragePct,
         target: `>= ${LAND_THRESHOLDS.landCharacteristicsCoveragePctMin}`,
         passWhen: (n) => n >= LAND_THRESHOLDS.landCharacteristicsCoveragePctMin,
-        source: 'db:land_characteristics.parcel_id',
+        source: landCharacteristicsCoverageSource,
       }),
       asCheck({
         key: 'land_cancelled_exclusion_rate_pct',
@@ -671,7 +734,7 @@ export async function GET(req: NextRequest) {
           cancelled_transactions: cancelledLandTransactions,
           total_parcels: totalLandParcels,
           parcels_with_location: landParcelsWithLocation,
-          sido_coverage: landSidoCoverage,
+          sido_coverage: landSidoCoverageMetric,
           prices_distinct_parcels: landPricesParcels,
           characteristics_distinct_parcels: landCharacteristicsParcels,
           parcel_link_rate_pct: landParcelLinkRatePct,
@@ -679,6 +742,7 @@ export async function GET(req: NextRequest) {
           land_prices_coverage_pct: landPricesCoveragePct,
           land_characteristics_coverage_pct: landCharacteristicsCoveragePct,
           cancelled_exclusion_rate_pct: cancelledExclusionRatePct,
+          quality_report_generated_at: landQualityGeneratedAt,
         },
         thresholds: LAND_THRESHOLDS,
       },

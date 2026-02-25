@@ -18,7 +18,12 @@ VALID_JOB_TYPES = [
     "weekly",
     "monthly",
     "collect_commercial",
+    "build_commercial_quality_snapshot",
+    "check_commercial_data_quality",
+    "check_launch_readiness_gate",
     "collect_land_daily",
+    "collect_land_locations",
+    "check_land_collection_status",
     "link_complexes",
     "fix_complex_names",
     "train_business",
@@ -26,13 +31,17 @@ VALID_JOB_TYPES = [
     "chamgab_backfill_property_id",
     "chamgab_audit_gap",
     "chamgab_reanalyze_severe",
+    "chamgab_factor_backfill",
     "chamgab_autofix_apply",
+    "chamgab_gap_recovery_full",
     "collect_school_base_monthly",
     "collect_school_metrics_monthly",
     "collect_school_academy_weekly",
     "build_school_marts_daily",
     "check_school_data_quality",
     "collect_school_official_data",
+    "school_full_rebuild",
+    "catchup",
 ]
 
 
@@ -62,15 +71,7 @@ class SchedulerStatusResponse(BaseModel):
 class RunNowRequest(BaseModel):
     job_type: str = Field(
         ...,
-        description=(
-            "job type "
-            "(daily/weekly/monthly/collect_commercial/collect_land_daily/"
-            "link_complexes/fix_complex_names/train_business/train_all/"
-            "chamgab_backfill_property_id/chamgab_audit_gap/chamgab_reanalyze_severe/"
-            "chamgab_autofix_apply/"
-            "collect_school_base_monthly/collect_school_metrics_monthly/"
-            "collect_school_academy_weekly/build_school_marts_daily/check_school_data_quality)"
-        ),
+        description=f"job type ({'/'.join(VALID_JOB_TYPES)})",
     )
 
 

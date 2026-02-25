@@ -37,9 +37,11 @@ LOGS_DIR.mkdir(parents=True, exist_ok=True)
 CRITICAL_PIPELINE_JOB_ORDER = (
     "chamgab_gap_recovery_full",
     "school_full_rebuild",
+    "check_school_data_quality",
     "collect_commercial",
     "build_commercial_quality_snapshot",
     "check_commercial_data_quality",
+    "check_land_collection_status",
     "check_launch_readiness_gate",
 )
 
@@ -633,6 +635,16 @@ class DataScheduler:
                 raise RuntimeError("collect_land_characteristics failed")
             step_results.append("collect_land_characteristics")
 
+            ok = await self._run_script(
+                "scripts.check_land_collection_status",
+                timeout=900,
+            )
+            if not ok:
+                self.last_land_collection_ok = False
+                self.last_land_collection_error = "check_land_collection_status failed"
+                raise RuntimeError("check_land_collection_status failed")
+            step_results.append("check_land_collection_status")
+
             self.last_land_collection_ok = True
             self.current_job_result = {"steps": step_results}
         finally:
@@ -1196,6 +1208,12 @@ class DataScheduler:
             raise RuntimeError("check_school_data_quality failed")
         self.current_job_result = {"step": "check_school_data_quality"}
 
+    async def check_land_collection_status_now(self) -> None:
+        ok = await self._run_script("scripts.check_land_collection_status", timeout=900)
+        if not ok:
+            raise RuntimeError("check_land_collection_status failed")
+        self.current_job_result = {"step": "check_land_collection_status"}
+
     async def school_full_rebuild(self) -> None:
         self.last_collection_job = f"school_full_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         await self.collect_school_base_monthly()
@@ -1371,6 +1389,19 @@ class DataScheduler:
                 misfire_grace_time=3600,
                 args=["collect_land_locations"],
             )
+        land_quality_hour = self._env_int("LAND_QUALITY_CHECK_CRON_HOUR", 7, min_value=0)
+        land_quality_minute = self._env_int("LAND_QUALITY_CHECK_CRON_MINUTE", 30, min_value=0)
+        self.scheduler.add_job(
+            self.run_now,
+            CronTrigger(hour=land_quality_hour, minute=land_quality_minute),
+            id="check_land_collection_status",
+            name="check land collection status",
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+            misfire_grace_time=3600,
+            args=["check_land_collection_status"],
+        )
         self.scheduler.add_job(
             self.link_complexes_from_transactions,
             CronTrigger(hour=4, minute=20),
@@ -1640,6 +1671,8 @@ class DataScheduler:
             await self.daily_land_collection()
         elif job_type == "collect_land_locations":
             await self.collect_land_locations_chunk()
+        elif job_type == "check_land_collection_status":
+            await self.check_land_collection_status_now()
         elif job_type == "link_complexes":
             await self.link_complexes_from_transactions()
         elif job_type == "fix_complex_names":
