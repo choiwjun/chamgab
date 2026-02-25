@@ -1,37 +1,42 @@
-"""
-참값(Chamgab) ML API
-- XGBoost 기반 부동산 가격 예측
-- SHAP 기반 가격 요인 분석
-- 유사 거래 검색
-- 전국 아파트 데이터 자동 수집 및 분석
-"""
+﻿"""Chamgab ML API application entrypoint."""
+
 import os
 import pickle
+from contextlib import asynccontextmanager
 from pathlib import Path
+
 from dotenv import load_dotenv
-
-# Load environment variables from .env file
-env_path = Path(__file__).parent.parent / ".env"
-if env_path.exists():
-    load_dotenv(env_path)
-
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from contextlib import asynccontextmanager
 from slowapi import Limiter
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
-from app.api import predict, factors, similar, health, commercial, chamgab, integrated, reports
-from app.api import collect, analyze, scheduler
+from app.api import (
+    analyze,
+    chamgab,
+    collect,
+    commercial,
+    factors,
+    health,
+    integrated,
+    land,
+    predict,
+    reports,
+    scheduler,
+    similar,
+)
 from app.core.config import settings
-from app.core.scheduler import data_scheduler
 from app.core.migrate import auto_migrate
+from app.core.scheduler import data_scheduler
 from app.services.business_model_service import business_model_service
 
+# Load environment variables from local .env if present.
+env_path = Path(__file__).resolve().parents[1] / ".env"
+if env_path.exists():
+    load_dotenv(env_path)
 
-# 모델 경로
 MODELS_DIR = Path(__file__).parent / "models"
 MODEL_PATH = MODELS_DIR / "xgboost_model.pkl"
 SHAP_PATH = MODELS_DIR / "shap_explainer.pkl"
@@ -43,12 +48,9 @@ LGBM_PATH = MODELS_DIR / "lgbm_model.pkl"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: 자동 마이그레이션 (transactions 컬럼 추가)
     auto_migrate()
 
-    # Load ML models
     print("Loading ML models...")
-
     app.state.model = None
     app.state.shap_explainer = None
     app.state.feature_artifacts = None
@@ -57,76 +59,80 @@ async def lifespan(app: FastAPI):
 
     try:
         if MODEL_PATH.exists():
-            with open(MODEL_PATH, "rb") as f:
-                app.state.model = pickle.load(f)
+            with MODEL_PATH.open("rb") as fp:
+                app.state.model = pickle.load(fp)
             print(f"Model loaded: {MODEL_PATH}")
 
         if SHAP_PATH.exists():
-            with open(SHAP_PATH, "rb") as f:
-                app.state.shap_explainer = pickle.load(f)
-            print(f"SHAP Explainer loaded: {SHAP_PATH}")
+            with SHAP_PATH.open("rb") as fp:
+                app.state.shap_explainer = pickle.load(fp)
+            print(f"SHAP explainer loaded: {SHAP_PATH}")
 
         if ARTIFACTS_PATH.exists():
-            with open(ARTIFACTS_PATH, "rb") as f:
-                app.state.feature_artifacts = pickle.load(f)
+            with ARTIFACTS_PATH.open("rb") as fp:
+                app.state.feature_artifacts = pickle.load(fp)
             print(f"Feature artifacts loaded: {ARTIFACTS_PATH}")
 
         if RESIDUAL_PATH.exists():
-            with open(RESIDUAL_PATH, "rb") as f:
-                app.state.residual_info = pickle.load(f)
+            with RESIDUAL_PATH.open("rb") as fp:
+                app.state.residual_info = pickle.load(fp)
             print(f"Residual info loaded: {RESIDUAL_PATH}")
 
         if LGBM_PATH.exists():
-            with open(LGBM_PATH, "rb") as f:
-                app.state.lgbm_model = pickle.load(f)
+            with LGBM_PATH.open("rb") as fp:
+                app.state.lgbm_model = pickle.load(fp)
             print(f"LightGBM model loaded: {LGBM_PATH}")
 
-        # 상권 성공 예측 모델 로드
         if BUSINESS_MODEL_PATH.exists():
             business_model_service.load(str(BUSINESS_MODEL_PATH))
         else:
-            print("Warning: No business model found. Run train_business_model.py first.")
+            print("Warning: business model artifact not found")
 
-        if app.state.model:
-            print("ML models loaded successfully!")
-        else:
-            print("Warning: No trained model found. Run train_model.py first.")
+        if app.state.model is None:
+            print("Warning: apartment model artifact not found")
+    except Exception as exc:
+        print(f"Error loading models: {exc}")
 
-    except Exception as e:
-        print(f"Error loading models: {e}")
-
-    # 스케줄러 자동 시작 (수집 + 학습 통합)
     data_scheduler.set_app(app)
-    data_scheduler.start()
+    scheduler_enabled = (os.getenv("SCHEDULER_ENABLED") or "true").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+    if scheduler_enabled:
+        data_scheduler.start()
+    else:
+        print("Scheduler disabled via SCHEDULER_ENABLED=false")
 
-    yield
-
-    # Shutdown
-    print("Shutting down...")
-    if data_scheduler.is_running:
-        data_scheduler.stop()
+    try:
+        yield
+    finally:
+        print("Shutting down...")
+        if data_scheduler.is_running:
+            data_scheduler.stop()
 
 
 limiter = Limiter(key_func=get_remote_address)
 
 app = FastAPI(
-    title="참값 ML API",
-    description="AI 부동산 가격 분석 서비스",
+    title="Chamgab ML API",
+    description="AI real-estate analysis service",
     version="0.1.0",
     lifespan=lifespan,
 )
 
-# Rate Limiting
 app.state.limiter = limiter
 
+
 @app.exception_handler(RateLimitExceeded)
-async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+async def rate_limit_handler(_request: Request, _exc: RateLimitExceeded):
     return JSONResponse(
         status_code=429,
-        content={"error": "요청이 너무 많습니다. 잠시 후 다시 시도해주세요."},
+        content={"error": "Too many requests. Please retry later."},
     )
 
-# CORS
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
@@ -135,33 +141,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Routes
+# Core routes
 app.include_router(health.router, tags=["Health"])
 app.include_router(predict.router, prefix="/api", tags=["Prediction"])
 app.include_router(factors.router, prefix="/api", tags=["Factors"])
 app.include_router(similar.router, prefix="/api", tags=["Similar"])
 
-# 데이터 수집/분석 라우터
+# Data ops routes
 app.include_router(collect.router, prefix="/api", tags=["Collection"])
 app.include_router(analyze.router, prefix="/api", tags=["Analysis"])
 app.include_router(scheduler.router, prefix="/api", tags=["Scheduler"])
 
-# 상권분석 라우터
+# Domain routes
 app.include_router(commercial.router, tags=["Commercial"])
-
-# 참값 분석 라우터
+app.include_router(land.router, tags=["Land"])
 app.include_router(chamgab.router, tags=["Chamgab"])
-
-# 통합 분석 라우터
 app.include_router(integrated.router, tags=["Integrated"])
-
-# 리포트 생성 라우터
 app.include_router(reports.router, tags=["Reports"])
-
-# 게이미피케이션 라우터 (비활성화 - Supabase 기반 재구현 필요)
-# app.include_router(gamification.router, tags=["Gamification"])
 
 
 @app.get("/")
 async def root():
-    return {"message": "참값 ML API", "version": "0.1.0"}
+    return {"message": "Chamgab ML API", "version": "0.1.0"}
