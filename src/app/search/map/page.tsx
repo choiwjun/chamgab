@@ -19,6 +19,8 @@ interface MapComplex {
   location: { lat: number; lng: number }
 }
 
+const KAKAO_SDK_ID = 'kakao-search-map-sdk'
+
 function SearchMapContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -31,6 +33,7 @@ function SearchMapContent() {
   const [isLoading, setIsLoading] = useState(false)
   const [totalCount, setTotalCount] = useState(0)
   const [isKakaoLoaded, setIsKakaoLoaded] = useState(false)
+  const [kakaoLoadError, setKakaoLoadError] = useState<string | null>(null)
 
   // 필터 상태 (URL 쿼리 파라미터로부터)
   const q = searchParams.get('q')
@@ -108,30 +111,65 @@ function SearchMapContent() {
   useEffect(() => {
     if (window.kakao?.maps) {
       setIsKakaoLoaded(true)
+      setKakaoLoadError(null)
       return
     }
 
-    const kakaoKey = process.env.NEXT_PUBLIC_KAKAO_MAP_KEY
+    const kakaoKey = (process.env.NEXT_PUBLIC_KAKAO_MAP_KEY || '').trim()
     if (!kakaoKey) {
-      console.error('NEXT_PUBLIC_KAKAO_MAP_KEY is not defined')
+      const message = 'NEXT_PUBLIC_KAKAO_MAP_KEY 환경변수가 설정되지 않았습니다.'
+      console.error(message)
+      setKakaoLoadError(message)
       return
     }
 
-    const script = document.createElement('script')
-    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${kakaoKey}&autoload=false&libraries=clusterer,services`
-    script.async = true
-
-    script.onload = () => {
+    const onScriptLoad = () => {
+      if (!window.kakao?.maps) {
+        setKakaoLoadError(
+          '카카오 지도 SDK 초기화에 실패했습니다. 키/도메인 설정을 확인하세요.'
+        )
+        return
+      }
       window.kakao.maps.load(() => {
         setIsKakaoLoaded(true)
+        setKakaoLoadError(null)
       })
     }
 
-    script.onerror = (e) => {
-      console.error('Kakao Maps SDK load error:', e)
+    const onScriptError = (event: Event) => {
+      console.error('Kakao Maps SDK load error:', event)
+      setKakaoLoadError(
+        '카카오 지도 SDK 로드 실패: Kakao Console 허용 도메인(www.chamgab.com)과 NEXT_PUBLIC_KAKAO_MAP_KEY를 확인하세요.'
+      )
     }
 
+    const existingScript = document.getElementById(
+      KAKAO_SDK_ID
+    ) as HTMLScriptElement | null
+    if (existingScript) {
+      existingScript.addEventListener('load', onScriptLoad, { once: true })
+      existingScript.addEventListener('error', onScriptError, { once: true })
+      return () => {
+        existingScript.removeEventListener('load', onScriptLoad)
+        existingScript.removeEventListener('error', onScriptError)
+      }
+    }
+
+    const script = document.createElement('script')
+    script.id = KAKAO_SDK_ID
+    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(
+      kakaoKey
+    )}&autoload=false&libraries=clusterer,services`
+    script.async = true
+    script.addEventListener('load', onScriptLoad, { once: true })
+    script.addEventListener('error', onScriptError, { once: true })
+
     document.head.appendChild(script)
+
+    return () => {
+      script.removeEventListener('load', onScriptLoad)
+      script.removeEventListener('error', onScriptError)
+    }
   }, [])
 
   // 초기 로드
@@ -193,7 +231,17 @@ function SearchMapContent() {
             />
           ) : (
             <div className="flex h-full items-center justify-center bg-gray-100">
-              <p className="text-gray-600">지도를 불러오는 중...</p>
+              <div className="space-y-2 px-6 text-center">
+                <p className="text-gray-600">
+                  {kakaoLoadError || '지도를 불러오는 중...'}
+                </p>
+                {kakaoLoadError && (
+                  <p className="text-xs text-gray-500">
+                    NEXT_PUBLIC_KAKAO_MAP_KEY 및 Kakao Console 도메인 허용값을
+                    점검해주세요.
+                  </p>
+                )}
+              </div>
             </div>
           )}
         </div>

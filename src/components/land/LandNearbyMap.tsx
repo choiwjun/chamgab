@@ -31,7 +31,12 @@ function loadKakaoSdk(appKey: string): Promise<void> {
       existing.addEventListener('load', () => resolve(), { once: true })
       existing.addEventListener(
         'error',
-        () => reject(new Error('Failed to load Kakao SDK')),
+        () =>
+          reject(
+            new Error(
+              'Kakao Maps SDK 로드 실패: NEXT_PUBLIC_KAKAO_MAP_KEY와 허용 도메인 설정을 확인하세요.'
+            )
+          ),
         { once: true }
       )
       return
@@ -44,7 +49,12 @@ function loadKakaoSdk(appKey: string): Promise<void> {
       appKey
     )}&autoload=false&libraries=clusterer,services`
     script.onload = () => resolve()
-    script.onerror = () => reject(new Error('Failed to load Kakao SDK'))
+    script.onerror = () =>
+      reject(
+        new Error(
+          'Kakao Maps SDK 로드 실패: NEXT_PUBLIC_KAKAO_MAP_KEY와 허용 도메인 설정을 확인하세요.'
+        )
+      )
     document.head.appendChild(script)
   })
 }

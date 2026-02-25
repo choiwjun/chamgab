@@ -59,10 +59,9 @@ const NAV_LAND: NavCategory = {
   id: 'land',
   label: '토지분석',
   icon: MapPin,
-  comingSoon: true,
   links: [
-    { href: '/land', label: '토지 분석', comingSoon: true },
-    { href: '/land/search', label: '토지 검색', comingSoon: true },
+    { href: '/land', label: '토지 분석' },
+    { href: '/land/search', label: '토지 검색' },
   ],
 }
 
