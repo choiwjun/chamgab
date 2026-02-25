@@ -164,7 +164,7 @@ export interface CreateSchoolReportParams {
   school_ids?: string[]
 }
 
-export interface SchoolReportResponse extends Partial<QualityMeta> {
+export interface SchoolReportResponse extends QualityMeta {
   report: SchoolAnalysisReport
   cached: boolean
 }

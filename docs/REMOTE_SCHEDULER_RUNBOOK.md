@@ -34,6 +34,7 @@ Available commercial quality job types:
 - `check_launch_readiness_gate`
 - `collect_land_daily`
 - `collect_land_locations`
+- `check_land_collection_status`
 
 Commercial quality fail mode:
 
@@ -108,10 +109,12 @@ The ML API scheduler can run the full sequence automatically on server cron:
 
 1. `chamgab_gap_recovery_full`
 2. `school_full_rebuild` (chained in step 1 when enabled)
-3. `collect_commercial`
-4. `build_commercial_quality_snapshot`
-5. `check_commercial_data_quality`
-6. `check_launch_readiness_gate` (calls:
+3. `check_school_data_quality`
+4. `collect_commercial`
+5. `build_commercial_quality_snapshot`
+6. `check_commercial_data_quality`
+7. `check_land_collection_status`
+8. `check_launch_readiness_gate` (calls:
    `/api/admin/commercial/quality/latest`,
    `/api/admin/data-quality/launch-readiness`)
 
@@ -127,7 +130,7 @@ Automatic retry (recommended):
 - `SCHEDULER_AUTO_RETRY_DELAY_SEC=60`
 - `SCHEDULER_AUTO_RETRY_EXP_BACKOFF=true`
 - Optional scoped list:
-  `SCHEDULER_AUTO_RETRY_JOB_TYPES=chamgab_gap_recovery_full,school_full_rebuild,collect_commercial,build_commercial_quality_snapshot,check_commercial_data_quality,check_launch_readiness_gate`
+  `SCHEDULER_AUTO_RETRY_JOB_TYPES=chamgab_gap_recovery_full,school_full_rebuild,check_school_data_quality,collect_commercial,build_commercial_quality_snapshot,check_commercial_data_quality,check_land_collection_status,check_launch_readiness_gate`
 
 The retry metadata is attached to `current_job_result._retry`.
 
@@ -142,7 +145,7 @@ Watchdog auto-requeue (recommended):
 - `SCHEDULER_WATCHDOG_MAX_REQUEUE_PER_JOB=12`
 - `SCHEDULER_WATCHDOG_QUEUE_DELAY_SEC=2`
 - Optional order override:
-  `SCHEDULER_WATCHDOG_JOB_ORDER=chamgab_gap_recovery_full,school_full_rebuild,collect_commercial,build_commercial_quality_snapshot,check_commercial_data_quality,check_launch_readiness_gate`
+  `SCHEDULER_WATCHDOG_JOB_ORDER=chamgab_gap_recovery_full,school_full_rebuild,check_school_data_quality,collect_commercial,build_commercial_quality_snapshot,check_commercial_data_quality,check_land_collection_status,check_launch_readiness_gate`
 
 Watchdog behavior:
 
@@ -181,6 +184,22 @@ Key fields:
 - `last_watchdog_action`: last watchdog decision (`queued` / `wait` / `blocked` / `skip` / `noop`)
 - `last_job_status_by_type`: per-job latest success/failure state used by watchdog
 
+## 4.1) Baseline Snapshot Freeze (recommended before tuning)
+
+Run these job types once in this order:
+
+1. `check_school_data_quality`
+2. `check_land_collection_status`
+3. `check_commercial_data_quality`
+4. `check_launch_readiness_gate`
+
+Freeze these files as baseline evidence:
+
+- `ml-api/reports/school_data_quality_latest.json`
+- `ml-api/reports/land_collection_status_latest.json`
+- `ml-api/reports/commercial_data_quality_latest.json`
+- `ml-api/logs/launch_readiness_gate_latest.json`
+
 ## 6) Land Chunk + Resume (recommended)
 
 To avoid contention with the critical pipeline window (`00:00~03:30`), keep land jobs in a separate slot:
@@ -189,6 +208,8 @@ To avoid contention with the critical pipeline window (`00:00~03:30`), keep land
 - `LAND_COLLECTION_CRON_MINUTE=20`
 - `LAND_LOCATION_CRON_HOUR=7`
 - `LAND_LOCATION_CRON_MINUTE=10`
+- `LAND_QUALITY_CHECK_CRON_HOUR=7`
+- `LAND_QUALITY_CHECK_CRON_MINUTE=30`
 
 Chunk/resume options:
 

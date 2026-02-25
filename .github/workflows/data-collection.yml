@@ -69,6 +69,24 @@ jobs:
           asyncio.run(main())
           "
 
+      - name: Generate school and land quality reports
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd ml-api
+          python -m scripts.check_school_data_quality
+          python -m scripts.check_land_collection_status
+
+      - name: Upload quality report artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-reports-${{ github.run_id }}
+          path: |
+            ml-api/reports/school_data_quality_latest.json
+            ml-api/reports/land_collection_status_latest.json
+
   collect-reb-index:
     name: REB 가격지수 수집
     runs-on: ubuntu-latest
