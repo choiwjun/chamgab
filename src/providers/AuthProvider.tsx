@@ -53,7 +53,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const fetchProfile = useCallback(
     async (userId: string) => {
       const { data, error } = await withTimeout(
-        supabase.from('user_profiles').select('*').eq('id', userId).single(),
+        supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('id', userId)
+          .single()
+          .then((r) => r),
         { data: null, error: { message: 'timeout' } } as never
       )
 
