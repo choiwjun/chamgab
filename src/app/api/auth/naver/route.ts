@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
     console.error('NAVER_CLIENT_ID not configured')
     return NextResponse.redirect(
       new URL(
-        '/auth/login?error=?ㅼ씠踰?濡쒓렇?몄씠 ?ㅼ젙?섏? ?딆븯?듬땲??',
+        '/auth/login?error=네이버 로그인이 설정되지 않았습니다.',
         request.url
       )
     )

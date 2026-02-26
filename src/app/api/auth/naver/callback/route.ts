@@ -108,12 +108,12 @@ export async function GET(request: NextRequest) {
   }
 
   if (!code) {
-    return redirectWithError(origin, '?몄쬆 肄붾뱶媛 ?놁뒿?덈떎.')
+    return redirectWithError(origin, '인증 코드가 없습니다.')
   }
 
   const stateResult = validateState(request, state)
   if (!stateResult) {
-    return redirectWithError(origin, '濡쒓렇???좏슚?섏? ?딆? ?붿껌?낅땲??')
+    return redirectWithError(origin, '로그인 요청이 유효하지 않습니다.')
   }
   const redirect = stateResult.redirect
 
@@ -124,12 +124,12 @@ export async function GET(request: NextRequest) {
 
   if (!clientId || !clientSecret) {
     console.error('Naver OAuth credentials not configured')
-    return redirectWithError(origin, '?ㅼ씠踰?濡쒓렇???ㅼ젙 ?ㅻ쪟')
+    return redirectWithError(origin, '네이버 로그인 설정 오류입니다.')
   }
 
   if (!supabaseUrl || !supabaseServiceKey) {
     console.error('Supabase service role key not configured')
-    return redirectWithError(origin, '?쒕쾭 ?ㅼ젙 ?ㅻ쪟')
+    return redirectWithError(origin, '서버 설정 오류입니다.')
   }
 
   try {
@@ -149,7 +149,10 @@ export async function GET(request: NextRequest) {
         tokenData.error,
         tokenData.error_description
       )
-      return redirectWithError(origin, tokenData.error_description || '?좏겙 諛쒓툒 ?ㅽ뙣')
+      return redirectWithError(
+        origin,
+        tokenData.error_description || '토큰 발급에 실패했습니다.'
+      )
     }
 
     const userResponse = await fetch('https://openapi.naver.com/v1/nid/me', {
@@ -161,7 +164,7 @@ export async function GET(request: NextRequest) {
 
     if (userData.resultcode !== '00') {
       console.error('Naver user info error:', userData.message)
-      return redirectWithError(origin, '?ъ슜???뺣낫 議고쉶 ?ㅽ뙣')
+      return redirectWithError(origin, '사용자 정보 조회에 실패했습니다.')
     }
 
     const naverUser = userData.response
@@ -170,7 +173,7 @@ export async function GET(request: NextRequest) {
     if (!email) {
       return redirectWithError(
         origin,
-        '?대찓???뺣낫媛 ?꾩슂?⑸땲?? ?ㅼ씠踰?怨꾩젙 ?ㅼ젙?먯꽌 ?대찓???쒓났???덉슜?댁＜?몄슂.'
+        '이메일 정보가 필요합니다. 네이버 계정 설정에서 이메일 제공에 동의해주세요.'
       )
     }
 
@@ -225,11 +228,11 @@ export async function GET(request: NextRequest) {
             userId = found.id
           } else {
             console.error('Failed to resolve existing user by email')
-            return redirectWithError(origin, '?ъ슜??議고쉶 ?ㅽ뙣')
+            return redirectWithError(origin, '사용자 조회에 실패했습니다.')
           }
         } else {
           console.error('Failed to create user:', createError)
-          return redirectWithError(origin, '?ъ슜???앹꽦 ?ㅽ뙣')
+          return redirectWithError(origin, '사용자 생성에 실패했습니다.')
         }
       } else {
         userId = newUser.user.id
@@ -250,7 +253,7 @@ export async function GET(request: NextRequest) {
       if (activeSuspension) {
         return redirectWithError(
           origin,
-          '?뺤???怨꾩젙?낅땲?? 愿由ъ옄?먭쾶 臾몄쓽?댁＜?몄슂.'
+          '정지된 계정입니다. 관리자에게 문의해주세요.'
         )
       }
     } catch {
@@ -268,7 +271,7 @@ export async function GET(request: NextRequest) {
 
     if (linkError || !linkData.properties?.hashed_token) {
       console.error('Failed to generate link:', linkError)
-      return redirectWithError(origin, '?몄뀡 ?앹꽦 ?ㅽ뙣')
+      return redirectWithError(origin, '세션 생성에 실패했습니다.')
     }
 
     const supabase = await createServerClient()
@@ -279,7 +282,7 @@ export async function GET(request: NextRequest) {
 
     if (verifyError) {
       console.error('Failed to verify OTP:', verifyError)
-      return redirectWithError(origin, '濡쒓렇???ㅽ뙣')
+      return redirectWithError(origin, '로그인에 실패했습니다.')
     }
 
     return withClearedStateCookie(NextResponse.redirect(`${origin}${redirect}`))
@@ -287,7 +290,7 @@ export async function GET(request: NextRequest) {
     console.error('Naver callback error:', err)
     return redirectWithError(
       origin,
-      '?ㅼ씠踰?濡쒓렇??泥섎━ 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.'
+      '네이버 로그인 처리 중 오류가 발생했습니다.'
     )
   }
 }

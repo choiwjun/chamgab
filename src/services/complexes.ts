@@ -1,4 +1,5 @@
-// @TASK P2-R0-T1 - Complexes ?쒕퉬???덉씠??// @SPEC specs/domain/resources.yaml#complexes
+// @TASK P2-R0-T1 - Complexes service layer
+// @SPEC specs/domain/resources.yaml#complexes
 
 import { createClient } from '@supabase/supabase-js'
 import type { Complex, ComplexSearchParams } from '@/types/complex'
@@ -17,7 +18,7 @@ export interface ComplexListResult {
 }
 
 /**
- * ?꾪뙆???⑥? 紐⑸줉 議고쉶
+ * Fetch complex list
  */
 export async function getComplexes(
   params: ComplexSearchParams
@@ -27,12 +28,12 @@ export async function getComplexes(
 
   let query = supabase.from('complexes').select('*', { count: 'exact' })
 
-  // ?꾪꽣 ?곸슜
+  // Apply filters
   if (sido) {
     query = query.eq('sido', sido)
   }
   if (sigungu) {
-    // ?좏깮 ?꾪꽣???뺥솗 留ㅼ묶?쇰줈 泥섎━ (寃?됱뼱 議곌굔怨?異⑸룎 諛⑹?)
+    // Apply exact-match filter to avoid collision with keyword search
     const sanitizedSigungu = sanitizeFilterInput(sigungu)
     if (sanitizedSigungu) {
       query = query.eq('sigungu', sanitizedSigungu)
@@ -62,7 +63,7 @@ export async function getComplexes(
     throw new Error(error.message)
   }
 
-  // location 蹂??(PostGIS GEOGRAPHY ??lat/lng)
+  // Convert PostGIS GEOGRAPHY to lat/lng object
   const items = (data || []).map(transformComplex)
 
   return {
@@ -74,7 +75,7 @@ export async function getComplexes(
 }
 
 /**
- * ?꾪뙆???⑥? ?⑥씪 議고쉶
+ * Fetch a single complex by id
  */
 export async function getComplexById(id: string): Promise<Complex | null> {
   const { data, error } = await supabase
@@ -94,7 +95,7 @@ export async function getComplexById(id: string): Promise<Complex | null> {
 }
 
 /**
- * 釉뚮옖?쒕퀎 ?꾪뙆???⑥? 紐⑸줉 議고쉶
+ * Fetch complexes by brand
  */
 export async function getComplexesByBrand(
   brand: string,
@@ -125,7 +126,9 @@ export async function getComplexesByBrand(
 }
 
 /**
- * DB ?덉퐫?쒕? Complex ??낆쑝濡?蹂?? * PostGIS GEOGRAPHY ??낆쓣 lat/lng 媛앹껜濡?蹂?? */
+ * Convert DB record into Complex shape.
+ * Also converts PostGIS GEOGRAPHY value to a lat/lng object.
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function transformComplex(record: any): Complex {
   const complex: Complex = {
@@ -148,7 +151,7 @@ function transformComplex(record: any): Complex {
 
   // PostGIS GEOGRAPHY POINT -> lat/lng
   if (record.location) {
-    // Supabase??GEOGRAPHY瑜?GeoJSON ?뺤떇?쇰줈 諛섑솚
+    // Supabase returns GEOGRAPHY as GeoJSON
     // { type: 'Point', coordinates: [lng, lat] }
     if (typeof record.location === 'object' && record.location.coordinates) {
       complex.location = {
