@@ -1,7 +1,7 @@
 'use client'
 
-// @TASK P3-S4-T4 - 가격 요인 리스트
-import { ArrowUp, ArrowDown, Lock } from 'lucide-react'
+// @TASK P3-S4-T4 - 媛寃??붿씤 由ъ뒪??
+import { ArrowUp, ArrowDown } from 'lucide-react'
 import { formatPrice } from '@/lib/format'
 
 interface PriceFactor {
@@ -23,10 +23,7 @@ interface PriceFactorsProps {
 
 export function PriceFactors({
   factors,
-  maxVisible = 5,
-  isPremium = false,
   isLoading,
-  onUpgrade,
 }: PriceFactorsProps) {
   if (isLoading) {
     return (
@@ -42,13 +39,12 @@ export function PriceFactors({
     )
   }
 
-  const visibleFactors = isPremium ? factors : factors.slice(0, maxVisible)
-  const hiddenCount = factors.length - visibleFactors.length
+  const visibleFactors = factors
 
   return (
     <div>
       <h3 className="mb-5 text-lg font-bold text-[#191F28]">
-        가격 영향 요인 TOP {factors.length}
+        媛寃??곹뼢 ?붿씤 TOP {factors.length}
       </h3>
 
       <div className="space-y-3">
@@ -58,12 +54,12 @@ export function PriceFactors({
             className="flex items-center justify-between rounded-xl border border-gray-200 p-4 transition-colors hover:border-blue-500"
           >
             <div className="flex items-center gap-4">
-              {/* 순위 */}
+              {/* ?쒖쐞 */}
               <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-blue-500/20 bg-blue-50 text-sm font-semibold text-blue-600">
                 {factor.rank}
               </div>
 
-              {/* 요인명 */}
+              {/* ?붿씤紐?*/}
               <div>
                 <p className="text-sm font-medium text-[#191F28]">
                   {factor.factor_name_ko}
@@ -72,7 +68,7 @@ export function PriceFactors({
               </div>
             </div>
 
-            {/* 기여도 */}
+            {/* 湲곗뿬??*/}
             <div className="flex items-center gap-2">
               {factor.direction === 'positive' ? (
                 <ArrowUp className="h-3.5 w-3.5 text-[#00C471]" />
@@ -93,27 +89,7 @@ export function PriceFactors({
           </div>
         ))}
       </div>
-
-      {/* 프리미엄 업그레이드 CTA */}
-      {!isPremium && hiddenCount > 0 && (
-        <div className="mt-5 rounded-xl border-l-4 border-blue-500 bg-blue-50 p-5 text-center">
-          <div className="mb-3 flex items-center justify-center gap-2 text-[#191F28]">
-            <Lock className="h-4 w-4 text-blue-500" />
-            <span className="text-sm font-medium">
-              +{hiddenCount}개 요인 더보기
-            </span>
-          </div>
-          <p className="mb-4 text-xs text-[#4E5968]">
-            프리미엄 회원은 모든 가격 요인을 확인할 수 있습니다
-          </p>
-          <button
-            onClick={onUpgrade}
-            className="rounded-lg bg-blue-500 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1B64DA]"
-          >
-            프리미엄 업그레이드
-          </button>
-        </div>
-      )}
     </div>
   )
 }
+
