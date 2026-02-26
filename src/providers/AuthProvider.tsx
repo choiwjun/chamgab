@@ -25,6 +25,9 @@ interface AuthProviderProps {
   children: ReactNode
 }
 
+const AUTH_TIMEOUT_MS = 5000
+const PROFILE_RETRY_TIMEOUT_MS = 9000
+
 /**
  * AuthProvider - Supabase Auth 상태 관리
  *
@@ -41,32 +44,65 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [isLoading, setIsLoading] = useState(true)
   const refreshSeqRef = useRef(0)
 
-  // Supabase 호출 타임아웃 (5초)
+  // Supabase 호출 타임아웃
   const withTimeout = useCallback(
-    <T,>(p: Promise<T>, fallback: T): Promise<T> =>
-      Promise.race([
-        p,
-        new Promise<T>((resolve) => setTimeout(() => resolve(fallback), 5000)),
-      ]),
+    <T,>(
+      p: Promise<T>,
+      fallback: T,
+      timeoutMs = AUTH_TIMEOUT_MS
+    ): Promise<T> => {
+      let timeoutId: ReturnType<typeof setTimeout> | null = null
+      const timeoutPromise = new Promise<T>((resolve) => {
+        timeoutId = setTimeout(() => resolve(fallback), timeoutMs)
+      })
+      return Promise.race([p, timeoutPromise]).finally(() => {
+        if (timeoutId) clearTimeout(timeoutId)
+      })
+    },
     []
   )
 
   // 프로필 조회
   const fetchProfile = useCallback(
     async (userId: string) => {
-      const { data, error } = await withTimeout(
-        Promise.resolve(
-          supabase.from('user_profiles').select('*').eq('id', userId).single()
-        ),
-        { data: null, error: { message: 'timeout' } } as never
-      )
+      const queryProfile = (timeoutMs: number) =>
+        withTimeout(
+          Promise.resolve(
+            supabase
+              .from('user_profiles')
+              .select('*')
+              .eq('id', userId)
+              .maybeSingle()
+          ),
+          { data: null, error: { message: 'timeout' } } as never,
+          timeoutMs
+        )
 
-      if (error) {
-        console.error('Error fetching profile:', error)
+      const first = await queryProfile(AUTH_TIMEOUT_MS)
+      const firstMessage = first.error?.message?.toLowerCase() || ''
+      const firstTimedOut = firstMessage.includes('timeout')
+
+      if (!first.error) {
+        return first.data as UserProfile | null
+      }
+
+      if (firstTimedOut) {
+        const retry = await queryProfile(PROFILE_RETRY_TIMEOUT_MS)
+        const retryMessage = retry.error?.message?.toLowerCase() || ''
+        const retryTimedOut = retryMessage.includes('timeout')
+
+        if (!retry.error) {
+          return retry.data as UserProfile | null
+        }
+
+        if (!retryTimedOut) {
+          console.error('Error fetching profile:', retry.error)
+        }
         return null
       }
 
-      return data as UserProfile
+      console.error('Error fetching profile:', first.error)
+      return null
     },
     [supabase, withTimeout]
   )
