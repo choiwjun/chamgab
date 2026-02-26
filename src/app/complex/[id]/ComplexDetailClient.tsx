@@ -1042,7 +1042,7 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
     <div className="min-h-screen bg-white pb-24">
       {/* 헤더 */}
       <div className="border-b border-gray-200 bg-white">
-        <div className="px-6 py-8">
+        <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
           {/* 섹션 레이블 */}
           <div className="mb-6 flex items-center gap-3">
             <span className="h-px w-8 bg-blue-500" />
@@ -1078,7 +1078,7 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
 
       {/* 단지 정보 */}
       <div className="mt-px border-b border-gray-200 bg-white">
-        <div className="px-6 py-8">
+        <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
           <div className="mb-6 flex items-center gap-3">
             <span className="h-px w-8 bg-blue-500" />
             <span className="text-xs uppercase tracking-wide text-gray-500">
@@ -1136,7 +1136,7 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
 
       {/* 참값 분석 */}
       <div className="mt-px border-b border-gray-200 bg-white">
-        <div className="px-6 py-8">
+        <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
           <div className="mb-6 flex items-center gap-3">
             <span className="h-px w-8 bg-blue-500" />
             <span className="text-xs uppercase tracking-wide text-gray-500">
@@ -1564,7 +1564,7 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
 
       {/* 투자 분석 */}
       <div className="mt-px border-b border-gray-200 bg-white">
-        <div className="px-6 py-8">
+        <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
           <div className="mb-6 flex items-center gap-3">
             <span className="h-px w-8 bg-blue-500" />
             <span className="text-xs uppercase tracking-wide text-gray-500">
@@ -1870,7 +1870,7 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
 
       {/* 최근 실거래 */}
       <div className="mt-px border-b border-gray-200 bg-white">
-        <div className="px-6 py-8">
+        <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
           <div className="mb-6 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <span className="h-px w-8 bg-blue-500" />
