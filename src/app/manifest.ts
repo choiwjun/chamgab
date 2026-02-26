@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: '참값 - AI 부동산 가치 분석',
     short_name: '참값',
     description:
-      'AI가 분석한 정확한 부동산 참값을 확인하세요. 아파트 적정가격, 상권 분석, 학군 분석을 한곳에서 제공합니다.',
+      'AI 기반 부동산 분석 서비스. 아파트 적정가격, 상권 분석, 학군 분석을 제공합니다.',
     start_url: '/',
     display: 'standalone',
     background_color: '#ffffff',

@@ -17,17 +17,16 @@ export const metadata: Metadata = {
     default: '참값 - AI 부동산 가격 분석 | 아파트 적정가격 조회',
     template: '%s | 참값',
   },
-  description:
-    ENABLE_LAND
-      ? 'AI가 분석한 정확한 부동산 참값을 확인하세요. 아파트 적정가격, 실거래가 분석, 상권분석, 토지 시세를 한 곳에서 비교하세요.'
-      : 'AI가 분석한 정확한 부동산 참값을 확인하세요. 아파트 적정가격, 실거래가 분석, 상권분석을 한 곳에서 비교하세요.',
+  description: ENABLE_LAND
+    ? 'AI가 분석한 부동산 참값을 확인하세요. 아파트 적정가격, 실거래가 분석, 상권 분석, 토지 시세를 한 곳에서 비교할 수 있습니다.'
+    : 'AI가 분석한 부동산 참값을 확인하세요. 아파트 적정가격, 실거래가 분석, 상권 분석을 한 곳에서 비교할 수 있습니다.',
   keywords: [
     '부동산',
     '아파트 시세',
     '아파트 적정가격',
     'AI 부동산 분석',
     '실거래가 조회',
-    '상권분석',
+    '상권 분석',
     ...(ENABLE_LAND ? ['토지 시세'] : []),
     '참값',
     '아파트 가격 예측',
@@ -42,10 +41,9 @@ export const metadata: Metadata = {
     url: SITE_URL,
     siteName: '참값',
     title: '참값 - AI 부동산 가격 분석',
-    description:
-      ENABLE_LAND
-        ? 'AI가 분석한 정확한 부동산 참값. 아파트 적정가격, 실거래가, 상권분석, 토지 시세를 확인하세요.'
-        : 'AI가 분석한 정확한 부동산 참값. 아파트 적정가격, 실거래가, 상권분석을 확인하세요.',
+    description: ENABLE_LAND
+      ? 'AI가 분석한 부동산 참값. 아파트 적정가격, 실거래가, 상권 분석, 토지 시세를 확인하세요.'
+      : 'AI가 분석한 부동산 참값. 아파트 적정가격, 실거래가, 상권 분석을 확인하세요.',
     images: [
       {
         url: '/og-image.png',
@@ -58,10 +56,9 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary_large_image',
     title: '참값 - AI 부동산 가격 분석',
-    description:
-      ENABLE_LAND
-        ? 'AI가 분석한 정확한 부동산 참값. 아파트 적정가격, 상권분석, 토지 시세.'
-        : 'AI가 분석한 정확한 부동산 참값. 아파트 적정가격, 상권분석.',
+    description: ENABLE_LAND
+      ? 'AI가 분석한 부동산 참값. 아파트 적정가격, 상권 분석, 토지 시세.'
+      : 'AI가 분석한 부동산 참값. 아파트 적정가격, 상권 분석.',
     images: ['/og-image.png'],
   },
   robots: {
@@ -88,8 +85,8 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: '/favicon.ico', sizes: '32x32' },
       { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icon-512.png', sizes: '512x512', type: 'image/png' },
     ],
     apple: [{ url: '/apple-icon.png', sizes: '180x180', type: 'image/png' }],
   },
@@ -103,14 +100,12 @@ export default function RootLayout({
   return (
     <html lang="ko" suppressHydrationWarning>
       <head>
-        {/* Pretendard - Body & Display Font */}
         <link
           rel="stylesheet"
           as="style"
           crossOrigin="anonymous"
           href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css"
         />
-        {/* Google Analytics */}
         <Script
           src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`}
           strategy="afterInteractive"
