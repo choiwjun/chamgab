@@ -35,13 +35,13 @@ export function CompareTable() {
   // Zustand → URL 쿼리 동기화
   useEffect(() => {
     if (propertyIds.length === 0) {
-      router.replace('/compare')
+      router.replace('/search')
       return
     }
 
     const newQuery = `?ids=${propertyIds.join(',')}`
     if (searchParams.toString() !== `ids=${propertyIds.join(',')}`) {
-      router.replace(`/compare${newQuery}` as never, { scroll: false })
+      router.replace(`/search${newQuery}` as never, { scroll: false })
     }
   }, [propertyIds, router, searchParams])
 

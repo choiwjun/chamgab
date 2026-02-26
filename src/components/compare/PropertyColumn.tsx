@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { X, MapPin, ArrowUpRight } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { formatCurrency, formatArea } from '@/lib/format'
+import { getPriceFactorLabel } from '@/lib/priceFactorLabels'
 import type { CompareProperty } from '@/stores/compareStore'
 import type { PriceFactor } from '@/types/chamgab'
 
@@ -116,26 +117,30 @@ export function PropertyColumn({
               가격 요인
             </h4>
             <div className="space-y-2">
-              {topFactors.map((factor) => (
-                <div
-                  key={factor.id}
-                  className="flex items-center justify-between text-sm"
-                >
-                  <span className="text-[#4E5968]">
-                    {factor.factor_name_ko}
-                  </span>
-                  <span
-                    className={
-                      factor.direction === 'positive'
-                        ? 'font-medium text-[#00C471]'
-                        : 'font-medium text-[#F04452]'
-                    }
+              {topFactors.map((factor) => {
+                const label = getPriceFactorLabel(
+                  factor.factor_name,
+                  factor.factor_name_ko
+                )
+                return (
+                  <div
+                    key={factor.id}
+                    className="flex items-center justify-between text-sm"
                   >
-                    {factor.direction === 'positive' ? '+' : ''}
-                    {(factor.contribution * 100).toFixed(1)}%
-                  </span>
-                </div>
-              ))}
+                    <span className="text-[#4E5968]">{label.title}</span>
+                    <span
+                      className={
+                        factor.direction === 'positive'
+                          ? 'font-medium text-[#00C471]'
+                          : 'font-medium text-[#F04452]'
+                      }
+                    >
+                      {factor.direction === 'positive' ? '+' : ''}
+                      {(factor.contribution * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                )
+              })}
             </div>
           </div>
         )}

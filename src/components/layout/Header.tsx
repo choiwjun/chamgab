@@ -64,6 +64,7 @@ function NavDropdown({
   const [isOpen, setIsOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const { isAuthenticated } = useAuth()
+  const singleLink = category.links.length === 1 ? category.links[0] : null
 
   useEffect(() => {
     const onClickOutside = (event: MouseEvent) => {
@@ -96,6 +97,23 @@ function NavDropdown({
           Soon
         </span>
       </button>
+    )
+  }
+
+  if (
+    singleLink &&
+    !singleLink.comingSoon &&
+    (!singleLink.requiresAuth || isAuthenticated)
+  ) {
+    return (
+      <Link
+        href={singleLink.href as never}
+        className={`px-4 py-2 text-sm font-medium transition-colors ${
+          isActive ? 'text-[#191F28]' : 'text-[#4E5968] hover:text-[#191F28]'
+        }`}
+      >
+        {category.label}
+      </Link>
     )
   }
 
