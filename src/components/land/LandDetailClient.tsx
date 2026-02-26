@@ -173,7 +173,7 @@ export function LandDetailClient({
         transition={{ duration: 0.3 }}
       >
         <Link
-          href="/land/search"
+          href="/land"
           className="inline-flex items-center gap-2 text-sm text-[#8B95A1] transition-colors hover:text-[#191F28]"
         >
           <ArrowLeft className="h-4 w-4" strokeWidth={2} />

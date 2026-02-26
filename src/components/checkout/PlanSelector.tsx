@@ -1,7 +1,7 @@
 ﻿'use client'
 
 import { useMemo, useState } from 'react'
-import { Check, Crown, Building2, Zap, AlertTriangle } from 'lucide-react'
+import { Check, Crown, Zap, AlertTriangle } from 'lucide-react'
 import { ENABLE_LAND } from '@/lib/features'
 
 interface Plan {
@@ -32,7 +32,7 @@ const PLANS: Plan[] = [
   },
   {
     id: 'premium_monthly',
-    name: 'Premium',
+    name: 'Pro',
     price: 9900,
     yearlyPrice: 99000,
     description: '개인 투자자/창업자용 확장 플랜',
@@ -44,20 +44,6 @@ const PLANS: Plan[] = [
       '유사 사례 비교',
       'PDF 리포트(출시 예정)',
       '우선 지원',
-    ],
-  },
-  {
-    id: 'business',
-    name: 'Business',
-    price: 49900,
-    description: '팀/기업 운영용 플랜',
-    icon: <Building2 className="h-6 w-6" />,
-    features: [
-      '월간 대량 크레딧(협의)',
-      'Premium 기능 포함',
-      '팀 계정 관리',
-      '운영 API/RPC 연동',
-      'SLA(협의)',
     ],
   },
 ]
@@ -172,7 +158,7 @@ export function PlanSelector() {
         </div>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-3">
+      <div className="grid gap-6 md:grid-cols-2">
         {PLANS.map((plan) => {
           const price =
             billingPeriod === 'yearly' && plan.yearlyPrice
@@ -255,10 +241,7 @@ export function PlanSelector() {
                   Free
                 </th>
                 <th className="py-4 text-center font-medium text-blue-500">
-                  Premium
-                </th>
-                <th className="py-4 text-center font-medium text-gray-900">
-                  Business
+                  Pro
                 </th>
               </tr>
             </thead>
@@ -269,7 +252,6 @@ export function PlanSelector() {
                 <td className="py-4 text-center font-medium text-blue-500">
                   5,000
                 </td>
-                <td className="py-4 text-center font-medium">협의</td>
               </tr>
               <tr className="border-b">
                 <td className="py-4 text-gray-600">아파트/상권/학군</td>
@@ -277,7 +259,6 @@ export function PlanSelector() {
                 <td className="py-4 text-center font-medium text-blue-500">
                   상세
                 </td>
-                <td className="py-4 text-center font-medium">상세</td>
               </tr>
               {ENABLE_LAND && (
                 <tr className="border-b">
@@ -286,22 +267,14 @@ export function PlanSelector() {
                   <td className="py-4 text-center font-medium text-blue-500">
                     상세
                   </td>
-                  <td className="py-4 text-center font-medium">상세</td>
                 </tr>
               )}
-              <tr className="border-b">
-                <td className="py-4 text-gray-600">팀 기능</td>
-                <td className="py-4 text-center text-gray-300">-</td>
-                <td className="py-4 text-center text-gray-300">-</td>
-                <td className="py-4 text-center">
-                  <Check className="mx-auto h-5 w-5 text-green-500" />
-                </td>
-              </tr>
               <tr>
-                <td className="py-4 text-gray-600">운영 API/RPC</td>
+                <td className="py-4 text-gray-600">유사 사례 비교</td>
                 <td className="py-4 text-center text-gray-300">-</td>
-                <td className="py-4 text-center text-gray-300">-</td>
-                <td className="py-4 text-center">포함</td>
+                <td className="py-4 text-center font-medium text-blue-500">
+                  포함
+                </td>
               </tr>
             </tbody>
           </table>

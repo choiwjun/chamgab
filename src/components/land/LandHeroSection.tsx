@@ -12,7 +12,7 @@ export function LandHeroSection() {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
     if (query.trim()) {
-      router.push(`/land/search?q=${encodeURIComponent(query.trim())}` as never)
+      router.push('/land' as never)
     }
   }
 

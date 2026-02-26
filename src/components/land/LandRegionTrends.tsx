@@ -51,7 +51,7 @@ export function LandRegionTrends({ stats }: LandRegionTrendsProps) {
               </p>
             </div>
             <Link
-              href="/land/search"
+              href="/land"
               className="hidden text-sm font-medium text-[#F59E0B] hover:text-[#EA8A0C] md:block"
             >
               전체보기 →
@@ -70,9 +70,7 @@ export function LandRegionTrends({ stats }: LandRegionTrendsProps) {
               transition={{ delay: index * 0.05, duration: 0.3 }}
             >
               <Link
-                href={
-                  `/land/search?sigungu=${encodeURIComponent(stat.sigungu)}` as never
-                }
+                href={'/land' as never}
                 className="block rounded-2xl border border-[#E5E8EB] bg-white p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-[#F59E0B]/30"
               >
                 {/* Region name + transaction count */}
@@ -111,7 +109,7 @@ export function LandRegionTrends({ stats }: LandRegionTrendsProps) {
         {/* Mobile view all button */}
         <div className="mt-6 text-center md:hidden">
           <Link
-            href="/land/search"
+            href="/land"
             className="text-sm font-medium text-[#F59E0B] hover:text-[#EA8A0C]"
           >
             전체보기 →

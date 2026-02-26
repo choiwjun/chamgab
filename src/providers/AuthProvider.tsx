@@ -11,6 +11,7 @@ import {
   useState,
   useCallback,
   useMemo,
+  useRef,
   type ReactNode,
 } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -38,6 +39,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const refreshSeqRef = useRef(0)
 
   // Supabase 호출 타임아웃 (5초)
   const withTimeout = useCallback(
@@ -155,7 +157,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   // 사용자 정보 새로고침
   const refreshUser = useCallback(async () => {
+    const refreshSeq = ++refreshSeqRef.current
     setIsLoading(true)
+    const loadingSafetyTimer = setTimeout(() => {
+      if (refreshSeqRef.current === refreshSeq) {
+        console.warn('[auth] refreshUser safety timeout reached')
+        setIsLoading(false)
+      }
+    }, 15000)
+
     try {
       const {
         data: { session },
@@ -192,7 +202,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setUser(null)
       setProfile(null)
     } finally {
-      setIsLoading(false)
+      clearTimeout(loadingSafetyTimer)
+      if (refreshSeqRef.current === refreshSeq) {
+        setIsLoading(false)
+      }
     }
   }, [fetchProfile, supabase, withTimeout])
 

@@ -416,27 +416,129 @@ class CollectorService:
                     ),
                 })
 
-            # 배치 upsert (500개씩, 중복은 무시)
-            inserted = 0
-            batch_size = 500
-            for i in range(0, len(rows), batch_size):
-                batch = rows[i:i + batch_size]
+            def _norm_float(value: Any, digits: int = 4) -> float:
                 try:
+                    return round(float(value), digits)
+                except Exception:
+                    return 0.0
+
+            def _norm_int(value: Any) -> int:
+                try:
+                    return int(float(value))
+                except Exception:
+                    return 0
+
+            def _row_key(row: Dict[str, Any]) -> tuple:
+                return (
+                    str(row.get("transaction_date") or ""),
+                    str(row.get("region_code") or ""),
+                    str(row.get("apt_name") or "").strip(),
+                    _norm_float(row.get("area_exclusive"), 4),
+                    _norm_int(row.get("floor")),
+                    _norm_int(row.get("price")),
+                )
+
+            # 같은 수집 결과 내 중복 제거
+            deduped_rows_map = {}
+            for row in rows:
+                deduped_rows_map[_row_key(row)] = row
+            deduped_rows = list(deduped_rows_map.values())
+            deduped_count = len(rows) - len(deduped_rows)
+            if deduped_count > 0:
+                print(f"[Supabase] 중복 {deduped_count}건을 배치 전 제거함")
+
+            # DB 기존 키를 먼저 조회해서 중복 insert 시도를 줄인다.
+            existing_keys = set()
+            region_codes = sorted(
+                {
+                    str(row.get("region_code") or "")
+                    for row in deduped_rows
+                    if row.get("region_code")
+                }
+            )
+            dates = [
+                str(row.get("transaction_date") or "")
+                for row in deduped_rows
+                if row.get("transaction_date")
+            ]
+            if region_codes and dates:
+                min_date = min(dates)
+                max_date = max(dates)
+                page_size = 1000
+                offset = 0
+                while True:
                     result = (
                         client.table("transactions")
-                        .upsert(batch, on_conflict="transaction_date,region_code,apt_name,area_exclusive,floor,price")
+                        .select(
+                            "transaction_date,region_code,apt_name,area_exclusive,floor,price"
+                        )
+                        .gte("transaction_date", min_date)
+                        .lte("transaction_date", max_date)
+                        .in_("region_code", region_codes)
+                        .range(offset, offset + page_size - 1)
                         .execute()
                     )
-                    inserted += len(result.data) if result.data else 0
-                except Exception as e:
-                    # upsert 실패 시 일반 insert로 fallback
-                    try:
-                        result = client.table("transactions").insert(batch).execute()
-                        inserted += len(result.data) if result.data else 0
-                    except Exception as e2:
-                        print(f"[Supabase] 배치 {i//batch_size} 저장 실패: {e2}")
+                    data = result.data or []
+                    if not data:
+                        break
+                    for existing in data:
+                        existing_keys.add(_row_key(existing))
+                    if len(data) < page_size:
+                        break
+                    offset += page_size
 
-            return inserted
+            rows_to_insert = [
+                row for row in deduped_rows if _row_key(row) not in existing_keys
+            ]
+            prefetched_duplicates = len(deduped_rows) - len(rows_to_insert)
+            if prefetched_duplicates > 0:
+                print(
+                    f"[Supabase] 기존 데이터와 중복 {prefetched_duplicates}건은 저장 생략"
+                )
+
+            persisted = 0
+            skipped_duplicates = 0
+            hard_failures = 0
+            batch_size = 500
+            for i in range(0, len(rows_to_insert), batch_size):
+                batch = rows_to_insert[i:i + batch_size]
+                try:
+                    client.table("transactions").insert(batch).execute()
+                    persisted += len(batch)
+                except Exception as e:
+                    print(
+                        f"[Supabase] 배치 {i//batch_size} insert 실패, 단건 insert 재시도: {e}"
+                    )
+                    for row in batch:
+                        try:
+                            client.table("transactions").insert([row]).execute()
+                            persisted += 1
+                        except Exception as row_err:
+                            row_err_text = str(row_err)
+                            if (
+                                "duplicate key value violates unique constraint"
+                                in row_err_text
+                                or "'code': '23505'" in row_err_text
+                            ):
+                                skipped_duplicates += 1
+                                continue
+                            hard_failures += 1
+                            print(
+                                "[Supabase] 단건 저장 실패: "
+                                f"key=({row.get('transaction_date')},"
+                                f"{row.get('region_code')},"
+                                f"{row.get('apt_name')},"
+                                f"{row.get('area_exclusive')},"
+                                f"{row.get('floor')},"
+                                f"{row.get('price')}), err={row_err}"
+                            )
+
+            if skipped_duplicates > 0:
+                print(f"[Supabase] 중복으로 단건 건너뜀: {skipped_duplicates}건")
+            if hard_failures > 0:
+                print(f"[Supabase] 단건 저장 실패(중복 제외): {hard_failures}건")
+
+            return persisted
         except Exception as e:
             print(f"[Supabase] 저장 실패: {e}")
             return 0

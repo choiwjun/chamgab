@@ -310,13 +310,7 @@ function BusinessAnalysisResultContent() {
           <p className="mb-4 text-gray-600">
             여러 지역을 비교하거나 업종별 통계를 확인해보세요.
           </p>
-          <div className="flex justify-center gap-4">
-            <button
-              onClick={() => router.push('/business-analysis/compare')}
-              className="rounded-lg border border-gray-300 bg-white px-6 py-3 hover:bg-gray-50"
-            >
-              지역 비교하기
-            </button>
+          <div className="flex justify-center">
             <button
               onClick={() =>
                 router.push(`/business-analysis/industry/${industryCode}`)

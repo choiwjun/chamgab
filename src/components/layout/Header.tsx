@@ -37,30 +37,21 @@ const NAV_APARTMENT: NavCategory = {
   id: 'apartment',
   label: '아파트',
   icon: Building2,
-  links: [
-    { href: '/search', label: '매물 검색' },
-    { href: '/compare', label: '비교하기' },
-  ],
+  links: [{ href: '/search', label: '매물 검색' }],
 }
 
 const NAV_BUSINESS: NavCategory = {
   id: 'business',
   label: '상권분석',
   icon: Store,
-  links: [
-    { href: '/business-analysis', label: '상권 분석' },
-    { href: '/business-analysis/compare', label: '지역 비교' },
-  ],
+  links: [{ href: '/business-analysis', label: '상권 분석' }],
 }
 
 const NAV_LAND: NavCategory = {
   id: 'land',
   label: '토지분석',
   icon: MapPin,
-  links: [
-    { href: '/land', label: '토지 분석' },
-    { href: '/land/search', label: '토지 검색' },
-  ],
+  links: [{ href: '/land', label: '토지 분석' }],
 }
 
 function NavDropdown({
@@ -160,7 +151,6 @@ function isCategoryActive(pathname: string, categoryId: string) {
   if (categoryId === 'apartment') {
     return (
       pathname.startsWith('/search') ||
-      pathname.startsWith('/compare') ||
       pathname.startsWith('/property') ||
       pathname.startsWith('/complex')
     )
