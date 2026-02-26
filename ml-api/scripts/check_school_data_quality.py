@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from statistics import mean
@@ -17,6 +18,13 @@ logger = logging.getLogger("check_school_data_quality")
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPORTS_DIR = PROJECT_ROOT / "reports"
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = (os.getenv(name) or "").strip().lower()
+    if not raw:
+        return default
+    return raw not in {"0", "false", "no", "off", "n"}
 
 
 def _to_utc(ts: str | None) -> datetime | None:
@@ -267,7 +275,22 @@ def main() -> None:
     parser.add_argument("--min-official-coverage-rate", type=float, default=95.0)
     parser.add_argument("--max-inferred-ratio-rate", type=float, default=20.0)
     parser.add_argument("--max-mock-fallback-rate", type=float, default=0.0)
+    parser.add_argument(
+        "--soft-fail",
+        action="store_true",
+        help="Do not exit with error code when gate fails (warning mode).",
+    )
+    parser.add_argument(
+        "--strict-exit",
+        action="store_true",
+        help="Always exit with non-zero when gate fails.",
+    )
     args = parser.parse_args()
+    soft_fail = _env_bool("SCHOOL_QUALITY_SOFT_FAIL", True)
+    if args.soft_fail:
+        soft_fail = True
+    if args.strict_exit:
+        soft_fail = False
 
     ok, report = run_checks(
         max_missing_location_rate=args.max_missing_location_rate,
@@ -279,10 +302,20 @@ def main() -> None:
         max_inferred_ratio_rate=args.max_inferred_ratio_rate,
         max_mock_fallback_rate=args.max_mock_fallback_rate,
     )
+    report["summary"]["soft_fail_enabled"] = soft_fail
+    report["summary"]["exit_mode"] = "soft_fail" if soft_fail else "strict"
+    report["summary"]["exit_code"] = 0 if ok or soft_fail else 1
     _save_report(report)
 
-    logger.info("Quality report saved. hard_fail=%s", report["summary"]["hard_fail"])
+    logger.info(
+        "Quality report saved. hard_fail=%s exit_mode=%s",
+        report["summary"]["hard_fail"],
+        report["summary"]["exit_mode"],
+    )
     if not ok:
+        if soft_fail:
+            logger.warning("School quality gate failed, but soft-fail mode is enabled")
+            return
         raise SystemExit(1)
 
 
