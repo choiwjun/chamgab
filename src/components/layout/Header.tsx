@@ -1,13 +1,11 @@
 ﻿'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
-  Bell,
   Building2,
-  ChevronDown,
   GraduationCap,
   MapPin,
   Menu,
@@ -38,10 +36,7 @@ const NAV_APARTMENT: NavCategory = {
   id: 'apartment',
   label: '아파트',
   icon: Building2,
-  links: [
-    { href: '/search', label: '매물 검색' },
-    { href: '/favorites', label: '관심목록', requiresAuth: true },
-  ],
+  links: [{ href: '/search', label: '매물 검색' }],
 }
 
 const NAV_BUSINESS: NavCategory = {
@@ -69,89 +64,18 @@ function NavDropdown({
   category: NavCategory
   isActive: boolean
 }) {
-  const [isOpen, setIsOpen] = useState(false)
-  const dropdownRef = useRef<HTMLDivElement>(null)
-  const { isAuthenticated } = useAuth()
-
-  useEffect(() => {
-    const onClickOutside = (event: MouseEvent) => {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(event.target as Node)
-      ) {
-        setIsOpen(false)
-      }
-    }
-
-    document.addEventListener('mousedown', onClickOutside)
-    return () => document.removeEventListener('mousedown', onClickOutside)
-  }, [])
-
-  const handleComingSoon = (e: React.MouseEvent) => {
-    e.preventDefault()
-    alert('곧 오픈 예정입니다.')
-    setIsOpen(false)
-  }
-
-  if (category.comingSoon) {
-    return (
-      <button
-        onClick={handleComingSoon}
-        className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-[#8B95A1] transition-colors hover:text-[#4E5968]"
-      >
-        {category.label}
-        <span className="rounded bg-[#F2F4F6] px-1.5 py-0.5 text-[10px] font-semibold text-[#8B95A1]">
-          Soon
-        </span>
-      </button>
-    )
-  }
+  const primaryLink = category.links[0]
+  if (!primaryLink) return null
 
   return (
-    <div
-      ref={dropdownRef}
-      className="relative"
-      onMouseEnter={() => setIsOpen(true)}
-      onMouseLeave={() => setIsOpen(false)}
+    <Link
+      href={primaryLink.href as never}
+      className={`px-4 py-2 text-sm font-medium transition-colors ${
+        isActive ? 'text-[#191F28]' : 'text-[#4E5968] hover:text-[#191F28]'
+      }`}
     >
-      <button
-        onClick={() => setIsOpen((prev) => !prev)}
-        className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium transition-colors ${
-          isActive ? 'text-[#191F28]' : 'text-[#4E5968] hover:text-[#191F28]'
-        }`}
-      >
-        {category.label}
-        <ChevronDown
-          className={`h-3.5 w-3.5 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
-        />
-      </button>
-
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 4 }}
-            transition={{ duration: 0.15 }}
-            className="absolute left-0 top-full mt-2 w-48 overflow-hidden rounded-lg border border-[#E5E8EB] bg-white shadow-md"
-          >
-            {category.links.map((link) => {
-              if (link.requiresAuth && !isAuthenticated) return null
-              return (
-                <Link
-                  key={link.href}
-                  href={link.href as never}
-                  className="block px-4 py-2.5 text-sm text-[#4E5968] transition-colors hover:bg-[#F9FAFB] hover:text-[#191F28]"
-                  onClick={() => setIsOpen(false)}
-                >
-                  {link.label}
-                </Link>
-              )
-            })}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+      {category.label}
+    </Link>
   )
 }
 
@@ -159,7 +83,6 @@ function isCategoryActive(pathname: string, categoryId: string) {
   if (categoryId === 'apartment') {
     return (
       pathname.startsWith('/search') ||
-      pathname.startsWith('/favorites') ||
       pathname.startsWith('/property') ||
       pathname.startsWith('/complex')
     )
@@ -259,26 +182,13 @@ export function Header() {
             </button>
 
             {isAuthenticated ? (
-              <>
-                <Link
-                  href="/notifications"
-                  className="relative rounded-lg p-2 transition-colors hover:bg-[#F2F4F6]"
-                  aria-label="Notifications"
-                >
-                  <Bell className="h-5 w-5 text-[#191F28]" aria-hidden="true" />
-                  <span
-                    className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-[#3182F6]"
-                    aria-hidden="true"
-                  />
-                </Link>
-                <Link
-                  href="/mypage"
-                  className="rounded-lg p-2 transition-colors hover:bg-[#F2F4F6]"
-                  aria-label="My page"
-                >
-                  <User className="h-5 w-5 text-[#191F28]" aria-hidden="true" />
-                </Link>
-              </>
+              <Link
+                href="/mypage"
+                className="rounded-lg p-2 transition-colors hover:bg-[#F2F4F6]"
+                aria-label="My page"
+              >
+                <User className="h-5 w-5 text-[#191F28]" aria-hidden="true" />
+              </Link>
             ) : (
               <Link
                 href="/auth/login"
