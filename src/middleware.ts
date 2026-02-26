@@ -6,6 +6,11 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 const AUTH_REQUEST_TIMEOUT_MS = 8000
+const REMOVED_PREFIX_ROUTES = [
+  '/compare',
+  '/business-analysis/compare',
+  '/land/search',
+]
 
 async function withTimeout<T>(
   operation: Promise<T>,
@@ -83,6 +88,19 @@ export async function middleware(request: NextRequest) {
     const callbackUrl = new URL('/auth/callback', request.url)
     callbackUrl.searchParams.set('code', code)
     return NextResponse.redirect(callbackUrl)
+  }
+
+  // 완전 제거된 경로는 로그인 리다이렉트 없이 즉시 404 처리
+  const isRemovedRoute = REMOVED_PREFIX_ROUTES.some((route) =>
+    isPrefixRouteMatch(pathname, route)
+  )
+  if (isRemovedRoute) {
+    return new NextResponse('Not Found', {
+      status: 404,
+      headers: {
+        'content-type': 'text/plain; charset=utf-8',
+      },
+    })
   }
 
   let response = NextResponse.next({
