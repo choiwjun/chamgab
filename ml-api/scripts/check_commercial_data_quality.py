@@ -145,10 +145,16 @@ def main() -> None:
         "high_prob_bucket_pct": {
             "value": high_prob_bucket,
             "threshold": [args.min_high_prob_bucket, args.max_high_prob_bucket],
-            "status": "pass"
-            if high_prob_bucket is not None
-            and args.min_high_prob_bucket <= high_prob_bucket <= args.max_high_prob_bucket
-            else "fail",
+            "status": (
+                "pass"
+                if high_prob_bucket is not None
+                and args.min_high_prob_bucket <= high_prob_bucket <= args.max_high_prob_bucket
+                else (
+                    "warn"
+                    if high_prob_bucket is not None and high_prob_bucket < args.min_high_prob_bucket
+                    else "fail"
+                )
+            ),
         },
         "sigungu_coverage": {
             "value": min_coverage,

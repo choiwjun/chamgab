@@ -13,6 +13,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import sys
 import time
 import xml.etree.ElementTree as ET
@@ -28,6 +29,7 @@ from supabase import create_client
 
 LOG = logging.getLogger("collect_land_characteristics")
 STATE_PATH = Path("logs/collect_land_characteristics_state.json")
+REAL_PNU_PATTERN = re.compile(r"^\d{19}$")
 
 
 def setup_logging() -> None:
@@ -52,11 +54,14 @@ def disable_dead_local_proxy() -> None:
             os.environ.pop(key, None)
 
 
-def get_env(name: str) -> str:
-    value = os.environ.get(name, "").strip()
-    if not value:
-        raise RuntimeError(f"Missing required env: {name}")
-    return value
+def get_env(*names: str) -> str:
+    for name in names:
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value
+    if len(names) == 1:
+        raise RuntimeError(f"Missing required env: {names[0]}")
+    raise RuntimeError(f"Missing required env (one of): {', '.join(names)}")
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -69,6 +74,24 @@ def _env_bool(name: str, default: bool) -> bool:
     if normalized in {"0", "false", "no", "off"}:
         return False
     return default
+
+
+def _env_int(name: str, default: int, *, min_value: int = 0) -> int:
+    raw = os.getenv(name)
+    try:
+        value = int(raw) if raw is not None and str(raw).strip() else default
+    except Exception:
+        return max(min_value, default)
+    return max(min_value, value)
+
+
+def _env_float(name: str, default: float, *, min_value: float = 0.0) -> float:
+    raw = os.getenv(name)
+    try:
+        value = float(raw) if raw is not None and str(raw).strip() else default
+    except Exception:
+        return max(min_value, default)
+    return max(min_value, value)
 
 
 @dataclass
@@ -103,6 +126,10 @@ def _save_state(path: Path, payload: Dict[str, Any]) -> None:
     )
 
 
+def is_real_pnu(value: str) -> bool:
+    return bool(REAL_PNU_PATTERN.match((value or "").strip()))
+
+
 def collect_target_parcels(
     supabase,
     sigungu: Optional[str],
@@ -114,6 +141,7 @@ def collect_target_parcels(
     cursor = (resume_cursor or "").strip() or None
     reached_end = False
     scanned = 0
+    skipped_non_real_pnu = 0
 
     while True:
         query = (
@@ -136,17 +164,18 @@ def collect_target_parcels(
         parcel_ids = [str(row.get("id") or "") for row in rows if row.get("id")]
         existing_ids: set[str] = set()
         if parcel_ids:
-            existing_resp = (
-                supabase.table("land_characteristics")
-                .select("parcel_id")
-                .in_("parcel_id", parcel_ids)
-                .execute()
-            )
-            existing_ids = {
-                str(item.get("parcel_id") or "")
-                for item in (existing_resp.data or [])
-                if item.get("parcel_id")
-            }
+            for idx in range(0, len(parcel_ids), 200):
+                batch_ids = parcel_ids[idx : idx + 200]
+                existing_resp = (
+                    supabase.table("land_characteristics")
+                    .select("parcel_id")
+                    .in_("parcel_id", batch_ids)
+                    .execute()
+                )
+                for item in (existing_resp.data or []):
+                    parcel_id = str(item.get("parcel_id") or "")
+                    if parcel_id:
+                        existing_ids.add(parcel_id)
 
         for row in rows:
             row_id = str(row.get("id") or "")
@@ -159,7 +188,8 @@ def collect_target_parcels(
                 continue
 
             pnu = str(row.get("pnu") or "")
-            if not pnu:
+            if not pnu or not is_real_pnu(pnu):
+                skipped_non_real_pnu += 1
                 continue
             target.append(
                 ParcelRow(
@@ -177,9 +207,10 @@ def collect_target_parcels(
             break
 
     LOG.info(
-        "Parcel selection done: scanned=%d selected=%d reached_end=%s",
+        "Parcel selection done: scanned=%d selected=%d skipped_non_real_pnu=%d reached_end=%s",
         scanned,
         len(target),
+        skipped_non_real_pnu,
         reached_end,
     )
     return target, cursor, reached_end
@@ -331,6 +362,16 @@ def main() -> None:
     parser.add_argument("--max-failed-count", type=int, default=50)
     parser.add_argument("--max-failed-rate-pct", type=float, default=5.0)
     parser.add_argument(
+        "--min-success-count",
+        type=int,
+        default=_env_int("LAND_CHARACTERISTICS_MIN_SUCCESS_COUNT", 0, min_value=0),
+    )
+    parser.add_argument(
+        "--min-success-rate-pct",
+        type=float,
+        default=_env_float("LAND_CHARACTERISTICS_MIN_SUCCESS_RATE_PCT", 0.0, min_value=0.0),
+    )
+    parser.add_argument(
         "--soft-fail",
         action="store_true",
         help="Exit 0 even when failures exceed threshold.",
@@ -349,7 +390,7 @@ def main() -> None:
 
     supabase_url = get_env("SUPABASE_URL")
     supabase_key = get_env("SUPABASE_SERVICE_KEY")
-    data_go_key = get_env("DATA_GO_KR_API_KEY")
+    data_go_key = get_env("DATA_GO_KR_API_KEY", "PUBLIC_DATA_API_KEY", "MOLIT_API_KEY")
 
     supabase = create_client(supabase_url, supabase_key)
 
@@ -438,22 +479,37 @@ def main() -> None:
         missing,
         failed,
     )
+    if total > 0 and success == 0:
+        LOG.warning(
+            "collect_land_characteristics completed with zero success rows (missing=%d, failed=%d)",
+            missing,
+            failed,
+        )
+    success_rate_pct = (success / total * 100.0) if total > 0 else 0.0
     failed_rate_pct = (failed / total * 100.0) if total > 0 else 0.0
     soft_fail = _env_bool("LAND_CHARACTERISTICS_SOFT_FAIL", False)
     if args.soft_fail:
         soft_fail = True
     if args.strict_exit:
         soft_fail = False
-    hard_fail = failed > max(0, int(args.max_failed_count)) or (
-        total > 0 and failed_rate_pct > max(0.0, float(args.max_failed_rate_pct))
+    hard_fail = (
+        failed > max(0, int(args.max_failed_count))
+        or (total > 0 and failed_rate_pct > max(0.0, float(args.max_failed_rate_pct)))
+        or (total > 0 and success < max(0, int(args.min_success_count)))
+        or (total > 0 and success_rate_pct < max(0.0, float(args.min_success_rate_pct)))
     )
     if hard_fail:
         LOG.error(
-            "collect_land_characteristics hard-fail: failed=%d total=%d failed_rate=%.2f%% "
-            "(max_failed_count=%d, max_failed_rate_pct=%.2f, soft_fail=%s)",
-            failed,
+            "collect_land_characteristics hard-fail: success=%d total=%d success_rate=%.2f%% "
+            "failed=%d failed_rate=%.2f%% (min_success_count=%d, min_success_rate_pct=%.2f, "
+            "max_failed_count=%d, max_failed_rate_pct=%.2f, soft_fail=%s)",
+            success,
             total,
+            success_rate_pct,
+            failed,
             failed_rate_pct,
+            max(0, int(args.min_success_count)),
+            max(0.0, float(args.min_success_rate_pct)),
             max(0, int(args.max_failed_count)),
             max(0.0, float(args.max_failed_rate_pct)),
             soft_fail,

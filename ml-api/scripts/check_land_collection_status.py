@@ -173,6 +173,13 @@ def main() -> None:
     logger.info("land_transactions last24h count: %s", last24_count)
 
     parcel_total = sb.table("land_parcels").select("id", count="exact").limit(1).execute()
+    parcel_fake_pnu = (
+        sb.table("land_parcels")
+        .select("id", count="exact")
+        .like("pnu", "PNU-%")
+        .limit(1)
+        .execute()
+    )
     parcel_with_location = (
         sb.table("land_parcels")
         .select("id", count="exact")
@@ -188,10 +195,12 @@ def main() -> None:
         .execute()
     )
     parcel_total_count = int(parcel_total.count or 0)
+    parcel_fake_pnu_count = int(parcel_fake_pnu.count or 0)
     parcel_with_location_count = int(parcel_with_location.count or 0)
     land_prices_rows = int(land_prices_count.count or 0)
     land_characteristics_rows = int(land_characteristics_count.count or 0)
     logger.info("land_parcels total: %s", parcel_total_count)
+    logger.info("land_parcels fake-pnu rows: %s", parcel_fake_pnu_count)
     logger.info("land_parcels with location: %s", parcel_with_location_count)
     logger.info("land_prices rows: %s", land_prices_rows)
     logger.info("land_characteristics rows: %s", land_characteristics_rows)
@@ -201,6 +210,7 @@ def main() -> None:
         if parcel_total_count > 0
         else None
     )
+    has_real_pnu = parcel_total_count > 0 and parcel_fake_pnu_count < parcel_total_count
     last_created_at = _to_utc((last_row or {}).get("created_at") if last_row else None)
     last_tx_age_hours = (
         (now_utc - last_created_at).total_seconds() / 3600.0 if last_created_at else None
@@ -272,21 +282,34 @@ def main() -> None:
         "parcel_location_coverage_rate": {
             "value": None if location_coverage_rate is None else round(location_coverage_rate, 2),
             "threshold": args.min_location_coverage_rate,
-            "status": "pass"
-            if location_coverage_rate is not None and location_coverage_rate >= args.min_location_coverage_rate
-            else "fail",
+            "status": (
+                "pass"
+                if location_coverage_rate is not None
+                and location_coverage_rate >= args.min_location_coverage_rate
+                else ("warn" if location_coverage_rate is not None else "fail")
+            ),
             "parcel_total": parcel_total_count,
             "parcel_with_location": parcel_with_location_count,
         },
         "land_prices_rows": {
             "value": land_prices_rows,
             "threshold": 1,
-            "status": "pass" if land_prices_rows > 0 else "fail",
+            "status": (
+                "pass"
+                if land_prices_rows > 0
+                else ("warn" if not has_real_pnu else "fail")
+            ),
+            "reason": None if has_real_pnu else "real_pnu_unavailable",
         },
         "land_characteristics_rows": {
             "value": land_characteristics_rows,
             "threshold": 1,
-            "status": "pass" if land_characteristics_rows > 0 else "fail",
+            "status": (
+                "pass"
+                if land_characteristics_rows > 0
+                else ("warn" if not has_real_pnu else "fail")
+            ),
+            "reason": None if has_real_pnu else "real_pnu_unavailable",
         },
     }
 

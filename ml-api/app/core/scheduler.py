@@ -633,6 +633,9 @@ class DataScheduler:
             step_results: list[str] = []
             land_tx_group = self._env_int("LAND_TX_GROUP", 0, min_value=0)
             land_tx_limit = self._env_int("LAND_TX_CHUNK_LIMIT", 900, min_value=50)
+            land_price_year = self._env_int(
+                "LAND_PRICE_YEAR", datetime.now().year - 1, min_value=2000
+            )
             land_price_limit = self._env_int("LAND_PRICE_CHUNK_LIMIT", 500, min_value=50)
             land_price_sleep_ms = self._env_int("LAND_PRICE_SLEEP_MS", 120, min_value=0)
             land_price_sigungu = (os.getenv("LAND_PRICE_SIGUNGU") or "").strip()
@@ -675,7 +678,7 @@ class DataScheduler:
 
             price_args = [
                 "--year",
-                str(datetime.now().year),
+                str(land_price_year),
                 "--limit",
                 str(land_price_limit),
                 "--resume",
@@ -716,7 +719,12 @@ class DataScheduler:
             step_results.append("collect_land_characteristics")
 
             self.last_land_collection_ok = True
-            self.current_job_result = {"steps": step_results}
+            self.current_job_result = {
+                "steps": step_results,
+                "land_price_year": land_price_year,
+                "land_price_limit": land_price_limit,
+                "land_characteristics_limit": land_characteristics_limit,
+            }
         finally:
             self.last_land_collection_finished_at = datetime.now().isoformat()
 
@@ -1346,10 +1354,10 @@ class DataScheduler:
         self.current_job_result = {"step": "collect_school_official_data", "year": year}
 
     async def startup_catchup(self) -> None:
-        # Keep startup catchup lightweight to avoid large backfills during deploy/restart.
+        # Startup catchup should refresh prerequisite datasets before strict quality gates.
         steps = [
-            "build_commercial_quality_snapshot",
-            "check_commercial_data_quality",
+            "collect_commercial",
+            "collect_land_daily",
             "check_land_collection_status",
             "check_launch_readiness_gate",
         ]
