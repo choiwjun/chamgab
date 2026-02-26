@@ -59,6 +59,18 @@ def get_env(name: str) -> str:
     return value
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    normalized = raw.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
 @dataclass
 class ParcelRow:
     row_id: str
@@ -316,6 +328,18 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--sleep-ms", type=int, default=120)
+    parser.add_argument("--max-failed-count", type=int, default=50)
+    parser.add_argument("--max-failed-rate-pct", type=float, default=5.0)
+    parser.add_argument(
+        "--soft-fail",
+        action="store_true",
+        help="Exit 0 even when failures exceed threshold.",
+    )
+    parser.add_argument(
+        "--strict-exit",
+        action="store_true",
+        help="Always exit non-zero when failures exceed threshold.",
+    )
     args = parser.parse_args()
 
     setup_logging()
@@ -414,6 +438,28 @@ def main() -> None:
         missing,
         failed,
     )
+    failed_rate_pct = (failed / total * 100.0) if total > 0 else 0.0
+    soft_fail = _env_bool("LAND_CHARACTERISTICS_SOFT_FAIL", False)
+    if args.soft_fail:
+        soft_fail = True
+    if args.strict_exit:
+        soft_fail = False
+    hard_fail = failed > max(0, int(args.max_failed_count)) or (
+        total > 0 and failed_rate_pct > max(0.0, float(args.max_failed_rate_pct))
+    )
+    if hard_fail:
+        LOG.error(
+            "collect_land_characteristics hard-fail: failed=%d total=%d failed_rate=%.2f%% "
+            "(max_failed_count=%d, max_failed_rate_pct=%.2f, soft_fail=%s)",
+            failed,
+            total,
+            failed_rate_pct,
+            max(0, int(args.max_failed_count)),
+            max(0.0, float(args.max_failed_rate_pct)),
+            soft_fail,
+        )
+        if not soft_fail:
+            raise SystemExit(1)
 
 
 if __name__ == "__main__":

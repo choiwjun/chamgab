@@ -423,7 +423,7 @@ def main() -> None:
     api_key = os.getenv("SCHOOLINFO_API_KEY")
     if not api_key:
         logger.error("SCHOOLINFO_API_KEY not set in environment")
-        return
+        raise SystemExit(1)
 
     logger.info(
         "Starting official school data collection: year=%d term=%s dry_run=%s",

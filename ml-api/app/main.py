@@ -119,7 +119,19 @@ async def lifespan(app: FastAPI):
         print(f"Error loading models: {exc}")
 
     data_scheduler.set_app(app)
-    data_scheduler.start()
+    scheduler_enabled = (os.getenv("SCHEDULER_ENABLED") or "true").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+    if scheduler_enabled:
+        try:
+            data_scheduler.start()
+        except Exception as exc:
+            print(f"Scheduler start failed: {exc}")
+    else:
+        print("Scheduler disabled via SCHEDULER_ENABLED=false")
 
     try:
         yield
