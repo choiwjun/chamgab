@@ -40,7 +40,6 @@ const NAV_APARTMENT: NavCategory = {
   icon: Building2,
   links: [
     { href: '/search', label: '매물 검색' },
-    { href: '/compare', label: '비교하기' },
     { href: '/favorites', label: '관심목록', requiresAuth: true },
   ],
 }
@@ -51,7 +50,6 @@ const NAV_BUSINESS: NavCategory = {
   icon: Store,
   links: [
     { href: '/business-analysis', label: '상권 분석' },
-    { href: '/business-analysis/compare', label: '지역 비교' },
   ],
 }
 
@@ -61,7 +59,6 @@ const NAV_LAND: NavCategory = {
   icon: MapPin,
   links: [
     { href: '/land', label: '토지 분석' },
-    { href: '/land/search', label: '토지 검색' },
   ],
 }
 
@@ -162,7 +159,6 @@ function isCategoryActive(pathname: string, categoryId: string) {
   if (categoryId === 'apartment') {
     return (
       pathname.startsWith('/search') ||
-      pathname.startsWith('/compare') ||
       pathname.startsWith('/favorites') ||
       pathname.startsWith('/property') ||
       pathname.startsWith('/complex')
