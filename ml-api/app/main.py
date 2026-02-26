@@ -126,7 +126,10 @@ async def lifespan(app: FastAPI):
         "off",
     }
     if scheduler_enabled:
-        data_scheduler.start()
+        try:
+            data_scheduler.start()
+        except Exception as exc:
+            print(f"Scheduler start failed: {exc}")
     else:
         print("Scheduler disabled via SCHEDULER_ENABLED=false")
 

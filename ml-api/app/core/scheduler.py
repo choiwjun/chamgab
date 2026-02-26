@@ -218,7 +218,14 @@ class DataScheduler:
         )
         return queue_job_id
 
-    def _env_int(self, key: str, default: int, *, min_value: int = 0) -> int:
+    def _env_int(
+        self,
+        key: str,
+        default: int,
+        *,
+        min_value: int = 0,
+        max_value: Optional[int] = None,
+    ) -> int:
         raw = os.getenv(key)
         if raw is None or raw.strip() == "":
             return default
@@ -226,7 +233,10 @@ class DataScheduler:
             val = int(raw)
         except ValueError:
             return default
-        return max(min_value, val)
+        bounded = max(min_value, val)
+        if max_value is not None:
+            bounded = min(max_value, bounded)
+        return bounded
 
     def _env_float(self, key: str, default: float, *, min_value: float = 0.0) -> float:
         raw = os.getenv(key)
@@ -248,6 +258,42 @@ class DataScheduler:
         if normalized in {"0", "false", "no", "off"}:
             return False
         return default
+
+    def _env_hour(self, key: str, default: int) -> int:
+        return self._env_int(key, default, min_value=0, max_value=23)
+
+    def _env_minute(self, key: str, default: int) -> int:
+        return self._env_int(key, default, min_value=0, max_value=59)
+
+    def _quality_gate_script_args(self, env_key: str, *, default_strict: bool = True) -> list[str]:
+        strict = self._env_bool(env_key, default_strict)
+        return ["--strict-exit"] if strict else ["--soft-fail"]
+
+    def _env_day_of_week(self, key: str, default: str) -> str:
+        raw = (os.getenv(key) or "").strip().lower()
+        if not raw:
+            return default
+        try:
+            # Validate format via APScheduler parser.
+            CronTrigger(day_of_week=raw, hour=0, minute=0)
+            return raw
+        except Exception:
+            return default
+
+    @staticmethod
+    def _is_non_retryable_error(error: Optional[str]) -> bool:
+        if not error:
+            return False
+        lowered = str(error).strip().lower()
+        markers = (
+            "missing required env",
+            "is required",
+            "not set",
+            "unknown job type",
+            "no api key",
+            "invalid",
+        )
+        return any(marker in lowered for marker in markers)
 
     def _retry_job_types(self) -> set[str]:
         raw = (os.getenv("SCHEDULER_AUTO_RETRY_JOB_TYPES") or "").strip()
@@ -466,13 +512,25 @@ class DataScheduler:
 
         major_regions = ["11680", "11650", "11710", "41135", "41117", "41273"]
         job = collector_service.create_job(region_codes=major_regions, year=year, months=[month])
-        await collector_service.collect_regions(
+        result = await collector_service.collect_regions(
             region_codes=major_regions,
             year=year,
             months=[month],
             job_id=job.job_id,
         )
+        molit_count = int((result or {}).get("molit_count") or job.molit_count or 0)
+        min_molit = self._env_int("SCHEDULER_DAILY_COLLECTION_MIN_MOLIT", 1, min_value=0)
+        if molit_count < min_molit:
+            raise RuntimeError(
+                f"daily collection produced too few MOLIT rows: {molit_count} < {min_molit}"
+            )
         self.last_collection_job = job.job_id
+        self.current_job_result = {
+            "step": "daily_collection",
+            "molit_count": molit_count,
+            "min_required_molit": min_molit,
+            "regions": len(major_regions),
+        }
 
     async def weekly_collection(self) -> None:
         now = datetime.now()
@@ -502,15 +560,21 @@ class DataScheduler:
             "28260",
         ]
         job = collector_service.create_job(region_codes=capital_regions, year=year, months=months)
-        await collector_service.collect_regions(
+        result = await collector_service.collect_regions(
             region_codes=capital_regions,
             year=year,
             months=months,
             job_id=job.job_id,
         )
+        molit_count = int((result or {}).get("molit_count") or job.molit_count or 0)
+        min_molit = self._env_int("SCHEDULER_WEEKLY_COLLECTION_MIN_MOLIT", 1, min_value=0)
+        if molit_count < min_molit:
+            raise RuntimeError(
+                f"weekly collection produced too few MOLIT rows: {molit_count} < {min_molit}"
+            )
         self.last_collection_job = job.job_id
 
-        if job.molit_count > 0:
+        if molit_count > 0:
             analysis_job = analyzer_service.create_job(capital_regions)
             collected_data = collector_service.get_collected_data(job.job_id)
             if collected_data:
@@ -520,6 +584,13 @@ class DataScheduler:
                     job_id=analysis_job.job_id,
                 )
                 self.last_analysis_job = analysis_job.job_id
+        self.current_job_result = {
+            "step": "weekly_collection",
+            "molit_count": molit_count,
+            "min_required_molit": min_molit,
+            "regions": len(capital_regions),
+            "months": months,
+        }
 
     async def monthly_collection(self) -> None:
         now = datetime.now()
@@ -535,8 +606,20 @@ class DataScheduler:
             year=year,
             months=months,
         )
-        await collector_service.collect_nationwide(year=year, months=months, job_id=job.job_id)
+        result = await collector_service.collect_nationwide(year=year, months=months, job_id=job.job_id)
+        molit_count = int((result or {}).get("molit_count") or job.molit_count or 0)
+        min_molit = self._env_int("SCHEDULER_MONTHLY_COLLECTION_MIN_MOLIT", 1, min_value=0)
+        if molit_count < min_molit:
+            raise RuntimeError(
+                f"monthly collection produced too few MOLIT rows: {molit_count} < {min_molit}"
+            )
         self.last_collection_job = job.job_id
+        self.current_job_result = {
+            "step": "monthly_collection",
+            "molit_count": molit_count,
+            "min_required_molit": min_molit,
+            "months": months,
+        }
 
     async def daily_land_collection(self) -> None:
         job_id = f"land_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -708,6 +791,7 @@ class DataScheduler:
             raise RuntimeError("build_commercial_quality_snapshot failed")
         ok_quality = await self._run_script(
             "scripts.check_commercial_data_quality",
+            args=self._quality_gate_script_args("SCHEDULER_CHECK_COMMERCIAL_STRICT_EXIT", default_strict=True),
             timeout=900,
         )
         if not ok_quality:
@@ -727,7 +811,11 @@ class DataScheduler:
         self.current_job_result = {"step": "build_commercial_quality_snapshot"}
 
     async def check_commercial_data_quality_now(self) -> None:
-        ok = await self._run_script("scripts.check_commercial_data_quality", timeout=900)
+        ok = await self._run_script(
+            "scripts.check_commercial_data_quality",
+            args=self._quality_gate_script_args("SCHEDULER_CHECK_COMMERCIAL_STRICT_EXIT", default_strict=True),
+            timeout=900,
+        )
         if not ok:
             raise RuntimeError("check_commercial_data_quality failed")
         self.current_job_result = {"step": "check_commercial_data_quality"}
@@ -817,13 +905,16 @@ class DataScheduler:
             raise RuntimeError("train_model failed")
 
         ok_prepare = await self._run_script("scripts.prepare_business_training_data", timeout=900)
-        if ok_prepare:
-            csv_path = str(SCRIPTS_DIR / "business_training_data.csv")
-            await self._run_script(
-                "scripts.train_business_model",
-                args=["--data", csv_path],
-                timeout=900,
-            )
+        if not ok_prepare:
+            raise RuntimeError("prepare_business_training_data failed")
+        csv_path = str(SCRIPTS_DIR / "business_training_data.csv")
+        ok_biz_train = await self._run_script(
+            "scripts.train_business_model",
+            args=["--data", csv_path],
+            timeout=900,
+        )
+        if not ok_biz_train:
+            raise RuntimeError("train_business_model failed")
 
         await self._reload_models()
 
@@ -1189,20 +1280,38 @@ class DataScheduler:
             raise RuntimeError("build_school_analysis_marts failed")
         steps = ["build_school_analysis_marts"]
         if self._env_bool("BUILD_SCHOOL_MARTS_RUN_QUALITY_CHECK", False):
-            ok_quality = await self._run_script("scripts.check_school_data_quality", timeout=900)
+            ok_quality = await self._run_script(
+                "scripts.check_school_data_quality",
+                args=self._quality_gate_script_args(
+                    "SCHEDULER_CHECK_SCHOOL_DATA_QUALITY_STRICT_EXIT", default_strict=True
+                ),
+                timeout=900,
+            )
             if not ok_quality:
                 raise RuntimeError("check_school_data_quality failed")
             steps.append("check_school_data_quality")
         self.current_job_result = {"steps": steps}
 
     async def check_school_data_quality_now(self) -> None:
-        ok = await self._run_script("scripts.check_school_data_quality", timeout=900)
+        ok = await self._run_script(
+            "scripts.check_school_data_quality",
+            args=self._quality_gate_script_args(
+                "SCHEDULER_CHECK_SCHOOL_DATA_QUALITY_STRICT_EXIT", default_strict=True
+            ),
+            timeout=900,
+        )
         if not ok:
             raise RuntimeError("check_school_data_quality failed")
         self.current_job_result = {"step": "check_school_data_quality"}
 
     async def check_land_collection_status_now(self) -> None:
-        ok = await self._run_script("scripts.check_land_collection_status", timeout=1200)
+        ok = await self._run_script(
+            "scripts.check_land_collection_status",
+            args=self._quality_gate_script_args(
+                "SCHEDULER_CHECK_LAND_COLLECTION_STATUS_STRICT_EXIT", default_strict=True
+            ),
+            timeout=1200,
+        )
         if not ok:
             raise RuntimeError("check_land_collection_status failed")
         self.current_job_result = {"step": "check_land_collection_status"}
@@ -1252,10 +1361,14 @@ class DataScheduler:
             except Exception as exc:
                 step_results.append({"step": step, "ok": False, "error": str(exc)})
                 print(f"[scheduler] startup catchup step failed: {step} ({exc})")
+        failed_steps = [item["step"] for item in step_results if not item.get("ok")]
         self.current_job_result = {
             "step": "startup_catchup",
             "steps": step_results,
+            "failed_steps": failed_steps,
         }
+        if failed_steps:
+            raise RuntimeError(f"startup catchup failed: {', '.join(failed_steps)}")
 
     async def watchdog_critical_pipeline(self) -> None:
         now = datetime.now()
@@ -1304,6 +1417,9 @@ class DataScheduler:
             for job_type in job_order:
                 status = self.last_job_status_by_type.get(job_type)
                 status_ok = status.get("ok") if isinstance(status, dict) else None
+                status_error = (
+                    str(status.get("error") or "").strip() if isinstance(status, dict) else ""
+                )
 
                 if status_ok is True:
                     continue
@@ -1311,6 +1427,15 @@ class DataScheduler:
                     continue
                 if status_ok is None and not queue_missing:
                     continue
+                if status_ok is False and self._is_non_retryable_error(status_error):
+                    action = {
+                        "action": "blocked",
+                        "reason": "non_retryable_error",
+                        "checked_at": now.isoformat(),
+                        "job_type": job_type,
+                        "error": status_error,
+                    }
+                    break
 
                 finished_at = self._parse_iso_datetime((status or {}).get("finished_at"))
                 if finished_at:
@@ -1363,8 +1488,8 @@ class DataScheduler:
         if self.is_running:
             return
 
-        daily_collection_hour = self._env_int("DAILY_COLLECTION_CRON_HOUR", 3, min_value=0)
-        daily_collection_minute = self._env_int("DAILY_COLLECTION_CRON_MINUTE", 0, min_value=0)
+        daily_collection_hour = self._env_hour("DAILY_COLLECTION_CRON_HOUR", 3)
+        daily_collection_minute = self._env_minute("DAILY_COLLECTION_CRON_MINUTE", 0)
         self.scheduler.add_job(
             self.run_now,
             CronTrigger(hour=daily_collection_hour, minute=daily_collection_minute),
@@ -1376,8 +1501,8 @@ class DataScheduler:
             misfire_grace_time=3600,
             args=["daily"],
         )
-        land_collection_hour = self._env_int("LAND_COLLECTION_CRON_HOUR", 1, min_value=0)
-        land_collection_minute = self._env_int("LAND_COLLECTION_CRON_MINUTE", 0, min_value=0)
+        land_collection_hour = self._env_hour("LAND_COLLECTION_CRON_HOUR", 1)
+        land_collection_minute = self._env_minute("LAND_COLLECTION_CRON_MINUTE", 0)
         self.scheduler.add_job(
             self.run_now,
             CronTrigger(hour=land_collection_hour, minute=land_collection_minute),
@@ -1390,8 +1515,8 @@ class DataScheduler:
             args=["collect_land_daily"],
         )
         if self._env_bool("LAND_LOCATION_CRON_ENABLED", True):
-            land_location_hour = self._env_int("LAND_LOCATION_CRON_HOUR", 2, min_value=0)
-            land_location_minute = self._env_int("LAND_LOCATION_CRON_MINUTE", 0, min_value=0)
+            land_location_hour = self._env_hour("LAND_LOCATION_CRON_HOUR", 2)
+            land_location_minute = self._env_minute("LAND_LOCATION_CRON_MINUTE", 0)
             self.scheduler.add_job(
                 self.run_now,
                 CronTrigger(hour=land_location_hour, minute=land_location_minute),
@@ -1437,15 +1562,11 @@ class DataScheduler:
             args=["chamgab_autofix_apply"],
         )
         if self._env_bool("CHAMGAB_GAP_RECOVERY_CRON_ENABLED", True):
-            chamgab_gap_recovery_day = (
-                os.getenv("CHAMGAB_GAP_RECOVERY_CRON_DAY_OF_WEEK", "sun").strip() or "sun"
+            chamgab_gap_recovery_day = self._env_day_of_week(
+                "CHAMGAB_GAP_RECOVERY_CRON_DAY_OF_WEEK", "sun"
             )
-            chamgab_gap_recovery_hour = self._env_int(
-                "CHAMGAB_GAP_RECOVERY_CRON_HOUR", 1, min_value=0
-            )
-            chamgab_gap_recovery_minute = self._env_int(
-                "CHAMGAB_GAP_RECOVERY_CRON_MINUTE", 10, min_value=0
-            )
+            chamgab_gap_recovery_hour = self._env_hour("CHAMGAB_GAP_RECOVERY_CRON_HOUR", 1)
+            chamgab_gap_recovery_minute = self._env_minute("CHAMGAB_GAP_RECOVERY_CRON_MINUTE", 10)
             self.scheduler.add_job(
                 self.run_now,
                 CronTrigger(
@@ -1472,9 +1593,9 @@ class DataScheduler:
             misfire_grace_time=3600,
             args=["weekly"],
         )
-        collect_commercial_day = os.getenv("COLLECT_COMMERCIAL_CRON_DAY_OF_WEEK", "fri").strip() or "fri"
-        collect_commercial_hour = self._env_int("COLLECT_COMMERCIAL_CRON_HOUR", 2, min_value=0)
-        collect_commercial_minute = self._env_int("COLLECT_COMMERCIAL_CRON_MINUTE", 0, min_value=0)
+        collect_commercial_day = self._env_day_of_week("COLLECT_COMMERCIAL_CRON_DAY_OF_WEEK", "fri")
+        collect_commercial_hour = self._env_hour("COLLECT_COMMERCIAL_CRON_HOUR", 2)
+        collect_commercial_minute = self._env_minute("COLLECT_COMMERCIAL_CRON_MINUTE", 0)
         self.scheduler.add_job(
             self.run_now,
             CronTrigger(
@@ -1490,11 +1611,9 @@ class DataScheduler:
             misfire_grace_time=3600,
             args=["collect_commercial"],
         )
-        build_commercial_hour = self._env_int(
-            "BUILD_COMMERCIAL_QUALITY_SNAPSHOT_CRON_HOUR", 6, min_value=0
-        )
-        build_commercial_minute = self._env_int(
-            "BUILD_COMMERCIAL_QUALITY_SNAPSHOT_CRON_MINUTE", 0, min_value=0
+        build_commercial_hour = self._env_hour("BUILD_COMMERCIAL_QUALITY_SNAPSHOT_CRON_HOUR", 6)
+        build_commercial_minute = self._env_minute(
+            "BUILD_COMMERCIAL_QUALITY_SNAPSHOT_CRON_MINUTE", 0
         )
         self.scheduler.add_job(
             self.run_now,
@@ -1507,8 +1626,8 @@ class DataScheduler:
             misfire_grace_time=3600,
             args=["build_commercial_quality_snapshot"],
         )
-        check_commercial_hour = self._env_int("CHECK_COMMERCIAL_DATA_QUALITY_CRON_HOUR", 6, min_value=0)
-        check_commercial_minute = self._env_int("CHECK_COMMERCIAL_DATA_QUALITY_CRON_MINUTE", 10, min_value=0)
+        check_commercial_hour = self._env_hour("CHECK_COMMERCIAL_DATA_QUALITY_CRON_HOUR", 6)
+        check_commercial_minute = self._env_minute("CHECK_COMMERCIAL_DATA_QUALITY_CRON_MINUTE", 10)
         self.scheduler.add_job(
             self.run_now,
             CronTrigger(hour=check_commercial_hour, minute=check_commercial_minute),
@@ -1520,8 +1639,8 @@ class DataScheduler:
             misfire_grace_time=3600,
             args=["check_commercial_data_quality"],
         )
-        check_land_hour = self._env_int("CHECK_LAND_COLLECTION_STATUS_CRON_HOUR", 6, min_value=0)
-        check_land_minute = self._env_int("CHECK_LAND_COLLECTION_STATUS_CRON_MINUTE", 20, min_value=0)
+        check_land_hour = self._env_hour("CHECK_LAND_COLLECTION_STATUS_CRON_HOUR", 6)
+        check_land_minute = self._env_minute("CHECK_LAND_COLLECTION_STATUS_CRON_MINUTE", 20)
         self.scheduler.add_job(
             self.run_now,
             CronTrigger(hour=check_land_hour, minute=check_land_minute),
@@ -1533,8 +1652,8 @@ class DataScheduler:
             misfire_grace_time=3600,
             args=["check_land_collection_status"],
         )
-        gate_check_hour = self._env_int("CHECK_LAUNCH_READINESS_GATE_CRON_HOUR", 6, min_value=0)
-        gate_check_minute = self._env_int("CHECK_LAUNCH_READINESS_GATE_CRON_MINUTE", 30, min_value=0)
+        gate_check_hour = self._env_hour("CHECK_LAUNCH_READINESS_GATE_CRON_HOUR", 6)
+        gate_check_minute = self._env_minute("CHECK_LAUNCH_READINESS_GATE_CRON_MINUTE", 30)
         self.scheduler.add_job(
             self.run_now,
             CronTrigger(hour=gate_check_hour, minute=gate_check_minute),
@@ -1625,10 +1744,8 @@ class DataScheduler:
             misfire_grace_time=3600,
             args=["collect_school_academy_weekly"],
         )
-        build_school_marts_hour = self._env_int("BUILD_SCHOOL_MARTS_CRON_HOUR", 5, min_value=0)
-        build_school_marts_minute = self._env_int(
-            "BUILD_SCHOOL_MARTS_CRON_MINUTE", 30, min_value=0
-        )
+        build_school_marts_hour = self._env_hour("BUILD_SCHOOL_MARTS_CRON_HOUR", 5)
+        build_school_marts_minute = self._env_minute("BUILD_SCHOOL_MARTS_CRON_MINUTE", 30)
         self.scheduler.add_job(
             self.run_now,
             CronTrigger(hour=build_school_marts_hour, minute=build_school_marts_minute),
@@ -1640,10 +1757,8 @@ class DataScheduler:
             misfire_grace_time=3600,
             args=["build_school_marts_daily"],
         )
-        school_quality_hour = self._env_int("CHECK_SCHOOL_DATA_QUALITY_CRON_HOUR", 5, min_value=0)
-        school_quality_minute = self._env_int(
-            "CHECK_SCHOOL_DATA_QUALITY_CRON_MINUTE", 45, min_value=0
-        )
+        school_quality_hour = self._env_hour("CHECK_SCHOOL_DATA_QUALITY_CRON_HOUR", 5)
+        school_quality_minute = self._env_minute("CHECK_SCHOOL_DATA_QUALITY_CRON_MINUTE", 45)
         self.scheduler.add_job(
             self.run_now,
             CronTrigger(hour=school_quality_hour, minute=school_quality_minute),
