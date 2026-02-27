@@ -33,6 +33,8 @@ MODELS_DIR = PROJECT_ROOT / "app" / "models"
 SCRIPTS_DIR = PROJECT_ROOT / "scripts"
 LOGS_DIR = PROJECT_ROOT / "logs"
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
+REPORTS_DIR = PROJECT_ROOT / "reports"
+REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
 CRITICAL_PIPELINE_JOB_ORDER = (
     "collect_commercial",
@@ -43,6 +45,24 @@ CRITICAL_PIPELINE_JOB_ORDER = (
 )
 
 DEFAULT_AUTO_RETRY_JOB_TYPES = CRITICAL_PIPELINE_JOB_ORDER
+
+QUALITY_GATE_CONFIGS: Dict[str, Dict[str, Any]] = {
+    "check_commercial_data_quality": {
+        "env_key": "SCHEDULER_CHECK_COMMERCIAL_STRICT_EXIT",
+        "default_strict": True,
+        "report_file": "commercial_data_quality_latest.json",
+    },
+    "check_land_collection_status": {
+        "env_key": "SCHEDULER_CHECK_LAND_COLLECTION_STATUS_STRICT_EXIT",
+        "default_strict": True,
+        "report_file": "land_collection_status_latest.json",
+    },
+    "check_school_data_quality": {
+        "env_key": "SCHEDULER_CHECK_SCHOOL_DATA_QUALITY_STRICT_EXIT",
+        "default_strict": True,
+        "report_file": "school_data_quality_latest.json",
+    },
+}
 
 
 class DataScheduler:
@@ -84,6 +104,7 @@ class DataScheduler:
         self._chamgab_autofix_lock = asyncio.Lock()
         self._watchdog_requeue_attempts: Dict[str, int] = {}
         self._watchdog_state_path = LOGS_DIR / "scheduler_watchdog_state_latest.json"
+        self._quality_gate_streaks: Dict[str, Dict[str, Any]] = {}
         self._app = None
 
         self._load_scheduler_state()
@@ -162,6 +183,14 @@ class DataScheduler:
         if isinstance(last_watchdog_action, dict):
             self.last_watchdog_action = last_watchdog_action
 
+        quality_gate_streaks = payload.get("quality_gate_streaks")
+        if isinstance(quality_gate_streaks, dict):
+            parsed: Dict[str, Dict[str, Any]] = {}
+            for key, value in quality_gate_streaks.items():
+                if isinstance(value, dict):
+                    parsed[str(key)] = value
+            self._quality_gate_streaks = parsed
+
     def _persist_scheduler_state(self) -> None:
         payload: Dict[str, Any] = {
             "generated_at": datetime.now().isoformat(),
@@ -169,6 +198,7 @@ class DataScheduler:
             "watchdog_requeue_attempts": self._watchdog_requeue_attempts,
             "last_watchdog_run_at": self.last_watchdog_run_at,
             "last_watchdog_action": self.last_watchdog_action,
+            "quality_gate_streaks": self._quality_gate_streaks,
         }
         try:
             self._write_summary_json(self._watchdog_state_path, payload)
@@ -265,9 +295,94 @@ class DataScheduler:
     def _env_minute(self, key: str, default: int) -> int:
         return self._env_int(key, default, min_value=0, max_value=59)
 
+    def _should_enforce_land_daily_once(self) -> bool:
+        return self._env_bool("LAND_COLLECTION_ENFORCE_DAILY_ONCE", True)
+
+    def _job_ran_today(self, job_type: str) -> tuple[bool, Optional[str]]:
+        status = self.last_job_status_by_type.get(job_type)
+        if not isinstance(status, dict):
+            return False, None
+        today = datetime.now().date()
+        for key in ("finished_at", "started_at"):
+            run_at = self._parse_iso_datetime(status.get(key))
+            if run_at and run_at.date() == today:
+                return True, run_at.isoformat()
+        return False, None
+
+    def _quality_gate_streak_enabled(self) -> bool:
+        return self._env_bool("SCHEDULER_QUALITY_GATE_STREAK_ENABLED", True)
+
+    def _quality_gate_pass_streak_required(self) -> int:
+        return self._env_int(
+            "SCHEDULER_QUALITY_GATE_STRICT_AFTER_PASS_DAYS",
+            3,
+            min_value=1,
+            max_value=30,
+        )
+
+    def _quality_gate_use_strict_exit(self, env_key: str, *, default_strict: bool) -> bool:
+        base_strict = self._env_bool(env_key, default_strict)
+        if not base_strict:
+            return False
+        if not self._quality_gate_streak_enabled():
+            return True
+
+        required = self._quality_gate_pass_streak_required()
+        state = self._quality_gate_streaks.get(env_key) or {}
+        pass_streak = int(state.get("pass_streak") or 0)
+        return pass_streak >= required
+
     def _quality_gate_script_args(self, env_key: str, *, default_strict: bool = True) -> list[str]:
-        strict = self._env_bool(env_key, default_strict)
+        strict = self._quality_gate_use_strict_exit(env_key, default_strict=default_strict)
         return ["--strict-exit"] if strict else ["--soft-fail"]
+
+    def _update_quality_gate_streak(self, job_type: str) -> None:
+        config = QUALITY_GATE_CONFIGS.get(job_type)
+        if not config:
+            return
+
+        env_key = str(config.get("env_key") or "")
+        if not env_key:
+            return
+
+        report_file = str(config.get("report_file") or "")
+        report_path = REPORTS_DIR / report_file if report_file else None
+        report: Optional[Dict[str, Any]] = (
+            self._load_summary_json(report_path) if report_path else None
+        )
+        summary = report.get("summary") if isinstance(report, dict) else None
+        hard_fail = bool(summary.get("hard_fail")) if isinstance(summary, dict) else True
+        pass_now = not hard_fail
+
+        previous = self._quality_gate_streaks.get(env_key) or {}
+        pass_streak = int(previous.get("pass_streak") or 0)
+        pass_streak = pass_streak + 1 if pass_now else 0
+
+        required = self._quality_gate_pass_streak_required()
+        base_strict = self._env_bool(env_key, bool(config.get("default_strict", True)))
+        if not base_strict:
+            strict_active = False
+        elif not self._quality_gate_streak_enabled():
+            strict_active = True
+        else:
+            strict_active = pass_streak >= required
+
+        self._quality_gate_streaks[env_key] = {
+            "job_type": job_type,
+            "env_key": env_key,
+            "pass_streak": pass_streak,
+            "required_pass_streak": required,
+            "last_ok": pass_now,
+            "strict_active": strict_active,
+            "last_report_file": report_file,
+            "last_report_generated_at": (
+                str(report.get("generated_at") or "")
+                if isinstance(report, dict)
+                else None
+            ),
+            "updated_at": datetime.now().isoformat(),
+        }
+        self._persist_scheduler_state()
 
     def _env_day_of_week(self, key: str, default: str) -> str:
         raw = (os.getenv(key) or "").strip().lower()
@@ -298,8 +413,12 @@ class DataScheduler:
     def _retry_job_types(self) -> set[str]:
         raw = (os.getenv("SCHEDULER_AUTO_RETRY_JOB_TYPES") or "").strip()
         if not raw:
-            return set(DEFAULT_AUTO_RETRY_JOB_TYPES)
-        return {item.strip() for item in raw.split(",") if item.strip()}
+            parsed = set(DEFAULT_AUTO_RETRY_JOB_TYPES)
+        else:
+            parsed = {item.strip() for item in raw.split(",") if item.strip()}
+        if self._env_bool("LAND_COLLECTION_DISABLE_AUTO_RETRY", True):
+            parsed.discard("collect_land_daily")
+        return parsed
 
     def _attach_retry_meta(
         self,
@@ -373,6 +492,148 @@ class DataScheduler:
                 }
 
         return await asyncio.to_thread(_fetch)
+
+    async def _http_post_json(
+        self,
+        url: str,
+        payload: Dict[str, Any],
+        *,
+        headers: Optional[Dict[str, str]] = None,
+        timeout: int = 20,
+    ) -> Dict[str, Any]:
+        req_headers = {"Content-Type": "application/json"}
+        if headers:
+            req_headers.update(headers)
+
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+
+        def _post() -> Dict[str, Any]:
+            req = urllib.request.Request(
+                url=url,
+                data=body,
+                method="POST",
+                headers=req_headers,
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    raw = resp.read().decode("utf-8", errors="replace")
+                    parsed = json.loads(raw) if raw else {}
+                    return {
+                        "ok": True,
+                        "status": int(resp.getcode() or 200),
+                        "payload": parsed,
+                        "error": None,
+                    }
+            except urllib.error.HTTPError as exc:
+                raw = ""
+                try:
+                    raw = exc.read().decode("utf-8", errors="replace")
+                except Exception:
+                    raw = ""
+                parsed = None
+                try:
+                    parsed = json.loads(raw) if raw else None
+                except Exception:
+                    parsed = None
+                return {
+                    "ok": False,
+                    "status": int(exc.code or 500),
+                    "payload": parsed,
+                    "error": raw or str(exc),
+                }
+            except Exception as exc:
+                return {
+                    "ok": False,
+                    "status": 0,
+                    "payload": None,
+                    "error": str(exc),
+                }
+
+        return await asyncio.to_thread(_post)
+
+    def _build_domain_metrics_snapshot(self, trigger_job: str) -> Dict[str, Any]:
+        land_report = self._load_summary_json(REPORTS_DIR / "land_collection_status_latest.json") or {}
+        school_report = self._load_summary_json(REPORTS_DIR / "school_data_quality_latest.json") or {}
+        commercial_report = self._load_summary_json(REPORTS_DIR / "commercial_data_quality_latest.json") or {}
+        apartment_audit = self._load_summary_json(LOGS_DIR / "chamgab_gap_audit_summary_latest.json") or {}
+        apartment_reanalyze = self._load_summary_json(LOGS_DIR / "chamgab_reanalyze_summary_latest.json") or {}
+        land_link = self._load_summary_json(LOGS_DIR / "land_tx_parcel_link_latest.json") or {}
+        school_backfill = self._load_summary_json(LOGS_DIR / "school_location_backfill_latest.json") or {}
+
+        land_checks = land_report.get("checks") if isinstance(land_report, dict) else {}
+        school_checks = school_report.get("checks") if isinstance(school_report, dict) else {}
+        commercial_checks = commercial_report.get("checks") if isinstance(commercial_report, dict) else {}
+
+        return {
+            "generated_at": datetime.now().isoformat(),
+            "trigger_job_type": trigger_job,
+            "quality_gate_streaks": self._quality_gate_streaks,
+            "domains": {
+                "land": {
+                    "hard_fail": bool((land_report.get("summary") or {}).get("hard_fail")),
+                    "link_rate_pct": (land_checks.get("land_parcel_link_rate") or {}).get("value_pct"),
+                    "location_fill_rate_pct": (land_checks.get("land_parcel_location_fill_rate") or {}).get("value_pct"),
+                    "price_coverage_pct": (land_checks.get("land_prices_coverage") or {}).get("value_pct"),
+                    "characteristics_coverage_pct": (
+                        (land_checks.get("land_characteristics_coverage") or {}).get("value_pct")
+                    ),
+                    "recent_link_batch": land_link.get("coverage"),
+                },
+                "school": {
+                    "hard_fail": bool((school_report.get("summary") or {}).get("hard_fail")),
+                    "missing_location_rate": (school_checks.get("missing_location_rate") or {}).get("value"),
+                    "official_coverage_rate": (school_checks.get("official_coverage_rate") or {}).get("value"),
+                    "preview_district_count": (school_checks.get("preview_district_count") or {}).get("value"),
+                    "recent_location_backfill": school_backfill.get("counts"),
+                },
+                "commercial": {
+                    "hard_fail": bool((commercial_report.get("summary") or {}).get("hard_fail")),
+                    "high_prob_bucket_pct": (commercial_checks.get("high_prob_bucket_pct") or {}).get("value"),
+                    "mojibake_detected_count": (commercial_checks.get("mojibake_detected_count") or {}).get("value"),
+                    "sigungu_coverage": (commercial_checks.get("sigungu_coverage") or {}).get("value"),
+                },
+                "apartment": {
+                    "severe_abs_gte_25": apartment_audit.get("severe_abs_gte_25"),
+                    "coverage_pct": apartment_audit.get("coverage_pct"),
+                    "reanalyze_inserted": apartment_reanalyze.get("inserted"),
+                    "reanalyze_failed": apartment_reanalyze.get("failed"),
+                },
+            },
+        }
+
+    def _persist_domain_metrics_snapshot(self, trigger_job: str) -> Dict[str, Any]:
+        snapshot = self._build_domain_metrics_snapshot(trigger_job)
+        latest = LOGS_DIR / "scheduler_domain_metrics_latest.json"
+        history = LOGS_DIR / f"scheduler_domain_metrics_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        self._write_summary_json(latest, snapshot)
+        self._write_summary_json(history, snapshot)
+        return snapshot
+
+    async def _emit_job_failure_alert(
+        self,
+        *,
+        job_type: str,
+        error: Optional[str],
+        domain_metrics: Dict[str, Any],
+    ) -> None:
+        webhook_url = (
+            os.getenv("SCHEDULER_ALERT_WEBHOOK_URL")
+            or os.getenv("ALERT_WEBHOOK_URL")
+            or ""
+        ).strip()
+        if not webhook_url:
+            return
+
+        event = {
+            "event": "scheduler_job_failed",
+            "job_type": job_type,
+            "error": error,
+            "failed_at": datetime.now().isoformat(),
+            "domain_metrics": domain_metrics.get("domains"),
+        }
+        result = await self._http_post_json(webhook_url, event, timeout=20)
+        if not result.get("ok"):
+            print(f"[scheduler] alert webhook failed: {result.get('error')}")
 
     async def _reload_models(self) -> None:
         if not self._app:
@@ -632,7 +893,13 @@ class DataScheduler:
         try:
             step_results: list[str] = []
             land_tx_group = self._env_int("LAND_TX_GROUP", 0, min_value=0)
-            land_tx_limit = self._env_int("LAND_TX_CHUNK_LIMIT", 900, min_value=50)
+            legacy_land_tx_limit = self._env_int("LAND_TX_CHUNK_LIMIT", 900, min_value=0)
+            land_tx_limit = self._env_int(
+                "LAND_TX_DAILY_LIMIT", legacy_land_tx_limit, min_value=0
+            )
+            land_tx_min_interval_sec = self._env_float(
+                "LAND_TX_MIN_INTERVAL_SEC", 2.5, min_value=0.5
+            )
             land_price_limit = self._env_int("LAND_PRICE_CHUNK_LIMIT", 500, min_value=50)
             land_price_sleep_ms = self._env_int("LAND_PRICE_SLEEP_MS", 120, min_value=0)
             land_price_sigungu = (os.getenv("LAND_PRICE_SIGUNGU") or "").strip()
@@ -645,6 +912,40 @@ class DataScheduler:
             land_characteristics_sigungu = (
                 os.getenv("LAND_CHARACTERISTICS_SIGUNGU") or ""
             ).strip()
+            land_parcels_since_days = self._env_int("LAND_PARCELS_SINCE_DAYS", 180, min_value=0)
+            land_parcels_page_size = self._env_int("LAND_PARCELS_PAGE_SIZE", 1000, min_value=100)
+            land_parcels_batch_size = self._env_int("LAND_PARCELS_BATCH_SIZE", 400, min_value=50)
+            land_parcels_sleep_ms = self._env_int("LAND_PARCELS_SLEEP_MS", 30, min_value=0)
+            land_parcels_timeout = self._env_int("LAND_PARCELS_TIMEOUT_SEC", 7200, min_value=300)
+            land_parcels_max_rows = self._env_int("LAND_PARCELS_MAX_ROWS", 0, min_value=0)
+            land_parcels_sigungu = (os.getenv("LAND_PARCELS_SIGUNGU") or "").strip()
+            land_parcels_full_scan = self._env_bool("LAND_PARCELS_FULL_SCAN", False)
+            land_tx_parcel_link_since_days = self._env_int(
+                "LAND_TX_PARCEL_LINK_SINCE_DAYS",
+                max(365, land_parcels_since_days),
+                min_value=0,
+            )
+            land_tx_parcel_link_tx_page_size = self._env_int(
+                "LAND_TX_PARCEL_LINK_TX_PAGE_SIZE", 2000, min_value=200
+            )
+            land_tx_parcel_link_parcel_page_size = self._env_int(
+                "LAND_TX_PARCEL_LINK_PARCEL_PAGE_SIZE", 2000, min_value=200
+            )
+            land_tx_parcel_link_update_batch_size = self._env_int(
+                "LAND_TX_PARCEL_LINK_UPDATE_BATCH_SIZE", 200, min_value=20
+            )
+            land_tx_parcel_link_sleep_ms = self._env_int(
+                "LAND_TX_PARCEL_LINK_SLEEP_MS", 0, min_value=0
+            )
+            land_tx_parcel_link_max_rows = self._env_int(
+                "LAND_TX_PARCEL_LINK_MAX_ROWS", 0, min_value=0
+            )
+            land_tx_parcel_link_timeout = self._env_int(
+                "LAND_TX_PARCEL_LINK_TIMEOUT_SEC", 7200, min_value=300
+            )
+            land_tx_parcel_link_sigungu = (
+                os.getenv("LAND_TX_PARCEL_LINK_SIGUNGU") or land_parcels_sigungu
+            ).strip()
 
             ok = await self._run_script(
                 "scripts.collect_land_transactions",
@@ -654,6 +955,8 @@ class DataScheduler:
                     "--resume",
                     "--limit",
                     str(land_tx_limit),
+                    "--min-interval",
+                    f"{land_tx_min_interval_sec:.2f}",
                 ],
                 timeout=7200,
             )
@@ -663,15 +966,59 @@ class DataScheduler:
                 raise RuntimeError("collect_land_transactions failed")
             step_results.append("collect_land_transactions")
 
+            parcel_args = [
+                "--since-days",
+                str(land_parcels_since_days),
+                "--page-size",
+                str(land_parcels_page_size),
+                "--batch-size",
+                str(land_parcels_batch_size),
+                "--sleep-ms",
+                str(land_parcels_sleep_ms),
+            ]
+            if land_parcels_sigungu:
+                parcel_args.extend(["--sigungu", land_parcels_sigungu])
+            if land_parcels_max_rows > 0:
+                parcel_args.extend(["--max-rows", str(land_parcels_max_rows)])
+            if land_parcels_full_scan:
+                parcel_args.append("--full-scan")
             ok = await self._run_script(
                 "scripts.create_land_parcels",
-                timeout=3600,
+                args=parcel_args,
+                timeout=land_parcels_timeout,
             )
             if not ok:
                 self.last_land_collection_ok = False
                 self.last_land_collection_error = "create_land_parcels failed"
                 raise RuntimeError("create_land_parcels failed")
             step_results.append("create_land_parcels")
+
+            tx_parcel_link_args = [
+                "--since-days",
+                str(land_tx_parcel_link_since_days),
+                "--tx-page-size",
+                str(land_tx_parcel_link_tx_page_size),
+                "--parcel-page-size",
+                str(land_tx_parcel_link_parcel_page_size),
+                "--update-batch-size",
+                str(land_tx_parcel_link_update_batch_size),
+                "--sleep-ms",
+                str(land_tx_parcel_link_sleep_ms),
+            ]
+            if land_tx_parcel_link_sigungu:
+                tx_parcel_link_args.extend(["--sigungu", land_tx_parcel_link_sigungu])
+            if land_tx_parcel_link_max_rows > 0:
+                tx_parcel_link_args.extend(["--max-rows", str(land_tx_parcel_link_max_rows)])
+            ok = await self._run_script(
+                "scripts.link_land_transactions_parcel_id",
+                args=tx_parcel_link_args,
+                timeout=land_tx_parcel_link_timeout,
+            )
+            if not ok:
+                self.last_land_collection_ok = False
+                self.last_land_collection_error = "link_land_transactions_parcel_id failed"
+                raise RuntimeError("link_land_transactions_parcel_id failed")
+            step_results.append("link_land_transactions_parcel_id")
 
             price_args = [
                 "--year",
@@ -716,7 +1063,12 @@ class DataScheduler:
             step_results.append("collect_land_characteristics")
 
             self.last_land_collection_ok = True
-            self.current_job_result = {"steps": step_results}
+            self.current_job_result = {
+                "steps": step_results,
+                "land_tx_parcel_link_summary": self._load_summary_json(
+                    LOGS_DIR / "land_tx_parcel_link_latest.json"
+                ),
+            }
         finally:
             self.last_land_collection_finished_at = datetime.now().isoformat()
 
@@ -766,10 +1118,50 @@ class DataScheduler:
 
     async def fix_complex_names_from_transactions(self, since_days: int = 365) -> None:
         self.last_collection_job = f"fix_complex_names_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        fix_timeout = self._env_int("FIX_COMPLEX_NAMES_TIMEOUT_SEC", 7200, min_value=300)
+        fix_min_count = self._env_int("FIX_COMPLEX_NAMES_MIN_COUNT", 3, min_value=1)
+        fix_min_share = self._env_float("FIX_COMPLEX_NAMES_MIN_SHARE", 0.60, min_value=0.01)
+        fix_mode = (os.getenv("FIX_COMPLEX_NAMES_MODE") or "chunked").strip().lower()
+        if fix_mode not in {"chunked", "rpc"}:
+            fix_mode = "chunked"
+        fix_sigungu = (os.getenv("FIX_COMPLEX_NAMES_SIGUNGU") or "").strip()
+        fix_complex_chunk = self._env_int("FIX_COMPLEX_NAMES_COMPLEX_CHUNK_SIZE", 120, min_value=20)
+        fix_tx_page = self._env_int("FIX_COMPLEX_NAMES_TX_PAGE_SIZE", 2000, min_value=200)
+        fix_update_batch = self._env_int("FIX_COMPLEX_NAMES_UPDATE_BATCH_SIZE", 100, min_value=10)
+        fix_sleep_ms = self._env_int("FIX_COMPLEX_NAMES_SLEEP_MS", 30, min_value=0)
+        fix_max_complexes = self._env_int("FIX_COMPLEX_NAMES_MAX_COMPLEXES", 0, min_value=0)
+        fix_max_updates = self._env_int("FIX_COMPLEX_NAMES_MAX_UPDATES", 0, min_value=0)
+
+        script_args = [
+            "--apply",
+            "--since-days",
+            str(since_days),
+            "--min-count",
+            str(fix_min_count),
+            "--min-share",
+            f"{min(1.0, fix_min_share):.4f}",
+            "--mode",
+            fix_mode,
+            "--complex-chunk-size",
+            str(fix_complex_chunk),
+            "--tx-page-size",
+            str(fix_tx_page),
+            "--update-batch-size",
+            str(fix_update_batch),
+            "--sleep-ms",
+            str(fix_sleep_ms),
+        ]
+        if fix_sigungu:
+            script_args.extend(["--sigungu", fix_sigungu])
+        if fix_max_complexes > 0:
+            script_args.extend(["--max-complexes", str(fix_max_complexes)])
+        if fix_max_updates > 0:
+            script_args.extend(["--max-updates", str(fix_max_updates)])
+
         ok = await self._run_script(
             "scripts.fix_complex_names_from_transactions",
-            args=["--apply", "--since-days", str(since_days)],
-            timeout=3600,
+            args=script_args,
+            timeout=fix_timeout,
         )
         if not ok:
             raise RuntimeError("fix_complex_names_from_transactions failed")
@@ -1224,7 +1616,63 @@ class DataScheduler:
         ok = await self._run_script("scripts.collect_school_districts", timeout=1200)
         if not ok:
             raise RuntimeError("collect_school_districts failed")
-        self.current_job_result = {"step": "collect_school_districts"}
+        await self.backfill_school_locations()
+        self.current_job_result = {
+            "steps": [
+                "collect_school_districts",
+                "backfill_school_locations",
+            ],
+            "school_location_backfill_summary": self._load_summary_json(
+                LOGS_DIR / "school_location_backfill_latest.json"
+            ),
+        }
+
+    async def backfill_school_locations(self) -> None:
+        timeout = self._env_int("SCHOOL_LOCATION_BACKFILL_TIMEOUT_SEC", 7200, min_value=300)
+        sigungu_code = (os.getenv("SCHOOL_LOCATION_BACKFILL_SIGUNGU_CODE") or "").strip()
+        limit = self._env_int("SCHOOL_LOCATION_BACKFILL_LIMIT", 0, min_value=0)
+        page_size = self._env_int("SCHOOL_LOCATION_BACKFILL_PAGE_SIZE", 2000, min_value=200)
+        max_retries = self._env_int("SCHOOL_LOCATION_BACKFILL_MAX_RETRIES", 3, min_value=1)
+        retry_sleep_sec = self._env_float(
+            "SCHOOL_LOCATION_BACKFILL_RETRY_SLEEP_SEC", 0.6, min_value=0.0
+        )
+        kakao_timeout_sec = self._env_int(
+            "SCHOOL_LOCATION_BACKFILL_KAKAO_TIMEOUT_SEC", 10, min_value=3
+        )
+        nominatim_interval_sec = self._env_float(
+            "SCHOOL_LOCATION_BACKFILL_NOMINATIM_INTERVAL_SEC", 1.1, min_value=0.0
+        )
+        sleep_ms = self._env_int("SCHOOL_LOCATION_BACKFILL_SLEEP_MS", 0, min_value=0)
+        dry_run = self._env_bool("SCHOOL_LOCATION_BACKFILL_DRY_RUN", False)
+
+        args = [
+            "--page-size",
+            str(page_size),
+            "--max-retries",
+            str(max_retries),
+            "--retry-sleep-sec",
+            f"{retry_sleep_sec:.2f}",
+            "--kakao-timeout-sec",
+            str(kakao_timeout_sec),
+            "--nominatim-interval-sec",
+            f"{nominatim_interval_sec:.2f}",
+            "--sleep-ms",
+            str(sleep_ms),
+        ]
+        if sigungu_code:
+            args.extend(["--sigungu-code", sigungu_code])
+        if limit > 0:
+            args.extend(["--limit", str(limit)])
+        if dry_run:
+            args.append("--dry-run")
+
+        ok = await self._run_script(
+            "scripts.backfill_school_locations",
+            args=args,
+            timeout=timeout,
+        )
+        if not ok:
+            raise RuntimeError("backfill_school_locations failed")
 
     async def collect_school_metrics_monthly(self) -> None:
         self.last_collection_job = f"school_metrics_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -1420,6 +1868,18 @@ class DataScheduler:
                 status_error = (
                     str(status.get("error") or "").strip() if isinstance(status, dict) else ""
                 )
+
+                if job_type == "collect_land_daily" and self._should_enforce_land_daily_once():
+                    ran_today, last_run_at = self._job_ran_today(job_type)
+                    if ran_today:
+                        action = {
+                            "action": "skip",
+                            "reason": "daily_once_enforced",
+                            "checked_at": now.isoformat(),
+                            "job_type": job_type,
+                            "last_run_at": last_run_at,
+                        }
+                        continue
 
                 if status_ok is True:
                     continue
@@ -1784,7 +2244,7 @@ class DataScheduler:
                 max_instances=1,
                 misfire_grace_time=max(120, watchdog_interval_sec),
             )
-            if self._env_bool("SCHEDULER_WATCHDOG_RUN_ON_START", False):
+            if self._env_bool("SCHEDULER_WATCHDOG_RUN_ON_START", True):
                 watchdog_startup_time = datetime.now() + timedelta(seconds=20)
                 self.scheduler.add_job(
                     self.watchdog_critical_pipeline,
@@ -1870,6 +2330,8 @@ class DataScheduler:
             await self.run_chamgab_gap_recovery_full()
         elif job_type == "collect_school_base_monthly":
             await self.collect_school_base_monthly()
+        elif job_type == "backfill_school_locations":
+            await self.backfill_school_locations()
         elif job_type == "collect_school_metrics_monthly":
             await self.collect_school_metrics_monthly()
         elif job_type == "collect_school_academy_weekly":
@@ -1906,49 +2368,77 @@ class DataScheduler:
             exp_backoff = self._env_bool("SCHEDULER_AUTO_RETRY_EXP_BACKOFF", True)
             retry_enabled_for_job = auto_retry_enabled and job_type in retryable_job_types
             attempts_allowed = max_attempts if retry_enabled_for_job else 1
+            daily_once_skip: Optional[Dict[str, Any]] = None
+            if job_type == "collect_land_daily" and self._should_enforce_land_daily_once():
+                ran_today, last_run_at = self._job_ran_today(job_type)
+                if ran_today:
+                    retry_enabled_for_job = False
+                    attempts_allowed = 1
+                    daily_once_skip = {
+                        "step": "collect_land_daily",
+                        "skipped": True,
+                        "reason": "daily_once_enforced",
+                        "last_run_at": last_run_at,
+                    }
 
             attempt_logs: list[Dict[str, Any]] = []
             attempts_made = 0
 
             try:
-                for attempt in range(1, attempts_allowed + 1):
-                    attempts_made = attempt
-                    attempt_started_at = datetime.now().isoformat()
-                    try:
-                        await self._run_job_once(job_type)
-                        attempt_logs.append(
-                            {
-                                "attempt": attempt,
-                                "ok": True,
-                                "started_at": attempt_started_at,
-                                "finished_at": datetime.now().isoformat(),
-                                "error": None,
-                            }
-                        )
-                        self.current_job_ok = True
-                        self.current_job_error = None
-                        break
-                    except Exception as exc:
-                        self.current_job_ok = False
-                        self.current_job_error = str(exc)
-                        attempt_logs.append(
-                            {
-                                "attempt": attempt,
-                                "ok": False,
-                                "started_at": attempt_started_at,
-                                "finished_at": datetime.now().isoformat(),
-                                "error": str(exc),
-                            }
-                        )
-                        if attempt >= attempts_allowed:
-                            raise
+                if daily_once_skip is not None:
+                    attempts_made = 1
+                    attempt_logs.append(
+                        {
+                            "attempt": 1,
+                            "ok": True,
+                            "started_at": self.current_job_started_at,
+                            "finished_at": datetime.now().isoformat(),
+                            "error": None,
+                            "skipped": True,
+                        }
+                    )
+                    self.current_job_ok = True
+                    self.current_job_error = None
+                    self.current_job_result = daily_once_skip
+                else:
+                    for attempt in range(1, attempts_allowed + 1):
+                        attempts_made = attempt
+                        attempt_started_at = datetime.now().isoformat()
+                        try:
+                            await self._run_job_once(job_type)
+                            attempt_logs.append(
+                                {
+                                    "attempt": attempt,
+                                    "ok": True,
+                                    "started_at": attempt_started_at,
+                                    "finished_at": datetime.now().isoformat(),
+                                    "error": None,
+                                }
+                            )
+                            self.current_job_ok = True
+                            self.current_job_error = None
+                            break
+                        except Exception as exc:
+                            self.current_job_ok = False
+                            self.current_job_error = str(exc)
+                            attempt_logs.append(
+                                {
+                                    "attempt": attempt,
+                                    "ok": False,
+                                    "started_at": attempt_started_at,
+                                    "finished_at": datetime.now().isoformat(),
+                                    "error": str(exc),
+                                }
+                            )
+                            if attempt >= attempts_allowed:
+                                raise
 
-                        delay_sec = (
-                            base_delay_sec * (2 ** (attempt - 1))
-                            if exp_backoff
-                            else base_delay_sec
-                        )
-                        await asyncio.sleep(delay_sec)
+                            delay_sec = (
+                                base_delay_sec * (2 ** (attempt - 1))
+                                if exp_backoff
+                                else base_delay_sec
+                            )
+                            await asyncio.sleep(delay_sec)
             except Exception as exc:
                 self.current_job_ok = False
                 self.current_job_error = str(exc)
@@ -1973,6 +2463,27 @@ class DataScheduler:
                     ok=self.current_job_ok,
                     error=self.current_job_error,
                 )
+                self._update_quality_gate_streak(job_type)
+                domain_metrics: Dict[str, Any] = {}
+                try:
+                    domain_metrics = self._persist_domain_metrics_snapshot(job_type)
+                except Exception as exc:
+                    print(f"[scheduler] failed to persist domain metrics: {exc}")
+                if isinstance(self.current_job_result, dict):
+                    self.current_job_result = {
+                        **self.current_job_result,
+                        "_domain_metrics": domain_metrics.get("domains"),
+                    }
+                else:
+                    self.current_job_result = {
+                        "_domain_metrics": domain_metrics.get("domains"),
+                    }
+                if self.current_job_ok is False:
+                    await self._emit_job_failure_alert(
+                        job_type=job_type,
+                        error=self.current_job_error,
+                        domain_metrics=domain_metrics,
+                    )
 
 
 data_scheduler = DataScheduler()
