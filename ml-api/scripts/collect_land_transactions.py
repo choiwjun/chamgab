@@ -18,8 +18,10 @@ import sys
 import argparse
 import asyncio
 import logging
+import json
 import random
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import List, Dict, Any, Optional
 import httpx
 from lxml import etree
@@ -54,6 +56,53 @@ logger = logging.getLogger(__name__)
 # Prevent leaking service keys in logs (httpx/httpcore log the full URL with query params).
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
+
+LAND_TX_DAILY_STATE_PATH = Path("logs") / "land_tx_daily_run_state.json"
+
+
+def _parse_backoff_delays(raw: str, default: List[int]) -> List[int]:
+    values: List[int] = []
+    for token in (raw or "").split(","):
+        token = token.strip()
+        if not token:
+            continue
+        try:
+            parsed = int(token)
+        except ValueError:
+            continue
+        if parsed > 0:
+            values.append(parsed)
+    return values or list(default)
+
+
+def _load_daily_state(path: Path) -> Dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        raw = path.read_text(encoding="utf-8")
+        payload = json.loads(raw) if raw else {}
+        return payload if isinstance(payload, dict) else {}
+    except Exception:
+        return {}
+
+
+def _write_daily_state(path: Path, payload: Dict[str, Any]) -> None:
+    try:
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception as exc:
+        logger.warning(f"daily state write failed: {exc}")
+
+
+def _env_bool(key: str, default: bool) -> bool:
+    raw = os.getenv(key)
+    if raw is None or raw.strip() == "":
+        return default
+    normalized = raw.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default
 
 # 전국 시군구 코드 (법정동 코드 앞 5자리)
 # collect_all_transactions.py와 동일한 그룹 구조
@@ -183,7 +232,13 @@ class LandTransactionCollector:
 
     BASE_URL = "https://apis.data.go.kr/1613000/RTMSDataSvcLandTrade/getRTMSDataSvcLandTrade"
 
-    def __init__(self, daily_limit: int = 0, min_interval_sec: float = 2.5):
+    def __init__(
+        self,
+        daily_limit: int = 0,
+        min_interval_sec: float = 2.5,
+        max_retries: int = 6,
+        backoff_delays: Optional[List[int]] = None,
+    ):
         self.supabase = create_client(
             os.environ['SUPABASE_URL'],
             os.environ['SUPABASE_SERVICE_KEY']
@@ -201,6 +256,11 @@ class LandTransactionCollector:
         self.limit_reached = False
         self.min_interval_sec = float(min_interval_sec)
         self._cooldown_until: Optional[datetime] = None
+        self.max_retries = max(1, int(max_retries))
+        default_backoff = [5, 10, 20, 40, 80, 160]
+        self.backoff_delays = (
+            [int(x) for x in (backoff_delays or []) if int(x) > 0] or default_backoff
+        )
 
     def _get_deal_ymd_sequence(self, months: int) -> List[str]:
         """
@@ -384,9 +444,7 @@ class LandTransactionCollector:
         page_no = 1
         num_of_rows = 1000
         retry_count = 0
-        max_retries = 5
         # 지수 백오프 대기 시간 (초)
-        backoff_delays = [3, 6, 12, 30, 60]
 
         sido = SIDO_MAP.get(region_code[:2], '')
         sigungu = region_name
@@ -431,21 +489,23 @@ class LandTransactionCollector:
                 except httpx.HTTPStatusError as e:
                     if e.response.status_code in (403, 429):
                         retry_count += 1
-                        if retry_count > max_retries:
+                        if retry_count > self.max_retries:
                             logger.error(
                                 f"최대 재시도 초과: {region_name} {deal_ymd} page={page_no} "
                                 f"(API 호출 {self.api_call_count}회)"
                             )
                             # 429 연속이면 일일 한도 도달로 판단
-                            if retry_count > max_retries and e.response.status_code == 429:
+                            if retry_count > self.max_retries and e.response.status_code == 429:
                                 self.limit_reached = True
                             last_error_code = str(e.response.status_code)
                             last_error_message = f"HTTP {e.response.status_code} after max retries"
                             break
-                        delay = backoff_delays[min(retry_count - 1, len(backoff_delays) - 1)]
+                        delay = self.backoff_delays[
+                            min(retry_count - 1, len(self.backoff_delays) - 1)
+                        ]
                         logger.warning(
                             f"API 호출 제한 ({e.response.status_code}): {region_name} {deal_ymd} "
-                            f"page={page_no} - {delay}초 대기 후 재시도 ({retry_count}/{max_retries})"
+                            f"page={page_no} - {delay}초 대기 후 재시도 ({retry_count}/{self.max_retries})"
                         )
                         if e.response.status_code == 429:
                             # Apply a global cooldown so we don't hammer the endpoint.
@@ -717,16 +777,81 @@ async def main():
         help='이미 수집된 지역 스킵 (region_code 기준)'
     )
     parser.add_argument(
-        '--limit', type=int, default=900,
+        '--limit', type=int, default=int(os.getenv("LAND_TX_DAILY_LIMIT", "900")),
         help='일일 API 호출 한도 (기본값 900, 0=무제한)'
     )
     parser.add_argument(
-        '--min-interval', type=float, default=2.5,
+        '--max-retries',
+        type=int,
+        default=max(1, int(os.getenv("LAND_TX_MAX_RETRIES", "6"))),
+        help='429/403 max retry attempts (default: 6)',
+    )
+    parser.add_argument(
+        '--backoff-delays',
+        type=str,
+        default=os.getenv("LAND_TX_BACKOFF_DELAYS_SEC", "5,10,20,40,80,160"),
+        help='429/403 backoff delays in seconds (comma-separated)',
+    )
+    parser.add_argument(
+        '--min-interval', type=float, default=float(os.getenv("LAND_TX_MIN_INTERVAL_SEC", "2.5")),
         help='API 호출 최소 간격(초). 429가 잦으면 3~6초로 늘리세요.'
+    )
+    parser.add_argument(
+        '--enforce-daily-once',
+        dest='enforce_daily_once',
+        action='store_true',
+        default=_env_bool("LAND_COLLECTION_ENFORCE_DAILY_ONCE", True),
+        help='Enable one-run-per-day guard (default: env LAND_COLLECTION_ENFORCE_DAILY_ONCE=true).',
+    )
+    parser.add_argument(
+        '--no-enforce-daily-once',
+        dest='enforce_daily_once',
+        action='store_false',
+        help='Disable one-run-per-day guard for this run.',
+    )
+    parser.add_argument(
+        '--force-run',
+        action='store_true',
+        help='Bypass one-run-per-day guard once.',
     )
     args = parser.parse_args()
 
-    collector = LandTransactionCollector(daily_limit=args.limit, min_interval_sec=args.min_interval)
+    daily_guard_enabled = bool(
+        args.enforce_daily_once and not args.force_run and not args.clean
+    )
+    run_started_at = datetime.now().isoformat()
+    run_day = datetime.now().strftime("%Y-%m-%d")
+    if daily_guard_enabled:
+        daily_state = _load_daily_state(LAND_TX_DAILY_STATE_PATH)
+        last_run_day = str(daily_state.get("last_run_day") or "")
+        if last_run_day == run_day:
+            logger.warning(
+                "Skip collect_land_transactions: already ran today "
+                f"(day={run_day}, started_at={daily_state.get('last_started_at')})"
+            )
+            return
+        _write_daily_state(
+            LAND_TX_DAILY_STATE_PATH,
+            {
+                "last_run_day": run_day,
+                "last_started_at": run_started_at,
+                "last_finished_at": None,
+                "status": "running",
+                "error": None,
+                "api_calls": 0,
+                "updated_at": datetime.now().isoformat(),
+            },
+        )
+
+    collector = LandTransactionCollector(
+        daily_limit=args.limit,
+        min_interval_sec=args.min_interval,
+        max_retries=max(1, int(args.max_retries)),
+        backoff_delays=_parse_backoff_delays(
+            str(args.backoff_delays),
+            [5, 10, 20, 40, 80, 160],
+        ),
+    )
 
     # --clean: 기존 데이터 삭제
     if args.clean:
@@ -789,6 +914,19 @@ async def main():
         f"  소요시간: {elapsed.total_seconds():.0f}초\n"
         f"{'=' * 60}"
     )
+    if daily_guard_enabled:
+        _write_daily_state(
+            LAND_TX_DAILY_STATE_PATH,
+            {
+                "last_run_day": run_day,
+                "last_started_at": run_started_at,
+                "last_finished_at": datetime.now().isoformat(),
+                "status": "success",
+                "error": None,
+                "api_calls": int(collector.api_call_count),
+                "updated_at": datetime.now().isoformat(),
+            },
+        )
 
 
 if __name__ == '__main__':
