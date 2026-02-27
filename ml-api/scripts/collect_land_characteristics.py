@@ -13,6 +13,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import sys
 import time
 import xml.etree.ElementTree as ET
@@ -28,6 +29,7 @@ from supabase import create_client
 
 LOG = logging.getLogger("collect_land_characteristics")
 STATE_PATH = Path("logs/collect_land_characteristics_state.json")
+PNU_RE = re.compile(r"^\d{19}$")
 
 
 def setup_logging() -> None:
@@ -57,6 +59,20 @@ def get_env(name: str) -> str:
     if not value:
         raise RuntimeError(f"Missing required env: {name}")
     return value
+
+
+def resolve_data_go_key() -> str:
+    for name in ("DATA_GO_KR_API_KEY", "PUBLIC_DATA_API_KEY", "MOLIT_API_KEY"):
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value
+    raise RuntimeError(
+        "Missing required env: DATA_GO_KR_API_KEY (or PUBLIC_DATA_API_KEY / MOLIT_API_KEY)"
+    )
+
+
+def is_valid_pnu(pnu: str) -> bool:
+    return bool(PNU_RE.match((pnu or "").strip()))
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -110,10 +126,46 @@ def collect_target_parcels(
     resume_cursor: Optional[str],
 ) -> Tuple[List[ParcelRow], Optional[str], bool]:
     page_size = 1000
+    existing_lookup_chunk_size = max(
+        1,
+        int(os.getenv("LAND_CHARACTERISTICS_EXISTING_LOOKUP_CHUNK_SIZE", "50")),
+    )
     target: List[ParcelRow] = []
     cursor = (resume_cursor or "").strip() or None
     reached_end = False
     scanned = 0
+    invalid_pnu = 0
+
+    def fetch_existing_ids_safe(chunk_ids: List[str], *, depth: int = 0) -> set[str]:
+        """Fetch existing parcel_ids with adaptive chunk split on request-size failures."""
+        if not chunk_ids:
+            return set()
+        try:
+            existing_resp = (
+                supabase.table("land_characteristics")
+                .select("parcel_id")
+                .in_("parcel_id", chunk_ids)
+                .execute()
+            )
+            return {
+                str(item.get("parcel_id") or "")
+                for item in (existing_resp.data or [])
+                if item.get("parcel_id")
+            }
+        except Exception as exc:  # noqa: BLE001
+            # PostgREST may return HTTP 400 when query URL is too large.
+            if len(chunk_ids) <= 1:
+                LOG.warning(
+                    "land_characteristics existing lookup failed (size=%d, depth=%d): %s",
+                    len(chunk_ids),
+                    depth,
+                    exc,
+                )
+                return set()
+            mid = len(chunk_ids) // 2
+            left = fetch_existing_ids_safe(chunk_ids[:mid], depth=depth + 1)
+            right = fetch_existing_ids_safe(chunk_ids[mid:], depth=depth + 1)
+            return left | right
 
     while True:
         query = (
@@ -136,17 +188,12 @@ def collect_target_parcels(
         parcel_ids = [str(row.get("id") or "") for row in rows if row.get("id")]
         existing_ids: set[str] = set()
         if parcel_ids:
-            existing_resp = (
-                supabase.table("land_characteristics")
-                .select("parcel_id")
-                .in_("parcel_id", parcel_ids)
-                .execute()
-            )
-            existing_ids = {
-                str(item.get("parcel_id") or "")
-                for item in (existing_resp.data or [])
-                if item.get("parcel_id")
-            }
+            # Keep `in` filters small to avoid PostgREST request-size/URL issues.
+            for idx in range(0, len(parcel_ids), existing_lookup_chunk_size):
+                chunk = parcel_ids[idx : idx + existing_lookup_chunk_size]
+                if not chunk:
+                    continue
+                existing_ids.update(fetch_existing_ids_safe(chunk))
 
         for row in rows:
             row_id = str(row.get("id") or "")
@@ -160,6 +207,9 @@ def collect_target_parcels(
 
             pnu = str(row.get("pnu") or "")
             if not pnu:
+                continue
+            if not is_valid_pnu(pnu):
+                invalid_pnu += 1
                 continue
             target.append(
                 ParcelRow(
@@ -177,9 +227,10 @@ def collect_target_parcels(
             break
 
     LOG.info(
-        "Parcel selection done: scanned=%d selected=%d reached_end=%s",
+        "Parcel selection done: scanned=%d selected=%d invalid_pnu=%d reached_end=%s",
         scanned,
         len(target),
+        invalid_pnu,
         reached_end,
     )
     return target, cursor, reached_end
@@ -349,7 +400,7 @@ def main() -> None:
 
     supabase_url = get_env("SUPABASE_URL")
     supabase_key = get_env("SUPABASE_SERVICE_KEY")
-    data_go_key = get_env("DATA_GO_KR_API_KEY")
+    data_go_key = resolve_data_go_key()
 
     supabase = create_client(supabase_url, supabase_key)
 

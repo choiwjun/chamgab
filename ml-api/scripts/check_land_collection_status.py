@@ -33,6 +33,14 @@ def _env_bool(name: str, default: bool) -> bool:
     return default
 
 
+def _env_str(name: str, default: str) -> str:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    value = raw.strip().lower()
+    return value if value else default
+
+
 def _save_report(report: Dict[str, Any]) -> None:
     latest = REPORTS_DIR / "land_collection_status_latest.json"
     history = REPORTS_DIR / f"land_collection_status_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
@@ -179,6 +187,9 @@ def _build_check(
 
 def run_checks(args: argparse.Namespace) -> tuple[bool, Dict[str, Any]]:
     client = get_supabase_client()
+    gate_mode = str(getattr(args, "gate_mode", "quota")).strip().lower()
+    if gate_mode not in {"full", "quota"}:
+        gate_mode = "quota"
 
     total_land_transactions = _count_exact(client, "land_transactions", "id")
     linked_land_transactions = _count_exact(
@@ -241,70 +252,101 @@ def run_checks(args: argparse.Namespace) -> tuple[bool, Dict[str, Any]]:
     )
     recent_run_error_rate_pct = _pct(recent_run_error, recent_run_total)
 
+    thresholds = {
+        "min_sido_coverage": args.min_sido_coverage,
+        "min_parcel_link_rate_pct": args.min_parcel_link_rate_pct,
+        "min_parcel_location_fill_rate_pct": args.min_parcel_location_fill_rate_pct,
+        "min_land_prices_coverage_pct": args.min_land_prices_coverage_pct,
+        "min_land_characteristics_coverage_pct": args.min_land_characteristics_coverage_pct,
+        "max_collection_freshness_hours": args.max_collection_freshness_hours,
+        "max_recent_run_error_rate_pct": args.max_recent_run_error_rate_pct,
+    }
+    if gate_mode == "quota":
+        thresholds = {
+            "min_sido_coverage": args.quota_min_sido_coverage,
+            "min_parcel_link_rate_pct": args.quota_min_parcel_link_rate_pct,
+            "min_parcel_location_fill_rate_pct": args.quota_min_parcel_location_fill_rate_pct,
+            "min_land_prices_coverage_pct": args.quota_min_land_prices_coverage_pct,
+            "min_land_characteristics_coverage_pct": args.quota_min_land_characteristics_coverage_pct,
+            "max_collection_freshness_hours": args.quota_max_collection_freshness_hours,
+            "max_recent_run_error_rate_pct": args.quota_max_recent_run_error_rate_pct,
+        }
+
     checks = {
         "land_sido_coverage": _build_check(
             value=land_sido_coverage,
-            threshold=args.min_sido_coverage,
+            threshold=thresholds["min_sido_coverage"],
             pass_when="gte",
         ),
         "land_parcel_link_rate": _build_check(
             value=land_parcel_link_rate_pct,
-            threshold=args.min_parcel_link_rate_pct,
+            threshold=thresholds["min_parcel_link_rate_pct"],
             pass_when="gte",
             value_key="value_pct",
             threshold_key="threshold_pct",
         ),
         "land_parcel_location_fill_rate": _build_check(
             value=land_parcel_location_fill_rate_pct,
-            threshold=args.min_parcel_location_fill_rate_pct,
+            threshold=thresholds["min_parcel_location_fill_rate_pct"],
             pass_when="gte",
             value_key="value_pct",
             threshold_key="threshold_pct",
         ),
         "land_prices_coverage": _build_check(
             value=land_prices_coverage_pct,
-            threshold=args.min_land_prices_coverage_pct,
+            threshold=thresholds["min_land_prices_coverage_pct"],
             pass_when="gte",
             value_key="value_pct",
             threshold_key="threshold_pct",
         ),
         "land_characteristics_coverage": _build_check(
             value=land_characteristics_coverage_pct,
-            threshold=args.min_land_characteristics_coverage_pct,
+            threshold=thresholds["min_land_characteristics_coverage_pct"],
             pass_when="gte",
             value_key="value_pct",
             threshold_key="threshold_pct",
         ),
         "collection_freshness_sla": _build_check(
             value=collection_freshness_hours,
-            threshold=args.max_collection_freshness_hours,
+            threshold=thresholds["max_collection_freshness_hours"],
             pass_when="lte",
             value_key="value_hours",
             threshold_key="threshold_hours",
         ),
         "recent_run_error_rate": _build_check(
             value=recent_run_error_rate_pct,
-            threshold=args.max_recent_run_error_rate_pct,
+            threshold=thresholds["max_recent_run_error_rate_pct"],
             pass_when="lte",
             value_key="value_pct",
             threshold_key="threshold_pct",
         ),
     }
 
-    hard_fail_keys = [
-        "land_sido_coverage",
-        "land_parcel_link_rate",
-        "land_parcel_location_fill_rate",
-        "land_prices_coverage",
-        "land_characteristics_coverage",
-        "collection_freshness_sla",
-    ]
+    if gate_mode == "quota":
+        hard_fail_keys = [
+            "land_sido_coverage",
+            "collection_freshness_sla",
+            "recent_run_error_rate",
+        ]
+    else:
+        hard_fail_keys = [
+            "land_sido_coverage",
+            "land_parcel_link_rate",
+            "land_parcel_location_fill_rate",
+            "land_prices_coverage",
+            "land_characteristics_coverage",
+            "collection_freshness_sla",
+        ]
+    warn_only_keys = [key for key in checks.keys() if key not in hard_fail_keys]
     hard_fail = any(checks[key]["status"] == "fail" for key in hard_fail_keys)
 
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "summary": {
+            "gate_mode": gate_mode,
             "hard_fail": hard_fail,
+            "hard_fail_keys": hard_fail_keys,
+            "warn_only_keys": warn_only_keys,
             "total_transactions": total_land_transactions,
             "linked_transactions": linked_land_transactions,
             "cancelled_transactions": cancelled_land_transactions,
@@ -323,6 +365,13 @@ def run_checks(args: argparse.Namespace) -> tuple[bool, Dict[str, Any]]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate land_collection_status_latest.json")
+    parser.add_argument(
+        "--gate-mode",
+        type=str,
+        choices=["full", "quota"],
+        default=_env_str("LAND_COLLECTION_GATE_MODE", "quota"),
+        help="full=coverage strict gate, quota=daily-quota aware gate (default: quota)",
+    )
     parser.add_argument("--min-sido-coverage", type=int, default=17)
     parser.add_argument("--min-parcel-link-rate-pct", type=float, default=95.0)
     parser.add_argument("--min-parcel-location-fill-rate-pct", type=float, default=90.0)
@@ -330,6 +379,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-land-characteristics-coverage-pct", type=float, default=80.0)
     parser.add_argument("--max-collection-freshness-hours", type=float, default=36.0)
     parser.add_argument("--max-recent-run-error-rate-pct", type=float, default=20.0)
+    parser.add_argument("--quota-min-sido-coverage", type=int, default=13)
+    parser.add_argument("--quota-min-parcel-link-rate-pct", type=float, default=0.0)
+    parser.add_argument("--quota-min-parcel-location-fill-rate-pct", type=float, default=1.0)
+    parser.add_argument("--quota-min-land-prices-coverage-pct", type=float, default=0.0)
+    parser.add_argument("--quota-min-land-characteristics-coverage-pct", type=float, default=0.0)
+    parser.add_argument("--quota-max-collection-freshness-hours", type=float, default=36.0)
+    parser.add_argument("--quota-max-recent-run-error-rate-pct", type=float, default=20.0)
     parser.add_argument(
         "--soft-fail",
         action="store_true",
