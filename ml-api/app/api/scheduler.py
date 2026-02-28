@@ -36,6 +36,7 @@ VALID_JOB_TYPES = [
     "chamgab_autofix_apply",
     "chamgab_gap_recovery_full",
     "collect_school_base_monthly",
+    "backfill_school_locations",
     "collect_school_metrics_monthly",
     "collect_school_academy_weekly",
     "build_school_marts_daily",
@@ -73,6 +74,8 @@ class SchedulerStatusResponse(BaseModel):
     last_job_status_by_type: Optional[dict] = None
     last_watchdog_run_at: Optional[str] = None
     last_watchdog_action: Optional[dict] = None
+    disabled_jobs: Optional[dict] = None
+    last_preflight_check_at: Optional[str] = None
 
 
 class RunNowRequest(BaseModel):
@@ -87,6 +90,7 @@ class RunNowRequest(BaseModel):
             "chamgab_factor_backfill/chamgab_autofix_apply/chamgab_gap_recovery_full/"
             "collect_school_base_monthly/collect_school_metrics_monthly/"
             "collect_school_academy_weekly/build_school_marts_daily/check_school_data_quality/"
+            "backfill_school_locations/"
             "school_full_rebuild/catchup)"
         ),
     )
@@ -154,6 +158,8 @@ async def get_scheduler_status(
         last_watchdog_action=getattr(
             data_scheduler, "last_watchdog_action", None
         ),
+        disabled_jobs=getattr(data_scheduler, "disabled_jobs", None),
+        last_preflight_check_at=getattr(data_scheduler, "last_preflight_check_at", None),
     )
 
 
@@ -192,6 +198,16 @@ async def run_job_now(
         raise HTTPException(
             status_code=400,
             detail=f"job_type must be one of: {', '.join(VALID_JOB_TYPES)}",
+        )
+    disabled = getattr(data_scheduler, "disabled_jobs", {}).get(request.job_type)
+    if isinstance(disabled, dict):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": f"{request.job_type} is disabled by preflight checks",
+                "reason": disabled.get("reason"),
+                "missing_any_of": disabled.get("missing_any_of"),
+            },
         )
 
     background_tasks.add_task(data_scheduler.run_now, request.job_type)

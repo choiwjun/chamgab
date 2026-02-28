@@ -64,6 +64,27 @@ QUALITY_GATE_CONFIGS: Dict[str, Dict[str, Any]] = {
     },
 }
 
+SCHEDULER_JOB_ENV_REQUIREMENTS: Dict[str, tuple[tuple[str, ...], ...]] = {
+    # any(APP_BASE_URL, NEXT_PUBLIC_APP_URL, WEB_BASE_URL) and any(admin token)
+    "check_launch_readiness_gate": (
+        ("APP_BASE_URL", "NEXT_PUBLIC_APP_URL", "WEB_BASE_URL"),
+        ("ML_ADMIN_TOKEN", "SCHEDULER_ADMIN_TOKEN", "ADMIN_API_TOKEN"),
+    ),
+    "collect_land_daily": (
+        ("SUPABASE_URL",),
+        ("SUPABASE_SERVICE_KEY",),
+    ),
+    "collect_land_locations": (
+        ("SUPABASE_URL",),
+        ("SUPABASE_SERVICE_KEY",),
+        ("KAKAO_REST_API_KEY",),
+    ),
+    "fix_complex_names": (
+        ("SUPABASE_URL",),
+        ("SUPABASE_SERVICE_KEY",),
+    ),
+}
+
 
 class DataScheduler:
     """Data collection + training scheduler."""
@@ -104,7 +125,10 @@ class DataScheduler:
         self._chamgab_autofix_lock = asyncio.Lock()
         self._watchdog_requeue_attempts: Dict[str, int] = {}
         self._watchdog_state_path = LOGS_DIR / "scheduler_watchdog_state_latest.json"
+        self._preflight_state_path = LOGS_DIR / "scheduler_preflight_latest.json"
         self._quality_gate_streaks: Dict[str, Dict[str, Any]] = {}
+        self.disabled_jobs: Dict[str, Dict[str, Any]] = {}
+        self.last_preflight_check_at: Optional[str] = None
         self._app = None
 
         self._load_scheduler_state()
@@ -208,9 +232,54 @@ class DataScheduler:
     def _watchdog_job_order(self) -> list[str]:
         raw = (os.getenv("SCHEDULER_WATCHDOG_JOB_ORDER") or "").strip()
         if not raw:
-            return list(CRITICAL_PIPELINE_JOB_ORDER)
-        parsed = [item.strip() for item in raw.split(",") if item.strip()]
-        return parsed or list(CRITICAL_PIPELINE_JOB_ORDER)
+            ordered = list(CRITICAL_PIPELINE_JOB_ORDER)
+        else:
+            ordered = [item.strip() for item in raw.split(",") if item.strip()]
+            if not ordered:
+                ordered = list(CRITICAL_PIPELINE_JOB_ORDER)
+        return [job for job in ordered if job not in self.disabled_jobs]
+
+    @staticmethod
+    def _env_any_set(keys: tuple[str, ...]) -> bool:
+        for key in keys:
+            if (os.getenv(key) or "").strip():
+                return True
+        return False
+
+    def _missing_env_groups_for_job(self, job_type: str) -> list[list[str]]:
+        requirements = SCHEDULER_JOB_ENV_REQUIREMENTS.get(job_type) or ()
+        missing: list[list[str]] = []
+        for group in requirements:
+            if not self._env_any_set(group):
+                missing.append(list(group))
+        return missing
+
+    def _refresh_preflight_state(self) -> None:
+        disabled: Dict[str, Dict[str, Any]] = {}
+        for job_type in SCHEDULER_JOB_ENV_REQUIREMENTS:
+            missing_groups = self._missing_env_groups_for_job(job_type)
+            if missing_groups:
+                disabled[job_type] = {
+                    "reason": "missing_required_env",
+                    "missing_any_of": missing_groups,
+                }
+        self.disabled_jobs = disabled
+        self.last_preflight_check_at = datetime.now().isoformat()
+        payload = {
+            "generated_at": self.last_preflight_check_at,
+            "disabled_jobs": self.disabled_jobs,
+        }
+        try:
+            self._write_summary_json(self._preflight_state_path, payload)
+        except Exception as exc:
+            print(f"[scheduler] failed to persist preflight state: {exc}")
+
+    def _should_register_job(self, job_type: str) -> bool:
+        disabled = self.disabled_jobs.get(job_type)
+        if not disabled:
+            return True
+        print(f"[scheduler] skip register '{job_type}': {disabled}")
+        return False
 
     def _record_job_outcome(
         self,
@@ -1912,6 +1981,16 @@ class DataScheduler:
                         break
 
                 attempts = int(self._watchdog_requeue_attempts.get(job_type, 0) or 0)
+                existing_queue_id = f"watchdog_queue_{job_type}"
+                if self.scheduler.get_job(existing_queue_id) is not None:
+                    action = {
+                        "action": "wait",
+                        "reason": "already_queued",
+                        "checked_at": now.isoformat(),
+                        "job_type": job_type,
+                        "queue_job_id": existing_queue_id,
+                    }
+                    break
                 if attempts >= max_requeue_per_job:
                     action = {
                         "action": "blocked",
@@ -1948,6 +2027,8 @@ class DataScheduler:
         if self.is_running:
             return
 
+        self._refresh_preflight_state()
+
         daily_collection_hour = self._env_hour("DAILY_COLLECTION_CRON_HOUR", 3)
         daily_collection_minute = self._env_minute("DAILY_COLLECTION_CRON_MINUTE", 0)
         self.scheduler.add_job(
@@ -1963,31 +2044,33 @@ class DataScheduler:
         )
         land_collection_hour = self._env_hour("LAND_COLLECTION_CRON_HOUR", 1)
         land_collection_minute = self._env_minute("LAND_COLLECTION_CRON_MINUTE", 0)
-        self.scheduler.add_job(
-            self.run_now,
-            CronTrigger(hour=land_collection_hour, minute=land_collection_minute),
-            id="daily_land_collection",
-            name="daily land collection",
-            replace_existing=True,
-            coalesce=True,
-            max_instances=1,
-            misfire_grace_time=3600,
-            args=["collect_land_daily"],
-        )
-        if self._env_bool("LAND_LOCATION_CRON_ENABLED", True):
-            land_location_hour = self._env_hour("LAND_LOCATION_CRON_HOUR", 2)
-            land_location_minute = self._env_minute("LAND_LOCATION_CRON_MINUTE", 0)
+        if self._should_register_job("collect_land_daily"):
             self.scheduler.add_job(
                 self.run_now,
-                CronTrigger(hour=land_location_hour, minute=land_location_minute),
-                id="collect_land_locations",
-                name="collect land parcel locations",
+                CronTrigger(hour=land_collection_hour, minute=land_collection_minute),
+                id="daily_land_collection",
+                name="daily land collection",
                 replace_existing=True,
                 coalesce=True,
                 max_instances=1,
                 misfire_grace_time=3600,
-                args=["collect_land_locations"],
+                args=["collect_land_daily"],
             )
+        if self._env_bool("LAND_LOCATION_CRON_ENABLED", True):
+            land_location_hour = self._env_hour("LAND_LOCATION_CRON_HOUR", 2)
+            land_location_minute = self._env_minute("LAND_LOCATION_CRON_MINUTE", 0)
+            if self._should_register_job("collect_land_locations"):
+                self.scheduler.add_job(
+                    self.run_now,
+                    CronTrigger(hour=land_location_hour, minute=land_location_minute),
+                    id="collect_land_locations",
+                    name="collect land parcel locations",
+                    replace_existing=True,
+                    coalesce=True,
+                    max_instances=1,
+                    misfire_grace_time=3600,
+                    args=["collect_land_locations"],
+                )
         self.scheduler.add_job(
             self.run_now,
             CronTrigger(hour=3, minute=40),
@@ -1999,17 +2082,18 @@ class DataScheduler:
             misfire_grace_time=3600,
             args=["link_complexes"],
         )
-        self.scheduler.add_job(
-            self.run_now,
-            CronTrigger(hour=4, minute=0),
-            id="fix_complex_names_from_transactions",
-            name="fix complex names from transactions",
-            replace_existing=True,
-            coalesce=True,
-            max_instances=1,
-            misfire_grace_time=3600,
-            args=["fix_complex_names"],
-        )
+        if self._should_register_job("fix_complex_names"):
+            self.scheduler.add_job(
+                self.run_now,
+                CronTrigger(hour=4, minute=0),
+                id="fix_complex_names_from_transactions",
+                name="fix complex names from transactions",
+                replace_existing=True,
+                coalesce=True,
+                max_instances=1,
+                misfire_grace_time=3600,
+                args=["fix_complex_names"],
+            )
         self.scheduler.add_job(
             self.run_now,
             CronTrigger(hour=4, minute=20),
@@ -2114,17 +2198,18 @@ class DataScheduler:
         )
         gate_check_hour = self._env_hour("CHECK_LAUNCH_READINESS_GATE_CRON_HOUR", 6)
         gate_check_minute = self._env_minute("CHECK_LAUNCH_READINESS_GATE_CRON_MINUTE", 30)
-        self.scheduler.add_job(
-            self.run_now,
-            CronTrigger(hour=gate_check_hour, minute=gate_check_minute),
-            id="check_launch_readiness_gate",
-            name="check launch readiness gate",
-            replace_existing=True,
-            coalesce=True,
-            max_instances=1,
-            misfire_grace_time=3600,
-            args=["check_launch_readiness_gate"],
-        )
+        if self._should_register_job("check_launch_readiness_gate"):
+            self.scheduler.add_job(
+                self.run_now,
+                CronTrigger(hour=gate_check_hour, minute=gate_check_minute),
+                id="check_launch_readiness_gate",
+                name="check launch readiness gate",
+                replace_existing=True,
+                coalesce=True,
+                max_instances=1,
+                misfire_grace_time=3600,
+                args=["check_launch_readiness_gate"],
+            )
         self.scheduler.add_job(
             self.run_now,
             CronTrigger(day_of_week="tue", hour=3, minute=0),
@@ -2289,6 +2374,9 @@ class DataScheduler:
             for job in self.scheduler.get_jobs()
         ]
 
+    def get_disabled_jobs(self) -> Dict[str, Dict[str, Any]]:
+        return dict(self.disabled_jobs)
+
     async def _run_job_once(self, job_type: str) -> None:
         if job_type == "daily":
             await self.daily_collection()
@@ -2383,8 +2471,21 @@ class DataScheduler:
 
             attempt_logs: list[Dict[str, Any]] = []
             attempts_made = 0
+            disabled_error: Optional[str] = None
+            if job_type in self.disabled_jobs:
+                disabled = self.disabled_jobs.get(job_type) or {}
+                missing = disabled.get("missing_any_of") or []
+                formatted = ", ".join(
+                    ["any(" + ",".join(group) + ")" for group in missing if isinstance(group, list)]
+                )
+                disabled_error = (
+                    f"missing required env for job '{job_type}'"
+                    + (f": {formatted}" if formatted else "")
+                )
 
             try:
+                if disabled_error:
+                    raise RuntimeError(disabled_error)
                 if daily_once_skip is not None:
                     attempts_made = 1
                     attempt_logs.append(
