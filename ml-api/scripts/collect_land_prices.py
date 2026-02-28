@@ -14,6 +14,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import sys
 import time
 from dataclasses import dataclass
@@ -28,6 +29,7 @@ from supabase import create_client
 
 LOG = logging.getLogger("collect_land_prices")
 STATE_PATH = Path("logs/collect_land_prices_state.json")
+PNU_RE = re.compile(r"^\d{19}$")
 
 
 def setup_logging() -> None:
@@ -55,6 +57,20 @@ def get_env(name: str) -> str:
     if not value:
         raise RuntimeError(f"Missing required env: {name}")
     return value
+
+
+def resolve_land_price_api_key() -> str:
+    for name in ("VWORLD_API_KEY", "LAND_PRICE_API_KEY", "PUBLIC_DATA_API_KEY"):
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value
+    raise RuntimeError(
+        "Missing required env: VWORLD_API_KEY (or LAND_PRICE_API_KEY / PUBLIC_DATA_API_KEY)"
+    )
+
+
+def is_valid_pnu(pnu: str) -> bool:
+    return bool(PNU_RE.match((pnu or "").strip()))
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -122,6 +138,7 @@ def collect_target_parcels(
     cursor = (resume_cursor or "").strip() or None
     reached_end = False
     scanned = 0
+    invalid_pnu = 0
 
     while True:
         query = (
@@ -155,6 +172,9 @@ def collect_target_parcels(
             pnu = str(row.get("pnu") or "")
             if not pnu:
                 continue
+            if not is_valid_pnu(pnu):
+                invalid_pnu += 1
+                continue
 
             target.append(
                 ParcelRow(
@@ -172,9 +192,10 @@ def collect_target_parcels(
             break
 
     LOG.info(
-        "Parcel selection done: scanned=%d selected=%d reached_end=%s",
+        "Parcel selection done: scanned=%d selected=%d invalid_pnu=%d reached_end=%s",
         scanned,
         len(target),
+        invalid_pnu,
         reached_end,
     )
     return target, cursor, reached_end
@@ -252,6 +273,8 @@ def fetch_official_price(
     year: int,
     api_key: str,
     timeout_sec: int = 12,
+    max_attempts: int = 3,
+    retry_base_sec: float = 1.2,
 ) -> Optional[int]:
     url = os.environ.get(
         "VWORLD_LAND_PRICE_API_URL",
@@ -269,16 +292,50 @@ def fetch_official_price(
     if domain:
         params["domain"] = domain
 
-    response = requests.get(url, params=params, timeout=timeout_sec)
-    response.raise_for_status()
+    transient_markers = (
+        "timed out",
+        "timeout",
+        "connection aborted",
+        "connection reset",
+        "remote end closed",
+        "bad gateway",
+        "gateway timeout",
+        "service unavailable",
+    )
 
-    content_type = response.headers.get("Content-Type", "")
-    if "json" in content_type.lower():
-        payload = response.json()
-    else:
-        payload = json.loads(response.text)
+    for attempt in range(1, max(1, max_attempts) + 1):
+        try:
+            response = requests.get(url, params=params, timeout=timeout_sec)
+            status = int(response.status_code or 0)
+            if status in {429, 500, 502, 503, 504}:
+                raise requests.HTTPError(
+                    f"transient HTTP {status}",
+                    response=response,
+                )
+            response.raise_for_status()
 
-    return parse_price_payload(payload)
+            content_type = response.headers.get("Content-Type", "")
+            if "json" in content_type.lower():
+                payload = response.json()
+            else:
+                payload = json.loads(response.text)
+
+            return parse_price_payload(payload)
+        except Exception as exc:  # noqa: BLE001
+            lowered = str(exc).lower()
+            transient = any(marker in lowered for marker in transient_markers)
+            if attempt < max(1, max_attempts) and transient:
+                time.sleep(min(8.0, retry_base_sec * (2 ** (attempt - 1))))
+                continue
+            if transient:
+                LOG.warning(
+                    "Transient VWorld error treated as missing pnu=%s year=%s err=%s",
+                    pnu,
+                    year,
+                    exc,
+                )
+                return None
+            raise
 
 
 def upsert_price(
@@ -338,7 +395,7 @@ def main() -> None:
 
     supabase_url = get_env("SUPABASE_URL")
     supabase_key = get_env("SUPABASE_SERVICE_KEY")
-    vworld_key = get_env("VWORLD_API_KEY")
+    vworld_key = resolve_land_price_api_key()
 
     supabase = create_client(supabase_url, supabase_key)
 

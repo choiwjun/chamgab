@@ -23,7 +23,8 @@ import pickle
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional
+from statistics import median
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID
 
 from supabase import create_client
@@ -68,12 +69,30 @@ def latest_severe_csv(logs_dir: Path) -> Optional[Path]:
     return files[-1] if files else None
 
 
-def load_target_property_ids(
+def _safe_float(value: Any) -> Optional[float]:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _price_bucket(tx_price: float) -> str:
+    if tx_price < 100_000_000:
+        return "lt_100m"
+    if tx_price < 300_000_000:
+        return "100m_300m"
+    if tx_price < 700_000_000:
+        return "300m_700m"
+    return "gte_700m"
+
+
+def load_target_rows(
     csv_path: Path,
     threshold: float,
     limit: int,
-) -> List[str]:
-    out: List[str] = []
+    min_tx_price: float,
+) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
     seen = set()
     with csv_path.open("r", encoding="utf-8-sig", newline="") as f:
         reader = csv.DictReader(f)
@@ -87,11 +106,70 @@ def load_target_property_ids(
                 continue
             if abs_gap < threshold:
                 continue
+            tx_price = _safe_float(row.get("tx_price"))
+            if tx_price is None or tx_price < min_tx_price:
+                continue
+            ai_price = _safe_float(row.get("ai_price"))
+            sigungu = (row.get("sigungu") or "").strip()
             seen.add(pid)
-            out.append(pid)
+            out.append(
+                {
+                    "property_id": pid,
+                    "sigungu": sigungu,
+                    "tx_price": tx_price,
+                    "ai_price": ai_price,
+                    "abs_gap_pct": abs_gap,
+                    "price_bucket": _price_bucket(tx_price),
+                }
+            )
             if limit > 0 and len(out) >= limit:
                 break
     return out
+
+
+def build_calibration_factors(
+    target_rows: List[Dict[str, Any]],
+    *,
+    min_samples: int,
+    clamp_low: float,
+    clamp_high: float,
+) -> Dict[str, Any]:
+    grouped: Dict[Tuple[str, str], List[float]] = {}
+    global_ratios: List[float] = []
+
+    for row in target_rows:
+        ai_price = _safe_float(row.get("ai_price"))
+        tx_price = _safe_float(row.get("tx_price"))
+        if ai_price is None or tx_price is None or ai_price <= 0 or tx_price <= 0:
+            continue
+        ratio = tx_price / ai_price
+        if ratio <= 0:
+            continue
+        global_ratios.append(ratio)
+        key = ((row.get("sigungu") or "").strip(), str(row.get("price_bucket") or ""))
+        grouped.setdefault(key, []).append(ratio)
+
+    if not global_ratios:
+        return {"global": 1.0, "by_key": {}, "min_samples": min_samples}
+
+    global_factor = float(median(global_ratios))
+    global_factor = max(clamp_low, min(clamp_high, global_factor))
+
+    by_key: Dict[str, float] = {}
+    for key, values in grouped.items():
+        if len(values) < max(1, min_samples):
+            continue
+        factor = float(median(values))
+        factor = max(clamp_low, min(clamp_high, factor))
+        by_key[f"{key[0]}::{key[1]}"] = round(factor, 4)
+
+    return {
+        "global": round(global_factor, 4),
+        "by_key": by_key,
+        "min_samples": max(1, min_samples),
+        "clamp_low": clamp_low,
+        "clamp_high": clamp_high,
+    }
 
 
 def main() -> int:
@@ -113,6 +191,28 @@ def main() -> int:
         type=int,
         default=0,
         help="Limit number of properties to process (0 = all).",
+    )
+    parser.add_argument(
+        "--min-tx-price",
+        type=float,
+        default=max(0.0, float(os.getenv("CHAMGAB_REANALYZE_MIN_TX_PRICE", "50000000"))),
+        help="Exclude severe rows with tx_price below this threshold.",
+    )
+    parser.add_argument(
+        "--calibration-min-samples",
+        type=int,
+        default=max(1, int(os.getenv("CHAMGAB_REANALYZE_CALIBRATION_MIN_SAMPLES", "5"))),
+        help="Minimum samples per (sigungu, price_bucket) calibration key.",
+    )
+    parser.add_argument(
+        "--calibration-clamp-low",
+        type=float,
+        default=max(0.1, float(os.getenv("CHAMGAB_REANALYZE_CALIBRATION_CLAMP_LOW", "0.7"))),
+    )
+    parser.add_argument(
+        "--calibration-clamp-high",
+        type=float,
+        default=max(0.1, float(os.getenv("CHAMGAB_REANALYZE_CALIBRATION_CLAMP_HIGH", "1.3"))),
     )
     parser.add_argument(
         "--sleep-ms",
@@ -142,27 +242,47 @@ def main() -> int:
         print("ERROR: severe csv not found")
         return 2
 
-    target_ids = load_target_property_ids(
+    target_rows = load_target_rows(
         csv_path=csv_path,
         threshold=args.threshold,
         limit=args.limit,
+        min_tx_price=max(0.0, float(args.min_tx_price)),
     )
-    if not target_ids:
+    if not target_rows:
         print("No target properties found.")
         return 1
+    target_ids = [str(row["property_id"]) for row in target_rows]
+
+    calibration = build_calibration_factors(
+        target_rows,
+        min_samples=args.calibration_min_samples,
+        clamp_low=min(args.calibration_clamp_low, args.calibration_clamp_high),
+        clamp_high=max(args.calibration_clamp_low, args.calibration_clamp_high),
+    )
+    global_factor = float(calibration.get("global") or 1.0)
+    factors_by_key = dict(calibration.get("by_key") or {})
+    target_by_id = {str(row["property_id"]): row for row in target_rows}
 
     print(f"CSV: {csv_path}")
     print(f"Targets (abs_gap>={args.threshold}%): {len(target_ids):,}")
+    print(
+        "Calibration factors: "
+        f"global={global_factor:.4f}, "
+        f"grouped={len(factors_by_key):,}, "
+        f"min_samples={calibration.get('min_samples')}"
+    )
     if args.dry_run:
         summary = {
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "mode": "dry-run",
             "csv_path": str(csv_path),
             "threshold": args.threshold,
+            "min_tx_price": float(args.min_tx_price),
             "targets": len(target_ids),
             "inserted": 0,
             "failed": 0,
             "elapsed_sec": 0.0,
+            "calibration": calibration,
         }
         latest_summary_path = LOGS_DIR / "chamgab_reanalyze_summary_latest.json"
         latest_summary_path.write_text(
@@ -188,18 +308,34 @@ def main() -> int:
     print("Reanalyzing and inserting...")
     ok = 0
     failed = 0
+    calibrated = 0
     sleep_s = max(args.sleep_ms, 0) / 1000.0
     t0 = time.time()
 
     for idx, pid in enumerate(target_ids, start=1):
+        target = target_by_id.get(pid) or {}
+        sigungu = str(target.get("sigungu") or "").strip()
+        price_bucket = str(target.get("price_bucket") or "")
+        factor_key = f"{sigungu}::{price_bucket}"
+        calibration_factor = float(factors_by_key.get(factor_key, global_factor))
         try:
             pred = service.predict(UUID(pid))
+            raw_price = int(pred["chamgab_price"])
+            raw_min = int(pred["min_price"])
+            raw_max = int(pred["max_price"])
+            adj_price = max(0, int(round(raw_price * calibration_factor)))
+            adj_min = max(0, int(round(raw_min * calibration_factor)))
+            adj_max = max(0, int(round(raw_max * calibration_factor)))
+            if adj_min > adj_max:
+                adj_min, adj_max = adj_max, adj_min
+            if calibration_factor != 1.0:
+                calibrated += 1
             ins = {
                 "property_id": pid,
                 "user_id": None,
-                "chamgab_price": pred["chamgab_price"],
-                "min_price": pred["min_price"],
-                "max_price": pred["max_price"],
+                "chamgab_price": adj_price,
+                "min_price": adj_min,
+                "max_price": adj_max,
                 "confidence": pred["confidence"],
             }
             res = sb.table("chamgab_analyses").insert(ins).execute()
@@ -217,7 +353,10 @@ def main() -> int:
                         "request": {
                             "source": "batch_reanalyze_severe_gap",
                             "threshold": args.threshold,
+                            "min_tx_price": args.min_tx_price,
                             "csv": str(csv_path.name),
+                            "calibration_factor": calibration_factor,
+                            "calibration_key": factor_key,
                             "at": datetime.now(timezone.utc).isoformat(),
                         },
                     }
@@ -240,7 +379,10 @@ def main() -> int:
                         "request": {
                             "source": "batch_reanalyze_severe_gap",
                             "threshold": args.threshold,
+                            "min_tx_price": args.min_tx_price,
                             "csv": str(csv_path.name),
+                            "calibration_factor": calibration_factor,
+                            "calibration_key": factor_key,
                         },
                     }
                 ).execute()
@@ -251,22 +393,27 @@ def main() -> int:
             elapsed = time.time() - t0
             print(
                 f"  progress {idx:,}/{len(target_ids):,} "
-                f"(ok={ok:,}, failed={failed:,}, elapsed={elapsed:.1f}s)"
+                f"(ok={ok:,}, failed={failed:,}, calibrated={calibrated:,}, elapsed={elapsed:.1f}s)"
             )
         if sleep_s > 0:
             time.sleep(sleep_s)
 
     elapsed = time.time() - t0
     print("Done.")
-    print(f"  inserted={ok:,}, failed={failed:,}, elapsed={elapsed:.1f}s")
+    print(
+        f"  inserted={ok:,}, failed={failed:,}, calibrated={calibrated:,}, elapsed={elapsed:.1f}s"
+    )
     summary = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "mode": "apply",
         "csv_path": str(csv_path),
         "threshold": args.threshold,
+        "min_tx_price": float(args.min_tx_price),
         "targets": len(target_ids),
         "inserted": ok,
         "failed": failed,
+        "calibrated_count": calibrated,
+        "calibration": calibration,
         "elapsed_sec": round(elapsed, 1),
     }
     latest_summary_path = LOGS_DIR / "chamgab_reanalyze_summary_latest.json"

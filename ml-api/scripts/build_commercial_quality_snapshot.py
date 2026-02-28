@@ -32,7 +32,7 @@ THRESHOLDS = {
 }
 
 QUALITY_VERSION = "commercial-quality-v1"
-CALIBRATION_VERSION = "commercial-cal-v3"
+CALIBRATION_VERSION = "commercial-cal-v4"
 
 MOJIBAKE_TOKEN_RE = re.compile(r"(?:\uFFFD|\?\?+|Ã|Â|Ð|Õ)")
 MOJIBAKE_CJK_RE = re.compile(r"[\u4e00-\u9fff]")
@@ -80,6 +80,46 @@ def compress_ml_probability(raw: float) -> float:
     if x < 85:
         return round2(68.5 + (x - 70) * 0.7)
     return round2(79 + (x - 85) * 0.6)
+
+
+def _percentile(values: List[float], pct: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+    p = clamp(pct, 0.0, 100.0) / 100.0
+    pos = p * (len(ordered) - 1)
+    lo = int(math.floor(pos))
+    hi = int(math.ceil(pos))
+    if lo == hi:
+        return ordered[lo]
+    weight = pos - lo
+    return ordered[lo] * (1.0 - weight) + ordered[hi] * weight
+
+
+def derive_distribution_calibration(base_values: List[float]) -> Dict[str, float]:
+    if not base_values:
+        return {"scale": 1.0, "shift": 0.0}
+
+    q50 = _percentile(base_values, 50.0)
+    q90 = _percentile(base_values, 90.0)
+    q10 = _percentile(base_values, 10.0)
+    spread = max(1.0, q90 - q10)
+
+    target_q50 = 58.0
+    target_q90 = 82.0
+    target_spread = max(10.0, target_q90 - 40.0)
+    scale = clamp(target_spread / spread, 0.8, 1.8)
+    shift = clamp(target_q50 - scale * q50, -20.0, 20.0)
+    return {
+        "scale": round2(scale),
+        "shift": round2(shift),
+    }
+
+
+def apply_distribution_calibration(value: float, *, scale: float, shift: float) -> float:
+    return round2(clamp(value * scale + shift, 0.0, 100.0))
 
 
 def estimate_raw_probability(
@@ -216,7 +256,7 @@ def calc_industry_fit_adjustment(
         adj += 1
 
     normalized = round2(clamp(adj, -24, 10))
-    policy_penalty = round2(min(12, max(0, -normalized) * 0.65))
+    policy_penalty = round2(min(10, max(0, -normalized) * 0.5))
     return normalized, policy_penalty
 
 
@@ -401,12 +441,9 @@ def build_snapshot() -> Dict[str, Any]:
     mojibake_detected_count, mojibake_samples = detect_mojibake_names(industry_names)
 
     keys = sorted(set(business.keys()) | set(sales.keys()) | set(stores.keys()))
-    probabilities: List[float] = []
-    confidences: List[float] = []
-    low_prob_high_conf_count = 0
-    high_prob_bucket_count = 0
+    base_rows: List[Dict[str, Any]] = []
+    base_calibrated_values: List[float] = []
     missing_source_count = 0
-    high_policy_penalty_count = 0
 
     for key in keys:
         biz = business.get(key)
@@ -434,7 +471,8 @@ def build_snapshot() -> Dict[str, Any]:
             store_count=store_count,
             franchise_ratio=franchise_ratio,
         )
-        calibrated = compress_ml_probability(raw_probability)
+        calibrated_base = compress_ml_probability(raw_probability)
+        base_calibrated_values.append(calibrated_base)
 
         profile = profiles.get(sigungu, {})
         fit_adj, policy_penalty = calc_industry_fit_adjustment(
@@ -446,13 +484,54 @@ def build_snapshot() -> Dict[str, Any]:
             weekend_sales_ratio=float(profile.get("weekend_sales_ratio") or 0),
         )
 
-        probability = round2(clamp(calibrated + fit_adj, 0, 100))
-        if probability >= 80:
-            high_prob_bucket_count += 1
-
         biz_m = months_since(str(biz.get("base_year_month") or "")) if biz else None
         sales_m = months_since(str(sale.get("base_year_month") or "")) if sale else None
         store_m = months_since(str(store.get("base_year_month") or "")) if store else None
+
+        base_rows.append(
+            {
+                "has_biz": has_biz,
+                "has_sale": has_sale,
+                "has_store": has_store,
+                "raw_probability": raw_probability,
+                "calibrated_base": calibrated_base,
+                "fit_adj": fit_adj,
+                "policy_penalty": policy_penalty,
+                "biz_m": biz_m,
+                "sales_m": sales_m,
+                "store_m": store_m,
+            }
+        )
+
+    calibration = derive_distribution_calibration(base_calibrated_values)
+    calibration_scale = float(calibration.get("scale") or 1.0)
+    calibration_shift = float(calibration.get("shift") or 0.0)
+
+    probabilities: List[float] = []
+    confidences: List[float] = []
+    low_prob_high_conf_count = 0
+    high_prob_bucket_count = 0
+    high_policy_penalty_count = 0
+
+    for row in base_rows:
+        has_biz = bool(row["has_biz"])
+        has_sale = bool(row["has_sale"])
+        has_store = bool(row["has_store"])
+        raw_probability = float(row["raw_probability"])
+        calibrated = apply_distribution_calibration(
+            float(row["calibrated_base"]),
+            scale=calibration_scale,
+            shift=calibration_shift,
+        )
+        fit_adj = float(row["fit_adj"])
+        policy_penalty = float(row["policy_penalty"])
+        biz_m = row["biz_m"]
+        sales_m = row["sales_m"]
+        store_m = row["store_m"]
+
+        probability = round2(clamp(calibrated + fit_adj, 0, 100))
+        if probability >= 80:
+            high_prob_bucket_count += 1
 
         score = 45
         if has_biz:
@@ -542,8 +621,13 @@ def build_snapshot() -> Dict[str, Any]:
         "details": {
             "quality_version": QUALITY_VERSION,
             "calibration_version": CALIBRATION_VERSION,
+            "calibration_scale": calibration_scale,
+            "calibration_shift": calibration_shift,
             "missing_source_count": missing_source_count,
             "high_policy_penalty_count": high_policy_penalty_count,
+            "high_policy_penalty_pct": round2((high_policy_penalty_count / combo_count) * 100)
+            if combo_count
+            else 0.0,
             "mojibake_detected_count": mojibake_detected_count,
             "mojibake_samples": mojibake_samples,
             "latest_months": {

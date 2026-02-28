@@ -12,6 +12,7 @@ Method:
 
 from __future__ import annotations
 
+import argparse
 import csv
 import json
 import math
@@ -241,7 +242,11 @@ def bucket_label(abs_gap: float) -> str:
     return ">=60%"
 
 
-def run() -> int:
+def run(
+    *,
+    min_tx_price: int,
+    exact_area_tolerance_pct: float,
+) -> int:
     load_env_file(ML_ENV_PATH)
     disable_proxy_env()
 
@@ -279,6 +284,8 @@ def run() -> int:
 
     print("[5/6] Computing gap statistics...")
     rows: List[Dict[str, Any]] = []
+    low_price_filtered = 0
+    area_mismatch_filtered = 0
     for pid, analysis in latest_analyses.items():
         tx = tx_all.get(pid)
         if not tx:
@@ -287,8 +294,20 @@ def run() -> int:
         price_tx = safe_num(tx.get("price"))
         if not price_ai or not price_tx or price_tx <= 0:
             continue
-        gap_pct = ((price_ai - price_tx) / price_tx) * 100.0
+        if price_tx < float(max(0, int(min_tx_price))):
+            low_price_filtered += 1
+            continue
         p = properties.get(pid) or {}
+        tx_area = safe_num(tx.get("area_exclusive"))
+        prop_area = safe_num(p.get("area_exclusive"))
+        if tx_area and prop_area and prop_area > 0:
+            tolerance = max(0.0, float(exact_area_tolerance_pct)) / 100.0
+            lower = prop_area * (1.0 - tolerance)
+            upper = prop_area * (1.0 + tolerance)
+            if tx_area < lower or tx_area > upper:
+                area_mismatch_filtered += 1
+                continue
+        gap_pct = ((price_ai - price_tx) / price_tx) * 100.0
         rows.append(
             {
                 "property_id": pid,
@@ -394,6 +413,8 @@ def run() -> int:
     print("[6/6] Summary")
     print(f"  total latest analyses: {total:,}")
     print(f"  comparable rows:       {comparable:,} ({coverage:.1f}%)")
+    print(f"  filtered low tx price: {low_price_filtered:,} (threshold={min_tx_price:,})")
+    print(f"  filtered area mismatch:{area_mismatch_filtered:,} (tol={exact_area_tolerance_pct:.1f}%)")
     print(f"  tx match exact:        {tx_match_exact:,} ({tx_match_exact/comparable*100:.1f}%)")
     print(f"  tx match fallback:     {tx_match_fallback:,} ({tx_match_fallback/comparable*100:.1f}%)")
     print(f"  abs gap mean:          {mean_abs:.2f}%")
@@ -439,6 +460,10 @@ def run() -> int:
         "total_latest_analyses": total,
         "comparable_rows": comparable,
         "coverage_pct": round(coverage, 2),
+        "filtered_low_tx_price_count": low_price_filtered,
+        "filtered_area_mismatch_count": area_mismatch_filtered,
+        "min_tx_price_threshold": int(min_tx_price),
+        "exact_area_tolerance_pct": float(exact_area_tolerance_pct),
         "tx_match_exact": tx_match_exact,
         "tx_match_fallback": tx_match_fallback,
         "abs_gap_mean_pct": round(mean_abs, 2),
@@ -471,4 +496,23 @@ def run() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(run())
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--min-tx-price",
+        type=int,
+        default=max(0, int(os.getenv("CHAMGAB_AUDIT_MIN_TX_PRICE", "50000000"))),
+        help="Transactions below this price are excluded from comparable set.",
+    )
+    parser.add_argument(
+        "--exact-area-tolerance-pct",
+        type=float,
+        default=max(1.0, float(os.getenv("CHAMGAB_AUDIT_EXACT_AREA_TOL_PCT", "20"))),
+        help="Area tolerance for comparability filter.",
+    )
+    args = parser.parse_args()
+    raise SystemExit(
+        run(
+            min_tx_price=args.min_tx_price,
+            exact_area_tolerance_pct=args.exact_area_tolerance_pct,
+        )
+    )
