@@ -10,7 +10,6 @@ type UserProfileRow = {
   name: string | null
   tier: UserTier
 
-  // Credit-based billing
   daily_credit_used?: number
   daily_credit_limit?: number
   monthly_credit_used?: number

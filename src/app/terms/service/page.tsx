@@ -120,7 +120,7 @@ export default function TermsOfServicePage() {
 
           <section>
             <h2 className="mb-3 text-xl font-semibold text-[#191F28]">
-              제6조 (크레딧 및 유료 서비스)
+              제6조 (크레딧 안내)
             </h2>
             <ol className="list-decimal space-y-2 pl-6">
               <li>
@@ -129,10 +129,6 @@ export default function TermsOfServicePage() {
               </li>
               <li>
                 무료 크레딧은 매일 또는 매월 초기화되며, 이월되지 않습니다.
-              </li>
-              <li>
-                유료 크레딧의 구매, 결제, 환불에 관한 사항은 별도의 유료서비스
-                이용약관에 따릅니다.
               </li>
             </ol>
           </section>

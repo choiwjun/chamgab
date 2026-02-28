@@ -69,7 +69,7 @@ export default function PrivacyPolicyPage() {
                 서비스 제공: 아파트 참값 분석, 상권 분석, 학군 분석, 관심 매물
                 관리
               </li>
-              <li>크레딧 사용 내역 관리 및 유료 서비스 제공</li>
+              <li>크레딧 사용 내역 관리</li>
               <li>서비스 개선 및 이용 통계 분석</li>
               <li>서비스 관련 공지사항 및 알림 전달</li>
               <li>부정 이용 방지 및 서비스 안정성 확보</li>
@@ -87,10 +87,6 @@ export default function PrivacyPolicyPage() {
             <ul className="mt-2 list-disc space-y-1 pl-6">
               <li>
                 계약 또는 청약철회 등에 관한 기록: 5년 (전자상거래 등에서의
-                소비자보호에 관한 법률)
-              </li>
-              <li>
-                대금결제 및 재화 등의 공급에 관한 기록: 5년 (전자상거래 등에서의
                 소비자보호에 관한 법률)
               </li>
               <li>

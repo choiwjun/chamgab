@@ -24,7 +24,6 @@ async function AdminShell({ children }: { children: React.ReactNode }) {
     { href: '/admin', label: '대시보드' },
     { href: '/admin/users', label: '사용자' },
     { href: '/admin/analyses', label: '참값 분석' },
-    { href: '/admin/subscriptions', label: '구독/결제' },
     { href: '/admin/land-runs', label: '토지 수집' },
     { href: '/admin/search-stats', label: '검색 통계' },
     { href: '/admin/jobs', label: '수집/학습 잡' },

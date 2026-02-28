@@ -65,9 +65,7 @@ export default async function AdminDashboardPage() {
       <section className="rounded-2xl border border-[#E5E8EB] bg-white p-5">
         <h2 className="text-sm font-semibold text-[#191F28]">운영 체크</h2>
         <ul className="mt-3 list-disc pl-5 text-sm text-[#4E5968]">
-          <li>구독/결제 RLS가 service_role 전용인지 확인</li>
           <li>스케줄러/학습 잡 엔드포인트는 외부 노출 시 토큰 보호 필요</li>
-          <li>요금제 한도(Free/Premium/Business) 문구와 DB 한도 일치 필요</li>
         </ul>
       </section>
     </div>

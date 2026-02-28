@@ -2,5 +2,5 @@
 // Default: disabled unless explicitly set to "true".
 
 export const ENABLE_LAND = process.env.NEXT_PUBLIC_ENABLE_LAND !== 'false'
-export const ENABLE_FREE_OPEN_MODE =
-  process.env.NEXT_PUBLIC_FREE_OPEN_MODE === 'true'
+// Billing is fully removed: keep platform permanently in free-open mode.
+export const ENABLE_FREE_OPEN_MODE = true

@@ -3,9 +3,8 @@
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
-import { User, CreditCard, LogOut, ChevronRight, Crown } from 'lucide-react'
+import { User, LogOut, ChevronRight, Crown } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
-import { ENABLE_FREE_OPEN_MODE } from '@/lib/features'
 
 const TIER_BADGES = {
   free: { label: 'Free', color: 'bg-[#8B95A1]', textColor: 'text-white' },
@@ -96,19 +95,9 @@ export function MyPageContent() {
   const usagePercent =
     dailyCreditsLimit > 0 ? (dailyCreditsUsed / dailyCreditsLimit) * 100 : 0
 
-  const menuItems = useMemo(
-    () =>
-      ENABLE_FREE_OPEN_MODE
-        ? []
-        : [
-            {
-              icon: CreditCard,
-              label: '결제 및 플랜',
-              href: '/checkout/plans',
-            },
-          ],
-    []
-  )
+  const menuItems = useMemo<
+    Array<{ icon: typeof User; label: string; href: string }>
+  >(() => [], [])
 
   if (isLoading && !isAuthLoadDelayed) {
     return (

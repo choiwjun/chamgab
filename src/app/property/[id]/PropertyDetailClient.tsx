@@ -117,7 +117,7 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
               ? '비로그인 이용 한도를 초과했습니다. 로그인 후 계속 이용해 주세요.'
               : errorCode === 'CREDITS_EXCEEDED' ||
                   errorCode === 'insufficient_credits'
-                ? '크레딧이 부족합니다. 플랜을 확인해 주세요.'
+                ? '사용 한도에 도달했습니다. 잠시 후 다시 시도해 주세요.'
                 : null
 
         const fallbackMessage =

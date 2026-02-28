@@ -9,19 +9,12 @@ export default function robots(): MetadataRoute.Robots {
       {
         userAgent: '*',
         allow: '/',
-        disallow: [
-          '/api/',
-          '/auth/',
-          '/mypage/',
-          '/checkout/',
-          '/notifications/',
-          '/admin/',
-        ],
+        disallow: ['/api/', '/auth/', '/mypage/', '/notifications/', '/admin/'],
       },
       {
         userAgent: 'GPTBot',
         allow: '/',
-        disallow: ['/api/', '/auth/', '/mypage/', '/checkout/', '/admin/'],
+        disallow: ['/api/', '/auth/', '/mypage/', '/admin/'],
       },
       {
         userAgent: 'Google-Extended',
