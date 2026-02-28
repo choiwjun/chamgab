@@ -61,3 +61,6 @@ yarn-error.log*
 
 .vercel
 .env*.local
+
+# Local git worktrees (do not track as submodules)
+worktree/
