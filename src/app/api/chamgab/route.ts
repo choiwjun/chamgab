@@ -515,7 +515,7 @@ export async function POST(request: NextRequest) {
         }
         err.__logged = true
         err.status = mlResponse.status
-        err.upstreamMessage = parseUpstreamErrorMessage(text)
+        err.upstreamMessage = parseUpstreamErrorMessage(text) || undefined
         throw err
       }
 
