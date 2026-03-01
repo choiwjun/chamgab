@@ -3,7 +3,7 @@ worktree
 tmp
 tmp*
 logs
-reports
+/reports
 playwright-report
 test-results
 .pytest_cache
