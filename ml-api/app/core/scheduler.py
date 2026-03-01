@@ -9,6 +9,7 @@ import os
 import pickle
 import subprocess
 import sys
+import traceback
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta
@@ -83,6 +84,10 @@ SCHEDULER_JOB_ENV_REQUIREMENTS: Dict[str, tuple[tuple[str, ...], ...]] = {
         ("SUPABASE_URL",),
         ("SUPABASE_SERVICE_KEY",),
     ),
+    "sync_complexes_to_properties": (
+        ("SUPABASE_URL",),
+        ("SUPABASE_SERVICE_KEY",),
+    ),
 }
 
 
@@ -113,6 +118,7 @@ class DataScheduler:
         self.last_chamgab_reanalyze_summary: Optional[Dict[str, Any]] = None
         self.last_tx_property_backfill_summary: Optional[Dict[str, Any]] = None
         self.last_chamgab_factor_backfill_summary: Optional[Dict[str, Any]] = None
+        self.last_sync_complexes_properties_summary: Optional[Dict[str, Any]] = None
         self.last_chamgab_autofix_summary: Optional[Dict[str, Any]] = None
         self.last_chamgab_gap_recovery_summary: Optional[Dict[str, Any]] = None
         self.last_launch_readiness_gate_summary: Optional[Dict[str, Any]] = None
@@ -1392,6 +1398,47 @@ class DataScheduler:
         self.last_tx_property_backfill_summary = summary
         self.current_job_result = summary
 
+    async def run_sync_complexes_to_properties(self) -> None:
+        timeout = self._env_int(
+            "SYNC_COMPLEXES_PROPERTIES_TIMEOUT_SEC", 10800, min_value=60
+        )
+        batch_size = self._env_int(
+            "SYNC_COMPLEXES_PROPERTIES_BATCH_SIZE", 100, min_value=10
+        )
+        sleep_ms = self._env_int("SYNC_COMPLEXES_PROPERTIES_SLEEP_MS", 30, min_value=0)
+        max_complexes = self._env_int(
+            "SYNC_COMPLEXES_PROPERTIES_MAX_COMPLEXES", 0, min_value=0
+        )
+        tx_page_size = self._env_int(
+            "SYNC_COMPLEXES_PROPERTIES_TX_PAGE_SIZE", 2000, min_value=100
+        )
+
+        args = [
+            "--apply",
+            "--batch-size",
+            str(batch_size),
+            "--sleep-ms",
+            str(sleep_ms),
+            "--tx-page-size",
+            str(tx_page_size),
+        ]
+        if max_complexes > 0:
+            args.extend(["--max-complexes", str(max_complexes)])
+
+        ok = await self._run_script(
+            "scripts.sync_complexes_to_properties",
+            args=args,
+            timeout=timeout,
+        )
+        if not ok:
+            raise RuntimeError("sync_complexes_to_properties failed")
+
+        summary = self._load_summary_json(
+            LOGS_DIR / "chamgab_sync_complexes_properties_summary_latest.json"
+        )
+        self.last_sync_complexes_properties_summary = summary
+        self.current_job_result = summary
+
     async def run_chamgab_gap_audit(self) -> None:
         ok = await self._run_script("scripts.audit_chamgab_gap_full", timeout=10800)
         if not ok:
@@ -1577,12 +1624,19 @@ class DataScheduler:
             "generated_at": datetime.now().isoformat(),
             "mode": "apply",
             "steps": [],
+            "warnings": [],
             "config": {
                 "run_link_complexes": self._env_bool(
                     "CHAMGAB_GAP_RECOVERY_RUN_LINK_COMPLEXES", True
                 ),
                 "run_fix_complex_names": self._env_bool(
                     "CHAMGAB_GAP_RECOVERY_RUN_FIX_COMPLEX_NAMES", True
+                ),
+                "allow_fix_complex_names_failure": self._env_bool(
+                    "CHAMGAB_GAP_RECOVERY_ALLOW_FIX_COMPLEX_NAMES_FAILURE", True
+                ),
+                "run_sync_complexes_to_properties": self._env_bool(
+                    "CHAMGAB_GAP_RECOVERY_RUN_SYNC_COMPLEXES_TO_PROPERTIES", True
                 ),
                 "run_property_backfill": self._env_bool(
                     "CHAMGAB_GAP_RECOVERY_RUN_PROPERTY_BACKFILL", True
@@ -1605,7 +1659,7 @@ class DataScheduler:
             },
         }
 
-        async def _run_step(step_name: str, coro) -> None:
+        async def _run_step(step_name: str, coro, *, required: bool = True) -> None:
             started_at = datetime.now()
             try:
                 await coro
@@ -1613,21 +1667,65 @@ class DataScheduler:
                     {
                         "step": step_name,
                         "ok": True,
+                        "required": required,
                         "started_at": started_at.isoformat(),
                         "finished_at": datetime.now().isoformat(),
                     }
                 )
             except Exception as exc:
+                finished_at = datetime.now()
+                tb = traceback.format_exc(limit=8)
                 summary["steps"].append(
                     {
                         "step": step_name,
                         "ok": False,
+                        "required": required,
                         "started_at": started_at.isoformat(),
-                        "finished_at": datetime.now().isoformat(),
+                        "finished_at": finished_at.isoformat(),
                         "error": str(exc),
+                        "error_type": type(exc).__name__,
+                        "traceback": tb,
                     }
                 )
-                raise
+                if required:
+                    raise
+                summary["warnings"].append(
+                    {
+                        "step": step_name,
+                        "error": str(exc),
+                        "error_type": type(exc).__name__,
+                        "finished_at": finished_at.isoformat(),
+                    }
+                )
+
+        def _append_skipped_step(
+            step_name: str,
+            *,
+            reason: str,
+            required: bool,
+        ) -> None:
+            ts = datetime.now().isoformat()
+            summary["steps"].append(
+                {
+                    "step": step_name,
+                    "ok": False,
+                    "required": required,
+                    "skipped": True,
+                    "reason": reason,
+                    "started_at": ts,
+                    "finished_at": ts,
+                }
+            )
+            if required:
+                raise RuntimeError(reason)
+            summary["warnings"].append(
+                {
+                    "step": step_name,
+                    "error": reason,
+                    "error_type": "SkippedStep",
+                    "finished_at": ts,
+                }
+            )
 
         try:
             cfg = summary["config"]
@@ -1637,10 +1735,42 @@ class DataScheduler:
                     self.link_complexes_from_transactions(since_days=cfg["link_since_days"]),
                 )
             if cfg["run_fix_complex_names"]:
-                await _run_step(
-                    "fix_complex_names",
-                    self.fix_complex_names_from_transactions(since_days=cfg["fix_since_days"]),
-                )
+                disabled_fix = self.disabled_jobs.get("fix_complex_names")
+                if isinstance(disabled_fix, dict):
+                    _append_skipped_step(
+                        "fix_complex_names",
+                        reason=(
+                            "fix_complex_names disabled by preflight: "
+                            f"{disabled_fix.get('reason')} "
+                            f"{disabled_fix.get('missing_any_of')}"
+                        ),
+                        required=not cfg["allow_fix_complex_names_failure"],
+                    )
+                else:
+                    await _run_step(
+                        "fix_complex_names",
+                        self.fix_complex_names_from_transactions(
+                            since_days=cfg["fix_since_days"]
+                        ),
+                        required=not cfg["allow_fix_complex_names_failure"],
+                    )
+            if cfg["run_sync_complexes_to_properties"]:
+                disabled_sync = self.disabled_jobs.get("sync_complexes_to_properties")
+                if isinstance(disabled_sync, dict):
+                    _append_skipped_step(
+                        "sync_complexes_to_properties",
+                        reason=(
+                            "sync_complexes_to_properties disabled by preflight: "
+                            f"{disabled_sync.get('reason')} "
+                            f"{disabled_sync.get('missing_any_of')}"
+                        ),
+                        required=True,
+                    )
+                else:
+                    await _run_step(
+                        "sync_complexes_to_properties",
+                        self.run_sync_complexes_to_properties(),
+                    )
             if cfg["run_property_backfill"]:
                 await _run_step(
                     "chamgab_backfill_property_id",
@@ -1670,6 +1800,7 @@ class DataScheduler:
             summary["result"] = {
                 "last_tx_property_backfill_summary": self.last_tx_property_backfill_summary,
                 "last_chamgab_factor_backfill_summary": self.last_chamgab_factor_backfill_summary,
+                "last_sync_complexes_properties_summary": self.last_sync_complexes_properties_summary,
                 "last_chamgab_autofix_summary": self.last_chamgab_autofix_summary,
                 "last_chamgab_audit_summary": self.last_chamgab_audit_summary,
                 "last_chamgab_reanalyze_summary": self.last_chamgab_reanalyze_summary,
@@ -2400,6 +2531,8 @@ class DataScheduler:
             await self.link_complexes_from_transactions()
         elif job_type == "fix_complex_names":
             await self.fix_complex_names_from_transactions()
+        elif job_type == "sync_complexes_to_properties":
+            await self.run_sync_complexes_to_properties()
         elif job_type == "train_business":
             await self.weekly_business_training()
         elif job_type == "train_all":

@@ -27,6 +27,7 @@ VALID_JOB_TYPES = [
     "collect_land_locations",
     "link_complexes",
     "fix_complex_names",
+    "sync_complexes_to_properties",
     "train_business",
     "train_all",
     "chamgab_backfill_property_id",
@@ -67,6 +68,7 @@ class SchedulerStatusResponse(BaseModel):
     last_chamgab_audit_summary: Optional[dict] = None
     last_chamgab_reanalyze_summary: Optional[dict] = None
     last_tx_property_backfill_summary: Optional[dict] = None
+    last_sync_complexes_properties_summary: Optional[dict] = None
     last_chamgab_factor_backfill_summary: Optional[dict] = None
     last_chamgab_autofix_summary: Optional[dict] = None
     last_chamgab_gap_recovery_summary: Optional[dict] = None
@@ -85,7 +87,7 @@ class RunNowRequest(BaseModel):
             "job type "
             "(daily/weekly/monthly/collect_commercial/build_commercial_quality_snapshot/check_commercial_data_quality/check_land_collection_status/check_launch_readiness_gate/collect_land_daily/"
             "collect_land_locations/"
-            "link_complexes/fix_complex_names/train_business/train_all/"
+            "link_complexes/fix_complex_names/sync_complexes_to_properties/train_business/train_all/"
             "chamgab_backfill_property_id/chamgab_audit_gap/chamgab_reanalyze_severe/"
             "chamgab_factor_backfill/chamgab_autofix_apply/chamgab_gap_recovery_full/"
             "collect_school_base_monthly/collect_school_metrics_monthly/"
@@ -136,6 +138,9 @@ async def get_scheduler_status(
         ),
         last_tx_property_backfill_summary=getattr(
             data_scheduler, "last_tx_property_backfill_summary", None
+        ),
+        last_sync_complexes_properties_summary=getattr(
+            data_scheduler, "last_sync_complexes_properties_summary", None
         ),
         last_chamgab_factor_backfill_summary=getattr(
             data_scheduler, "last_chamgab_factor_backfill_summary", None

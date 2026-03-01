@@ -99,6 +99,15 @@ export function PropertyDetailClient({ property }: PropertyDetailClientProps) {
         body: JSON.stringify({ property_id: property.id }),
       })
 
+      if (res.status === 202) {
+        const pending = await res.json().catch(() => ({}))
+        const message =
+          typeof pending?.error === 'string' && pending.error.trim().length > 0
+            ? pending.error
+            : '분석 매물 매핑이 진행 중입니다. 잠시 후 다시 시도해주세요.'
+        throw new Error(message)
+      }
+
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
         const errorCode =

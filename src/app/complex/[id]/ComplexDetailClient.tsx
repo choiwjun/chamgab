@@ -891,6 +891,15 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
         }),
       })
 
+      if (res.status === 202) {
+        const pending = await res.json().catch(() => ({}))
+        const message =
+          typeof pending?.error === 'string' && pending.error.trim().length > 0
+            ? pending.error
+            : '분석 매물 매핑이 진행 중입니다. 잠시 후 다시 시도해주세요.'
+        throw new Error(message)
+      }
+
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
         const errorCode =
@@ -910,18 +919,22 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
               : errorCode === 'CREDITS_EXCEEDED' ||
                   errorCode === 'insufficient_credits'
                 ? '사용 한도에 도달했습니다. 잠시 후 다시 시도해주세요.'
-                : errorCode === 'PROPERTY_NOT_FOUND'
-                  ? '분석 가능한 매물을 찾지 못했습니다. 같은 단지라도 일부 평형/동 정보는 아직 매핑되지 않을 수 있습니다.'
-                  : null
+                : errorCode === 'MAPPING_PENDING'
+                  ? '분석 매물 매핑이 진행 중입니다. 잠시 후 다시 시도해주세요.'
+                  : errorCode === 'PROPERTY_NOT_FOUND'
+                    ? '분석 가능한 매물을 찾지 못했습니다. 같은 단지라도 일부 평형/동 정보는 아직 매핑되지 않을 수 있습니다.'
+                    : null
 
         const fallbackMessage =
           res.status === 401
             ? '로그인이 필요한 기능입니다. 로그인 후 다시 시도해주세요.'
-            : res.status === 404
-              ? '분석 가능한 매물을 찾지 못했습니다. 다른 평형/동으로 시도해주세요.'
-              : res.status === 429
-                ? '요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.'
-                : '분석 요청에 실패했습니다.'
+            : res.status === 202
+              ? '분석 매물 매핑이 진행 중입니다. 잠시 후 다시 시도해주세요.'
+              : res.status === 404
+                ? '분석 가능한 매물을 찾지 못했습니다. 다른 평형/동으로 시도해주세요.'
+                : res.status === 429
+                  ? '요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.'
+                  : '분석 요청에 실패했습니다.'
 
         throw new Error(messageByCode || serverMessage || fallbackMessage)
       }

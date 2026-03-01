@@ -18,6 +18,16 @@ import { ENABLE_FREE_OPEN_MODE } from '@/lib/features'
 import crypto from 'crypto'
 
 const ML_API_URL = process.env.ML_API_URL || 'http://localhost:8000'
+const MAPPING_RECOVERY_JOB_TYPE =
+  process.env.MAPPING_RECOVERY_JOB_TYPE || 'chamgab_gap_recovery_full'
+const MAPPING_RECOVERY_RETRY_AFTER_SECONDS = (() => {
+  const n = Number(process.env.MAPPING_RECOVERY_RETRY_AFTER_SECONDS || 300)
+  if (!Number.isFinite(n)) return 300
+  return Math.min(Math.max(Math.trunc(n), 30), 3600)
+})()
+const ENABLE_MAPPING_RECOVERY_QUEUE =
+  String(process.env.ENABLE_MAPPING_RECOVERY_QUEUE || 'true').toLowerCase() !==
+  'false'
 const ANON_DAILY_LIMIT = (() => {
   const n = Number(process.env.ANON_DAILY_ANALYSIS_LIMIT || 3)
   if (!Number.isFinite(n)) return 3
@@ -118,6 +128,56 @@ function parseUpstreamErrorMessage(raw: string): string | null {
     // ignore non-JSON payload
   }
   return text.length > 300 ? `${text.slice(0, 300)}...` : text
+}
+
+async function queueMappingRecoveryJob() {
+  if (!ENABLE_MAPPING_RECOVERY_QUEUE) {
+    return { queued: false, reason: 'queue_disabled' as const }
+  }
+
+  const adminToken =
+    process.env.ML_ADMIN_TOKEN ||
+    process.env.SCHEDULER_ADMIN_TOKEN ||
+    process.env.ADMIN_API_TOKEN
+  if (!adminToken) {
+    return { queued: false, reason: 'missing_admin_token' as const }
+  }
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 3000)
+  try {
+    const response = await fetch(`${ML_API_URL}/api/scheduler/run`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Admin-Token': adminToken,
+      },
+      body: JSON.stringify({ job_type: MAPPING_RECOVERY_JOB_TYPE }),
+      signal: controller.signal,
+    })
+    clearTimeout(timeout)
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '')
+      return {
+        queued: false,
+        reason: `http_${response.status}`,
+        detail: parseUpstreamErrorMessage(text),
+      }
+    }
+
+    return { queued: true as const }
+  } catch (error) {
+    clearTimeout(timeout)
+    return {
+      queued: false,
+      reason:
+        error instanceof DOMException && error.name === 'AbortError'
+          ? 'timeout'
+          : 'network_error',
+      detail: error instanceof Error ? error.message : String(error),
+    }
+  }
 }
 
 async function logEvent(params: {
@@ -271,22 +331,40 @@ export async function POST(request: NextRequest) {
     }
 
     if (!canUseResolvedPropertyId) {
+      const recovery = await queueMappingRecoveryJob()
       await logEvent({
         property_id: String(complex_id || property_id || 'unknown'),
         actor_user_id: actorUserId,
         status: 'error',
-        http_status: 404,
-        error_code: 'PROPERTY_NOT_FOUND',
-        error_message: 'No analyzable property found for requested payload',
-        request: { property_id, complex_id, features },
+        http_status: 202,
+        error_code: 'MAPPING_PENDING',
+        error_message:
+          'Property mapping is pending and recovery job was requested',
+        request: {
+          property_id,
+          complex_id,
+          features,
+          recovery_job_type: MAPPING_RECOVERY_JOB_TYPE,
+          recovery_job_queued: recovery.queued,
+          recovery_job_reason: recovery.queued ? null : recovery.reason,
+          recovery_job_detail: recovery.queued ? null : recovery.detail,
+        },
       })
       return NextResponse.json(
         {
           error:
-            '분석 가능한 매물을 찾지 못했습니다. 잠시 후 다시 시도하거나 다른 매물을 선택해주세요.',
-          code: 'PROPERTY_NOT_FOUND',
+            '해당 단지는 아직 분석 매물 매핑이 진행 중입니다. 잠시 후 다시 시도해주세요.',
+          code: 'MAPPING_PENDING',
+          recovery_job_type: MAPPING_RECOVERY_JOB_TYPE,
+          recovery_job_queued: recovery.queued,
+          retry_after_seconds: MAPPING_RECOVERY_RETRY_AFTER_SECONDS,
         },
-        { status: 404 }
+        {
+          status: 202,
+          headers: {
+            'Retry-After': String(MAPPING_RECOVERY_RETRY_AFTER_SECONDS),
+          },
+        }
       )
     }
 

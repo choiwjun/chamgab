@@ -20,6 +20,7 @@ on:
           - collect_land_locations
           - link_complexes
           - fix_complex_names
+          - sync_complexes_to_properties
           - train_business
           - train_all
           - chamgab_backfill_property_id
