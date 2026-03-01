@@ -143,6 +143,7 @@ class FeatureEngineer:
         while len(all_data) < max_records:
             retry_count = 0
             success = False
+            result = None
 
             while retry_count < max_retries and not success:
                 try:
@@ -171,6 +172,10 @@ class FeatureEngineer:
                         print(f"  최대 재시도 횟수 초과. 현재까지 {len(all_data)}건으로 진행합니다.")
                         # 에러 발생 시에도 현재까지 로드한 데이터로 진행
                         break
+
+            if not success:
+                # 마지막 시도가 실패하면 이전 페이지 결과를 재사용하지 않고 로딩 종료
+                break
 
             if not result.data:
                 break
