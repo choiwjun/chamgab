@@ -62,6 +62,47 @@ function parsePositiveNumber(value: unknown): number | null {
   return parsed
 }
 
+function normalizeText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function pickClosestPropertyId(
+  rows: Array<{ id?: unknown; area_exclusive?: unknown }>,
+  areaExclusive: number | null
+): string | null {
+  if (!Array.isArray(rows) || rows.length === 0) return null
+
+  if (areaExclusive && Number.isFinite(areaExclusive)) {
+    const sorted = [...rows].sort((a, b) => {
+      const aArea =
+        typeof a.area_exclusive === 'number' ? a.area_exclusive : Number.NaN
+      const bArea =
+        typeof b.area_exclusive === 'number' ? b.area_exclusive : Number.NaN
+      const aDiff = Number.isFinite(aArea)
+        ? Math.abs(aArea - areaExclusive)
+        : 1e9
+      const bDiff = Number.isFinite(bArea)
+        ? Math.abs(bArea - areaExclusive)
+        : 1e9
+      return aDiff - bDiff
+    })
+
+    for (const row of sorted) {
+      if (typeof row.id === 'string' && UUID_REGEX.test(row.id)) {
+        return row.id
+      }
+    }
+    return null
+  }
+
+  for (const row of rows) {
+    if (typeof row.id === 'string' && UUID_REGEX.test(row.id)) {
+      return row.id
+    }
+  }
+  return null
+}
+
 function parseUpstreamErrorMessage(raw: string): string | null {
   const text = (raw || '').trim()
   if (!text) return null
@@ -171,6 +212,51 @@ export async function POST(request: NextRequest) {
 
       if (property) {
         resolvedPropertyId = property.id
+      }
+    }
+
+    // Fallback when properties.complex_id links are missing:
+    // resolve by (complex name + sigungu) and nearest area_exclusive.
+    if (!resolvedPropertyId && complex_id) {
+      const { data: complex } = await supabase
+        .from('complexes')
+        .select('name,sigungu')
+        .eq('id', complex_id)
+        .maybeSingle()
+
+      const complexName = normalizeText(complex?.name)
+      const complexSigungu = normalizeText(complex?.sigungu)
+
+      const findByName = async (useLike: boolean) => {
+        let query = supabase
+          .from('properties')
+          .select('id,area_exclusive')
+          .eq('sigungu', complexSigungu)
+
+        query = useLike
+          ? query.ilike('name', `%${complexName}%`)
+          : query.eq('name', complexName)
+
+        if (areaExclusive) {
+          query = query
+            .gte('area_exclusive', areaExclusive * 0.88)
+            .lte('area_exclusive', areaExclusive * 1.12)
+        }
+
+        const { data } = await query.limit(20)
+        return pickClosestPropertyId(
+          Array.isArray(data)
+            ? (data as Array<{ id?: unknown; area_exclusive?: unknown }>)
+            : [],
+          areaExclusive
+        )
+      }
+
+      if (complexName && complexSigungu) {
+        resolvedPropertyId = await findByName(false)
+        if (!resolvedPropertyId) {
+          resolvedPropertyId = await findByName(true)
+        }
       }
     }
     const canUseResolvedPropertyId =
