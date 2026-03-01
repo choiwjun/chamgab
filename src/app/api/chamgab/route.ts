@@ -7,10 +7,7 @@ export const runtime = 'nodejs'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import {
-  buildChamgabQuality,
-  deriveChamgabQualityMeta,
-} from './_quality'
+import { buildChamgabQuality, deriveChamgabQualityMeta } from './_quality'
 import {
   CreditConsumeError,
   consumeCredits,
@@ -63,6 +60,23 @@ function parsePositiveNumber(value: unknown): number | null {
   const parsed = Number(raw.replace(/[^0-9.]/g, ''))
   if (!Number.isFinite(parsed) || parsed <= 0) return null
   return parsed
+}
+
+function parseUpstreamErrorMessage(raw: string): string | null {
+  const text = (raw || '').trim()
+  if (!text) return null
+  try {
+    const parsed = JSON.parse(text) as { detail?: unknown; error?: unknown }
+    if (typeof parsed.detail === 'string' && parsed.detail.trim()) {
+      return parsed.detail.trim()
+    }
+    if (typeof parsed.error === 'string' && parsed.error.trim()) {
+      return parsed.error.trim()
+    }
+  } catch {
+    // ignore non-JSON payload
+  }
+  return text.length > 300 ? `${text.slice(0, 300)}...` : text
 }
 
 async function logEvent(params: {
@@ -170,6 +184,26 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    if (!canUseResolvedPropertyId) {
+      await logEvent({
+        property_id: String(complex_id || property_id || 'unknown'),
+        actor_user_id: actorUserId,
+        status: 'error',
+        http_status: 404,
+        error_code: 'PROPERTY_NOT_FOUND',
+        error_message: 'No analyzable property found for requested payload',
+        request: { property_id, complex_id, features },
+      })
+      return NextResponse.json(
+        {
+          error:
+            '분석 가능한 매물을 찾지 못했습니다. 잠시 후 다시 시도하거나 다른 매물을 선택해주세요.',
+          code: 'PROPERTY_NOT_FOUND',
+        },
+        { status: 404 }
+      )
+    }
+
     // 筌?Ŋ????브쑴苑?野껉퀗???類ㅼ뵥 (force=true筌??얜똻??
     if (canUseResolvedPropertyId && shouldUseCache) {
       const { data: existingAnalysis } = await admin
@@ -228,7 +262,9 @@ export async function POST(request: NextRequest) {
                 http_status: 500,
                 error_code: 'CREDITS_RPC_ERROR',
                 error_message:
-                  error instanceof Error ? error.message : 'Credit check failed',
+                  error instanceof Error
+                    ? error.message
+                    : 'Credit check failed',
                 request: {
                   property_id: resolvedPropertyId || complex_id,
                   features,
@@ -350,7 +386,10 @@ export async function POST(request: NextRequest) {
             http_status: error.status,
             error_code: 'CREDITS_EXCEEDED',
             error_message: error.message,
-            request: { property_id: resolvedPropertyId || complex_id, features },
+            request: {
+              property_id: resolvedPropertyId || complex_id,
+              features,
+            },
           })
           return NextResponse.json(insufficientCreditsPayload(error.quota), {
             status: error.status,
@@ -451,7 +490,7 @@ export async function POST(request: NextRequest) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          property_id: resolvedPropertyId || complex_id,
+          property_id: resolvedPropertyId,
           features,
         }),
         signal: controller.signal,
@@ -471,8 +510,12 @@ export async function POST(request: NextRequest) {
         })
         const err = new Error('ML_API_HTTP_ERROR') as Error & {
           __logged?: boolean
+          status?: number
+          upstreamMessage?: string
         }
         err.__logged = true
+        err.status = mlResponse.status
+        err.upstreamMessage = parseUpstreamErrorMessage(text)
         throw err
       }
 
@@ -481,6 +524,16 @@ export async function POST(request: NextRequest) {
       console.error('[Chamgab API] ML API error:', mlError)
       const isTimeout =
         mlError instanceof DOMException && mlError.name === 'AbortError'
+      const upstreamStatus =
+        typeof (mlError as { status?: unknown })?.status === 'number'
+          ? Number((mlError as { status?: number }).status)
+          : null
+      const upstreamMessage = (mlError as { upstreamMessage?: unknown })
+        ?.upstreamMessage
+      const normalizedUpstreamMessage =
+        typeof upstreamMessage === 'string' && upstreamMessage.trim()
+          ? upstreamMessage.trim()
+          : null
 
       if (!(mlError as Error & { __logged?: boolean })?.__logged) {
         await logEvent({
@@ -495,11 +548,29 @@ export async function POST(request: NextRequest) {
           request: { property_id: resolvedPropertyId || complex_id, features },
         })
       }
+
+      if (upstreamStatus && upstreamStatus >= 400 && upstreamStatus < 500) {
+        const mappedStatus = upstreamStatus === 422 ? 400 : upstreamStatus
+        const fallbackMessage =
+          mappedStatus === 404
+            ? '분석 가능한 매물을 찾지 못했습니다.'
+            : mappedStatus === 429
+              ? '요청이 많아 잠시 후 다시 시도해주세요.'
+              : '분석 요청 값이 올바르지 않습니다.'
+        return NextResponse.json(
+          {
+            error: normalizedUpstreamMessage || fallbackMessage,
+            code: mappedStatus === 404 ? 'PROPERTY_NOT_FOUND' : 'ML_API_ERROR',
+          },
+          { status: mappedStatus }
+        )
+      }
+
       return NextResponse.json(
         {
           error: isTimeout
             ? '?브쑴苑??遺욧퍕 ??볦퍢???λ뜃???뤿???щ빍??'
-            : 'ML API unavailable',
+            : normalizedUpstreamMessage || 'ML API unavailable',
         },
         { status: isTimeout ? 504 : 503 }
       )
