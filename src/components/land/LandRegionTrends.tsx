@@ -72,7 +72,9 @@ export function LandRegionTrends({ stats }: LandRegionTrendsProps) {
             >
               <Link
                 href={
-                  `/land?sigungu=${encodeURIComponent(stat.sigungu)}` as Route
+                  (stat.sample_pnu
+                    ? `/land/${encodeURIComponent(stat.sample_pnu)}`
+                    : `/land?sigungu=${encodeURIComponent(stat.sigungu)}`) as Route
                 }
                 className="block rounded-2xl border border-[#E5E8EB] bg-white p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-[#F59E0B]/30"
               >

@@ -83,6 +83,7 @@ export interface LandRegionStats {
   transaction_count: number
   avg_price_per_m2: number
   total_volume: number
+  sample_pnu?: string | null
 }
 
 export interface LandSearchParams {
