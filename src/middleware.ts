@@ -50,6 +50,7 @@ const PUBLIC_PREFIX_ROUTES = [
   '/terms',
   '/complex',
   '/property',
+  '/land',
   '/school-analysis/share',
 ]
 
