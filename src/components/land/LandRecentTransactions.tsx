@@ -1,6 +1,8 @@
 'use client'
 
 import { motion } from 'framer-motion'
+import Link from 'next/link'
+import type { Route } from 'next'
 import { FileText, Calendar, MapPin } from 'lucide-react'
 import type { LandTransaction } from '@/types/land'
 import { LAND_CATEGORY_LABELS } from '@/types/land'
@@ -150,6 +152,17 @@ export function LandRecentTransactions({
                     </div>
                   </div>
                 </div>
+
+                {tx.pnu ? (
+                  <div className="mt-4 border-t border-[#F2F4F6] pt-3">
+                    <Link
+                      href={`/land/${encodeURIComponent(tx.pnu)}` as Route}
+                      className="text-sm font-semibold text-[#F59E0B] hover:text-[#EA8A0C]"
+                    >
+                      상세 분석 보기
+                    </Link>
+                  </div>
+                ) : null}
               </div>
             </motion.div>
           ))}

@@ -26,6 +26,7 @@ export interface LandParcel {
 export interface LandTransaction {
   id: string
   parcel_id: string | null
+  pnu?: string | null
   sido: string
   sigungu: string
   eupmyeondong: string | null

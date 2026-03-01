@@ -8,11 +8,39 @@ import { Search, MapPin } from 'lucide-react'
 export function LandHeroSection() {
   const router = useRouter()
   const [query, setQuery] = useState('')
+  const [isSearching, setIsSearching] = useState(false)
 
-  const handleSearch = (e: React.FormEvent) => {
+  const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (query.trim()) {
-      router.push('/land' as never)
+    const q = query.trim()
+    if (!q || isSearching) return
+
+    setIsSearching(true)
+    try {
+      const params = new URLSearchParams({
+        quick: '1',
+        q,
+        limit: '1',
+      })
+      const response = await fetch(`/api/land/search?${params.toString()}`, {
+        method: 'GET',
+        cache: 'no-store',
+      })
+
+      if (response.ok) {
+        const payload = (await response.json()) as {
+          items?: Array<{ pnu?: string | null }>
+        }
+        const pnu = payload.items?.[0]?.pnu
+        if (typeof pnu === 'string' && pnu.length > 0) {
+          router.push(`/land/${encodeURIComponent(pnu)}` as never)
+          return
+        }
+      }
+
+      router.push(`/land?q=${encodeURIComponent(q)}` as never)
+    } finally {
+      setIsSearching(false)
     }
   }
 
@@ -85,6 +113,7 @@ export function LandHeroSection() {
               />
               <button
                 type="submit"
+                disabled={isSearching}
                 className="absolute right-2 top-1/2 -translate-y-1/2 rounded-xl bg-[#F59E0B] px-6 py-2.5 text-sm font-semibold text-white transition-all hover:bg-[#EA8A0C]"
               >
                 검색

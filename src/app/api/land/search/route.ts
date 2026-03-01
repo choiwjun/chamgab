@@ -56,8 +56,9 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
 
     // -- Parse query parameters --
-    const q =
-      searchParams.get('q') || searchParams.get('query') || undefined
+    const q = searchParams.get('q') || searchParams.get('query') || undefined
+    const quickLookup =
+      searchParams.get('quick') === '1' || searchParams.get('quick') === 'true'
     const sido = searchParams.get('sido') || undefined
     const sigungu = searchParams.get('sigungu') || undefined
     const landCategory = searchParams.get('land_category') || undefined
@@ -72,8 +73,70 @@ export async function GET(request: NextRequest) {
       Math.max(1, parseInt(searchParams.get('limit') || '20')),
       100
     )
-    const sortRaw = (searchParams.get('sort') || 'created_at:desc').trim()
+    const sortParam = searchParams.get('sort')
+    const sortRaw = (sortParam || 'created_at:desc').trim()
     const orderRaw = (searchParams.get('order') || '').trim()
+
+    if (quickLookup) {
+      const sanitizedQ = q ? sanitizeFilterInput(q) : ''
+      if (!sanitizedQ) {
+        return NextResponse.json(
+          { items: [], transactions: [], total: 0, page: 1, limit },
+          { status: 200 }
+        )
+      }
+
+      let quickQuery = supabase
+        .from('land_parcels')
+        .select(
+          'id,pnu,sido,sigungu,eupmyeondong,jibun,latest_transaction_date'
+        )
+        .or(
+          `pnu.ilike.%${sanitizedQ}%,jibun.ilike.%${sanitizedQ}%,eupmyeondong.ilike.%${sanitizedQ}%,sigungu.ilike.%${sanitizedQ}%,sido.ilike.%${sanitizedQ}%`
+        )
+        .order('latest_transaction_date', {
+          ascending: false,
+          nullsFirst: false,
+        })
+        .limit(limit)
+
+      if (sido) quickQuery = quickQuery.eq('sido', sido)
+      if (sigungu) {
+        const sanitizedSigungu = sanitizeFilterInput(sigungu)
+        if (sanitizedSigungu)
+          quickQuery = quickQuery.eq('sigungu', sanitizedSigungu)
+      }
+
+      const { data: quickRows, error: quickError } = await quickQuery
+      if (quickError) {
+        console.error(
+          '[Land Search API] Quick lookup error:',
+          quickError.message
+        )
+        return NextResponse.json(
+          { items: [], total: 0, error: 'Database error' },
+          { status: 503 }
+        )
+      }
+
+      const items =
+        (quickRows || []).map((row) => ({
+          pnu: row.pnu,
+          parcel_id: row.id,
+          sido: row.sido,
+          sigungu: row.sigungu,
+          eupmyeondong: row.eupmyeondong,
+          jibun: row.jibun,
+        })) || []
+
+      return NextResponse.json({
+        items,
+        transactions: items,
+        total: items.length,
+        page: 1,
+        limit,
+      })
+    }
 
     // -- Validate land_category --
     if (
@@ -93,8 +156,7 @@ export async function GET(request: NextRequest) {
     }
 
     // -- Build query --
-    let query = supabase.from('land_transactions').select(
-      `
+    const selectColumns = `
         id,
         parcel_id,
         sido,
@@ -109,10 +171,15 @@ export async function GET(request: NextRequest) {
         transaction_type,
         is_partial_sale,
         is_cancelled,
-        created_at
-      `,
-      { count: 'exact' }
-    )
+        created_at,
+        land_parcels(pnu)
+      `
+
+    let query = q
+      ? supabase.from('land_transactions').select(selectColumns)
+      : supabase
+          .from('land_transactions')
+          .select(selectColumns, { count: 'exact' })
 
     // Exclude cancelled transactions by default
     query = query.eq('is_cancelled', false)
@@ -165,9 +232,11 @@ export async function GET(request: NextRequest) {
     )
       ? rawSortField
       : 'created_at'
-    query = query.order(validField, {
-      ascending: sortOrder === 'asc',
-    })
+    if (!q || sortParam) {
+      query = query.order(validField, {
+        ascending: sortOrder === 'asc',
+      })
+    }
 
     // -- Pagination --
     const offset = (page - 1) * limit
@@ -184,10 +253,21 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    const items =
+      (
+        data as Array<{
+          land_parcels?: { pnu?: string | null } | null
+          [key: string]: unknown
+        }> | null
+      )?.map((row) => ({
+        ...row,
+        pnu: row.land_parcels?.pnu ?? null,
+      })) || []
+
     return NextResponse.json({
-      items: data || [],
-      transactions: data || [],
-      total: count || 0,
+      items,
+      transactions: items,
+      total: typeof count === 'number' ? count : items.length,
       page,
       limit,
     })

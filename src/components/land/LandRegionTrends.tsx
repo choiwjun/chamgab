@@ -2,6 +2,7 @@
 
 import { motion } from 'framer-motion'
 import Link from 'next/link'
+import type { Route } from 'next'
 import { MapPin, TrendingUp } from 'lucide-react'
 import type { LandRegionStats } from '@/types/land'
 import { formatNumber } from '@/lib/format'
@@ -70,7 +71,9 @@ export function LandRegionTrends({ stats }: LandRegionTrendsProps) {
               transition={{ delay: index * 0.05, duration: 0.3 }}
             >
               <Link
-                href={'/land' as never}
+                href={
+                  `/land?sigungu=${encodeURIComponent(stat.sigungu)}` as Route
+                }
                 className="block rounded-2xl border border-[#E5E8EB] bg-white p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-[#F59E0B]/30"
               >
                 {/* Region name + transaction count */}

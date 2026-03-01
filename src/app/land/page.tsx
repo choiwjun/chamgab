@@ -32,17 +32,41 @@ async function fetchRegionalStats(limit = 6): Promise<LandRegionStats[]> {
   }
 }
 
-async function fetchRecentTransactions(limit = 10): Promise<LandTransaction[]> {
+async function fetchRecentTransactions(
+  limit = 10,
+  sigungu?: string
+): Promise<LandTransaction[]> {
   try {
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL || '',
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
     )
 
-    const { data, error } = await supabase
-      .from('land_transactions')
-      .select('*')
-      .eq('is_cancelled', false)
+    let query = supabase.from('land_transactions').select(
+      `
+        id,
+        parcel_id,
+        sido,
+        sigungu,
+        eupmyeondong,
+        jibun,
+        land_category,
+        area_m2,
+        price,
+        price_per_m2,
+        transaction_date,
+        transaction_type,
+        is_partial_sale,
+        is_cancelled,
+        created_at,
+        land_parcels(pnu)
+      `
+    )
+
+    query = query.eq('is_cancelled', false)
+    if (sigungu) query = query.eq('sigungu', sigungu)
+
+    const { data, error } = await query
       .order('transaction_date', { ascending: false })
       .limit(limit)
 
@@ -51,17 +75,34 @@ async function fetchRecentTransactions(limit = 10): Promise<LandTransaction[]> {
       return []
     }
 
-    return data || []
+    const rows =
+      (data as Array<
+        LandTransaction & { land_parcels?: { pnu?: string | null } | null }
+      >) || []
+
+    return rows.map((row) => ({
+      ...row,
+      pnu: row.land_parcels?.pnu ?? null,
+    }))
   } catch (err) {
     console.error('[LandPage] Recent transactions fetch error:', err)
     return []
   }
 }
 
-export default async function LandPage() {
+export default async function LandPage({
+  searchParams,
+}: {
+  searchParams?: { sigungu?: string }
+}) {
+  const sigungu =
+    typeof searchParams?.sigungu === 'string'
+      ? searchParams.sigungu.trim()
+      : undefined
+
   const [regionalStats, recentTransactions] = await Promise.all([
     fetchRegionalStats(6),
-    fetchRecentTransactions(10),
+    fetchRecentTransactions(10, sigungu),
   ])
 
   return (
