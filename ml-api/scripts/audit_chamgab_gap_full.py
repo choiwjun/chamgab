@@ -23,6 +23,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from postgrest.exceptions import APIError
 from supabase import create_client
 
 
@@ -134,20 +135,40 @@ def load_properties(sb, property_ids: Sequence[str]) -> Dict[str, Dict[str, Any]
 
 
 def load_latest_tx_exact(sb, property_ids: Sequence[str]) -> Dict[str, Dict[str, Any]]:
-    latest: Dict[str, Dict[str, Any]] = {}
-    for ids in chunked(list(property_ids), 120):
-        unresolved = set(ids)
+    exact_chunk_size = max(
+        1, int(os.getenv("CHAMGAB_AUDIT_EXACT_CHUNK_SIZE", "120"))
+    )
+    exact_page_size = max(
+        100, int(os.getenv("CHAMGAB_AUDIT_EXACT_PAGE_SIZE", "1000"))
+    )
+
+    def _load_exact_chunk(ids_chunk: Sequence[str]) -> Dict[str, Dict[str, Any]]:
+        latest_chunk: Dict[str, Dict[str, Any]] = {}
+        unresolved = set(ids_chunk)
         offset = 0
-        page_size = 1000
+
         while unresolved:
+            unresolved_ids = list(unresolved)
             q = (
                 sb.table("transactions")
                 .select("property_id,complex_id,transaction_date,price,area_exclusive")
-                .in_("property_id", list(unresolved))
+                .in_("property_id", unresolved_ids)
                 .order("transaction_date", desc=True)
-                .range(offset, offset + page_size - 1)
+                .range(offset, offset + exact_page_size - 1)
             )
-            res = q.execute()
+            try:
+                res = q.execute()
+            except APIError as exc:
+                msg = str(exc).lower()
+                if "statement timeout" in msg and len(unresolved_ids) > 1:
+                    mid = len(unresolved_ids) // 2
+                    left = unresolved_ids[:mid]
+                    right = unresolved_ids[mid:]
+                    latest_chunk.update(_load_exact_chunk(left))
+                    latest_chunk.update(_load_exact_chunk(right))
+                    return latest_chunk
+                raise
+
             rows = res.data or []
             if not rows:
                 break
@@ -155,12 +176,18 @@ def load_latest_tx_exact(sb, property_ids: Sequence[str]) -> Dict[str, Dict[str,
             for tx in rows:
                 pid = tx.get("property_id")
                 if pid and pid in unresolved:
-                    latest[pid] = tx
+                    latest_chunk[pid] = tx
                     unresolved.remove(pid)
 
-            if len(rows) < page_size:
+            if len(rows) < exact_page_size:
                 break
-            offset += page_size
+            offset += exact_page_size
+
+        return latest_chunk
+
+    latest: Dict[str, Dict[str, Any]] = {}
+    for ids in chunked(list(property_ids), exact_chunk_size):
+        latest.update(_load_exact_chunk(ids))
     return latest
 
 
@@ -176,12 +203,20 @@ def load_latest_tx_fallback(
         if cid:
             by_complex[cid].append(pid)
 
+    fallback_chunk_size = max(
+        1, int(os.getenv("CHAMGAB_AUDIT_FALLBACK_COMPLEX_CHUNK_SIZE", "40"))
+    )
+    fallback_page_size = max(
+        100, int(os.getenv("CHAMGAB_AUDIT_FALLBACK_PAGE_SIZE", "1000"))
+    )
+
     fallback_hits: Dict[str, Dict[str, Any]] = {}
     complex_ids = list(by_complex.keys())
 
-    for cids in chunked(complex_ids, 40):
+    def _load_fallback_chunk(cids_chunk: Sequence[str]) -> Dict[str, Dict[str, Any]]:
+        chunk_hits: Dict[str, Dict[str, Any]] = {}
         unresolved = set()
-        for cid in cids:
+        for cid in cids_chunk:
             unresolved.update(by_complex[cid])
 
         area_bounds: Dict[str, Tuple[float, float]] = {}
@@ -191,16 +226,27 @@ def load_latest_tx_fallback(
                 area_bounds[pid] = (a * 0.9, a * 1.1)
 
         offset = 0
-        page_size = 1000
         while unresolved:
             q = (
                 sb.table("transactions")
                 .select("property_id,complex_id,transaction_date,price,area_exclusive")
-                .in_("complex_id", cids)
+                .in_("complex_id", list(cids_chunk))
                 .order("transaction_date", desc=True)
-                .range(offset, offset + page_size - 1)
+                .range(offset, offset + fallback_page_size - 1)
             )
-            res = q.execute()
+            try:
+                res = q.execute()
+            except APIError as exc:
+                msg = str(exc).lower()
+                if "statement timeout" in msg and len(cids_chunk) > 1:
+                    mid = len(cids_chunk) // 2
+                    left = cids_chunk[:mid]
+                    right = cids_chunk[mid:]
+                    chunk_hits.update(_load_fallback_chunk(left))
+                    chunk_hits.update(_load_fallback_chunk(right))
+                    return chunk_hits
+                raise
+
             rows = res.data or []
             if not rows:
                 break
@@ -220,12 +266,17 @@ def load_latest_tx_fallback(
                         continue
                     lo, hi = bounds
                     if lo <= tx_area <= hi and pid in unresolved:
-                        fallback_hits[pid] = tx
+                        chunk_hits[pid] = tx
                         unresolved.remove(pid)
 
-            if len(rows) < page_size:
+            if len(rows) < fallback_page_size:
                 break
-            offset += page_size
+            offset += fallback_page_size
+
+        return chunk_hits
+
+    for cids in chunked(complex_ids, fallback_chunk_size):
+        fallback_hits.update(_load_fallback_chunk(cids))
 
     return fallback_hits
 
