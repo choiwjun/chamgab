@@ -24,6 +24,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+from collections import defaultdict
 import logging
 import os
 import re
@@ -78,57 +79,158 @@ def chunked(rows: Iterable[Dict], size: int = 500) -> Iterator[List[Dict]]:
 
 
 def normalize_school_name(name: str) -> str:
-    """Normalize a school name for fuzzy matching.
-
-    Strips whitespace/special chars, normalises unicode, lowercases,
-    and removes common level suffixes so that
-    "광명고등학교" matches "광명고" etc.
-    """
+    """Normalize school name for relaxed matching."""
     if not name:
         return ""
-    # Unicode NFC
     name = unicodedata.normalize("NFC", name)
-    # Remove whitespace and dots
+    # Keep behavior deterministic across terminal encodings.
     name = re.sub(r"[\s·\.\-]+", "", name)
     name = name.lower()
-    # Strip trailing level suffixes (longest first)
-    for suffix in ("고등학교", "중학교", "초등학교", "유치원", "고등", "중학", "초등"):
+    # Strip school level suffixes.
+    for suffix in (
+        "고등학교",
+        "중학교",
+        "초등학교",
+        "유치원",
+        "고등",
+        "중학",
+        "초등",
+    ):
         if name.endswith(suffix):
             name = name[: -len(suffix)]
             break
     return name
 
 
+def normalize_school_name_exact(name: str) -> str:
+    """Normalize while keeping school-level suffixes for exact matching."""
+    if not name:
+        return ""
+    name = unicodedata.normalize("NFC", name)
+    name = re.sub(r"[\s\.\-]+", "", name)
+    return name.lower()
+
+
+def infer_school_level_from_name(name: str) -> str:
+    text = (name or "").strip()
+    if not text:
+        return ""
+    if "\ucd08\ub4f1" in text:
+        return "elementary"
+    if "\uc911\ud559" in text:
+        return "middle"
+    if "\uace0\ub4f1" in text:
+        return "high"
+    return ""
+
+
 def match_schools(
     api_schools: List[Dict[str, str]],
     db_schools: List[Dict[str, Any]],
 ) -> Dict[str, str]:
-    """Return {schoolinfo_schul_code: db_school_id} mapping.
+    """Return {schoolinfo_schul_code: db_school_id} mapping."""
+    # Build API indexes:
+    # 1) exact name
+    # 2) relaxed name + level
+    # 3) relaxed name only
+    api_by_exact: Dict[str, List[Dict[str, str]]] = defaultdict(list)
+    api_by_relaxed_level: Dict[Tuple[str, str], List[Dict[str, str]]] = defaultdict(list)
+    api_by_relaxed: Dict[str, List[Dict[str, str]]] = defaultdict(list)
 
-    Matches on normalised school name within the same sigungu.
-    """
-    # Build normalised lookup from API schools
-    api_lookup: Dict[str, str] = {}  # norm_name → SCHUL_CODE
     for s in api_schools:
         code = str(s.get("SCHUL_CODE") or "").strip()
         name = str(s.get("SCHUL_NM") or "").strip()
-        if code and name:
-            api_lookup[normalize_school_name(name)] = code
+        level = str(s.get("school_level") or "").strip()
+        if not level:
+            level = infer_school_level_from_name(name)
+        if not code or not name:
+            continue
 
-    result: Dict[str, str] = {}  # SCHUL_CODE → school_id
+        exact = normalize_school_name_exact(name)
+        relaxed = normalize_school_name(name)
+        entry = {"code": code, "name": name, "level": level}
+        api_by_exact[exact].append(entry)
+        api_by_relaxed[relaxed].append(entry)
+        if level:
+            api_by_relaxed_level[(relaxed, level)].append(entry)
+
+    def _unassigned(
+        candidates: List[Dict[str, str]],
+        assigned_codes: Set[str],
+    ) -> List[Dict[str, str]]:
+        return [c for c in candidates if c.get("code") not in assigned_codes]
+
+    result: Dict[str, str] = {}
+    assigned_codes: Set[str] = set()
+    matched = 0
+    unmatched = 0
+    ambiguous = 0
+
     for db_s in db_schools:
         sid = str(db_s.get("school_id") or "").strip()
         sname = str(db_s.get("school_name") or "").strip()
+        slevel = str(db_s.get("school_level") or "").strip()
         if not sid or not sname:
             continue
-        norm = normalize_school_name(sname)
-        schul_code = api_lookup.get(norm)
-        if schul_code:
-            result[schul_code] = sid
+        if not slevel:
+            slevel = infer_school_level_from_name(sname)
 
+        exact_key = normalize_school_name_exact(sname)
+        relaxed_key = normalize_school_name(sname)
+
+        # 1) Exact school name match first (safe against middle/high collisions).
+        candidates = _unassigned(api_by_exact.get(exact_key, []), assigned_codes)
+        if len(candidates) == 1:
+            code = str(candidates[0]["code"])
+            result[code] = sid
+            assigned_codes.add(code)
+            matched += 1
+            continue
+
+        # 2) Relaxed name + school level.
+        candidates = _unassigned(
+            api_by_relaxed_level.get((relaxed_key, slevel), []),
+            assigned_codes,
+        )
+        if len(candidates) == 1:
+            code = str(candidates[0]["code"])
+            result[code] = sid
+            assigned_codes.add(code)
+            matched += 1
+            continue
+
+        # 3) Relaxed name, only when unique.
+        candidates = _unassigned(api_by_relaxed.get(relaxed_key, []), assigned_codes)
+        if len(candidates) == 1:
+            code = str(candidates[0]["code"])
+            result[code] = sid
+            assigned_codes.add(code)
+            matched += 1
+            continue
+
+        # 4) Relaxed fallback with one level-consistent candidate.
+        if slevel and len(candidates) > 1:
+            level_candidates = [c for c in candidates if c.get("level") == slevel]
+            if len(level_candidates) == 1:
+                code = str(level_candidates[0]["code"])
+                result[code] = sid
+                assigned_codes.add(code)
+                matched += 1
+                continue
+
+        if candidates:
+            ambiguous += 1
+        else:
+            unmatched += 1
+
+    logger.info(
+        "school match summary: db=%d matched=%d unmatched=%d ambiguous=%d",
+        len(db_schools),
+        matched,
+        unmatched,
+        ambiguous,
+    )
     return result
-
-
 # ---------------------------------------------------------------------------
 # SchoolInfo API client
 # ---------------------------------------------------------------------------
@@ -343,7 +445,11 @@ def process_district(
     # --- Match API schools → DB schools by name -----------------------------------
     # Build combined API school list for name matching
     api_schools_list = [
-        {"SCHUL_CODE": code, "SCHUL_NM": info["school_name"]}
+        {
+            "SCHUL_CODE": code,
+            "SCHUL_NM": info["school_name"],
+            "school_level": info.get("school_knd"),
+        }
         for code, info in schul_info.items()
     ]
     code_to_db_id = match_schools(api_schools_list, db_schools)
