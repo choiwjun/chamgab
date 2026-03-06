@@ -1,11 +1,12 @@
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from uuid import UUID
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from app.services.model_service import ModelService
+from app.services.shap_service import ShapService
 
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
@@ -16,12 +17,34 @@ class PredictRequest(BaseModel):
     features: Optional[Dict[str, Any]] = None
 
 
+class MarketIndicatorsResponse(BaseModel):
+    reb_price_index: float
+    reb_rent_index: float
+    base_rate: float
+    mortgage_rate: float
+    buying_power_index: float
+    jeonse_ratio: float
+
+
+class PredictFactorResponse(BaseModel):
+    rank: int
+    factor_name: str
+    factor_name_ko: str = ""
+    factor_category: str = "기타"
+    contribution: int
+    contribution_pct: float = 0.0
+    direction: str
+    description: str = ""
+
+
 class PredictResponse(BaseModel):
     chamgab_price: int
     min_price: int
     max_price: int
     confidence: float
     confidence_level: str
+    market_indicators: Optional[MarketIndicatorsResponse] = None
+    factors: Optional[List[PredictFactorResponse]] = None
 
 
 @router.post("/predict", response_model=PredictResponse)
@@ -46,6 +69,7 @@ async def predict_price(request_body: PredictRequest, request: Request):
             max_price=2600000000,
             confidence=0.5,
             confidence_level="low",
+            market_indicators=None,
         )
 
     try:
@@ -58,12 +82,35 @@ async def predict_price(request_body: PredictRequest, request: Request):
             feature_overrides=request_body.features or {},
         )
 
+        factors = None
+        shap_explainer = getattr(request.app.state, "shap_explainer", None)
+        feature_names = (artifacts or {}).get("feature_names", [])
+        if shap_explainer is not None and feature_names:
+            try:
+                property_data = model_service._get_property_data(request_body.property_id)
+                if property_data is not None:
+                    property_data = model_service._apply_feature_overrides(
+                        property_data,
+                        request_body.features or {},
+                    )
+                    features = model_service._prepare_features(property_data)
+                    shap_service = ShapService(shap_explainer, feature_names)
+                    factors = shap_service.get_factors(
+                        features=features,
+                        prediction=result["chamgab_price"],
+                        limit=10,
+                    )
+            except Exception as factor_error:
+                print(f"[predict] failed to derive factors: {factor_error}")
+
         return PredictResponse(
             chamgab_price=result["chamgab_price"],
             min_price=result["min_price"],
             max_price=result["max_price"],
             confidence=result["confidence"],
             confidence_level=result["confidence_level"],
+            market_indicators=result.get("market_indicators"),
+            factors=factors,
         )
 
     except ValueError as e:

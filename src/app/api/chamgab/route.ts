@@ -113,6 +113,153 @@ function pickClosestPropertyId(
   return null
 }
 
+async function resolveOrCreatePropertyIdByComplex(params: {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  admin: any
+  complexId: string
+  areaExclusive: number | null
+}): Promise<string | null> {
+  const { admin, complexId, areaExclusive } = params
+
+  const { data: linkedProperty } = await admin
+    .from('properties')
+    .select('id')
+    .eq('complex_id', complexId)
+    .limit(1)
+    .maybeSingle()
+
+  if (
+    linkedProperty &&
+    typeof linkedProperty.id === 'string' &&
+    UUID_REGEX.test(linkedProperty.id)
+  ) {
+    return linkedProperty.id
+  }
+
+  const { data: complex } = await admin
+    .from('complexes')
+    .select(
+      'id,name,address,sido,sigungu,eupmyeondong,built_year,location,total_floors,total_buildings'
+    )
+    .eq('id', complexId)
+    .maybeSingle()
+
+  if (!complex) {
+    return null
+  }
+
+  const complexName = normalizeText(complex.name)
+  const complexSigungu = normalizeText(complex.sigungu)
+
+  const findByName = async (useLike: boolean) => {
+    let query = admin
+      .from('properties')
+      .select('id,area_exclusive')
+      .eq('sigungu', complexSigungu)
+
+    query = useLike
+      ? query.ilike('name', `%${complexName}%`)
+      : query.eq('name', complexName)
+
+    if (areaExclusive) {
+      query = query
+        .gte('area_exclusive', areaExclusive * 0.88)
+        .lte('area_exclusive', areaExclusive * 1.12)
+    }
+
+    const { data } = await query.limit(20)
+    return pickClosestPropertyId(
+      Array.isArray(data)
+        ? (data as Array<{ id?: unknown; area_exclusive?: unknown }>)
+        : [],
+      areaExclusive
+    )
+  }
+
+  let resolvedByName: string | null = null
+  if (complexName && complexSigungu) {
+    resolvedByName = await findByName(false)
+    if (!resolvedByName) {
+      resolvedByName = await findByName(true)
+    }
+  }
+
+  if (resolvedByName) {
+    // Best-effort link back to complex for faster future lookups.
+    await admin
+      .from('properties')
+      .update({ complex_id: complexId })
+      .eq('id', resolvedByName)
+      .is('complex_id', null)
+    return resolvedByName
+  }
+
+  const fallbackName = complexName || `단지 ${complexId.slice(0, 8)}`
+  const fallbackAddress =
+    normalizeText(complex.address) ||
+    [normalizeText(complex.sido), normalizeText(complex.sigungu)]
+      .filter(Boolean)
+      .join(' ')
+
+  const payload = {
+    property_type: 'apt',
+    name: fallbackName,
+    address: fallbackAddress || fallbackName,
+    sido: normalizeText(complex.sido) || null,
+    sigungu: normalizeText(complex.sigungu) || null,
+    eupmyeondong: normalizeText(complex.eupmyeondong) || null,
+    location: complex.location ?? null,
+    area_exclusive: areaExclusive ?? null,
+    built_year:
+      typeof complex.built_year === 'number' &&
+      Number.isFinite(complex.built_year)
+        ? complex.built_year
+        : null,
+    floors:
+      typeof complex.total_floors === 'number' &&
+      Number.isFinite(complex.total_floors) &&
+      complex.total_floors > 0
+        ? complex.total_floors
+        : typeof complex.total_buildings === 'number' &&
+            Number.isFinite(complex.total_buildings) &&
+            complex.total_buildings > 0
+          ? complex.total_buildings
+          : null,
+    complex_id: complexId,
+  }
+
+  const { data: inserted } = await admin
+    .from('properties')
+    .insert(payload)
+    .select('id')
+    .maybeSingle()
+
+  if (
+    inserted &&
+    typeof inserted.id === 'string' &&
+    UUID_REGEX.test(inserted.id)
+  ) {
+    return inserted.id
+  }
+
+  const { data: retryProperty } = await admin
+    .from('properties')
+    .select('id')
+    .eq('complex_id', complexId)
+    .limit(1)
+    .maybeSingle()
+
+  if (
+    retryProperty &&
+    typeof retryProperty.id === 'string' &&
+    UUID_REGEX.test(retryProperty.id)
+  ) {
+    return retryProperty.id
+  }
+
+  return null
+}
+
 function parseUpstreamErrorMessage(raw: string): string | null {
   const text = (raw || '').trim()
   if (!text) return null
@@ -128,6 +275,76 @@ function parseUpstreamErrorMessage(raw: string): string | null {
     // ignore non-JSON payload
   }
   return text.length > 300 ? `${text.slice(0, 300)}...` : text
+}
+
+type PredictionFactor = {
+  rank: number
+  factor_name: string
+  factor_name_ko?: string
+  contribution: number
+  direction: 'positive' | 'negative'
+}
+
+function normalizePredictionFactors(value: unknown): PredictionFactor[] {
+  if (!Array.isArray(value)) return []
+
+  return value
+    .reduce<PredictionFactor[]>((acc, item, index) => {
+      if (!item || typeof item !== 'object') return acc
+      const row = item as Record<string, unknown>
+      const factorName = normalizeText(row.factor_name)
+      if (!factorName) return acc
+      const contribution = Number(row.contribution)
+      if (!Number.isFinite(contribution)) return acc
+      const rankRaw = Number(row.rank)
+      const rank =
+        Number.isFinite(rankRaw) && rankRaw > 0
+          ? Math.trunc(rankRaw)
+          : index + 1
+      const direction = row.direction === 'negative' ? 'negative' : 'positive'
+      acc.push({
+        rank,
+        factor_name: factorName,
+        factor_name_ko: normalizeText(row.factor_name_ko) || factorName,
+        contribution: Math.trunc(contribution),
+        direction,
+      })
+      return acc
+    }, [])
+    .sort((a, b) => a.rank - b.rank)
+}
+
+async function persistPriceFactors(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  admin: any,
+  analysisId: string,
+  factors: PredictionFactor[]
+): Promise<number> {
+  if (!analysisId || !UUID_REGEX.test(analysisId) || factors.length === 0) {
+    return 0
+  }
+
+  await admin.from('price_factors').delete().eq('analysis_id', analysisId)
+
+  const payload = factors.slice(0, 10).map((factor, index) => ({
+    analysis_id: analysisId,
+    rank: index + 1,
+    factor_name: factor.factor_name,
+    factor_name_ko: factor.factor_name_ko || factor.factor_name,
+    contribution: factor.contribution,
+    direction: factor.direction,
+  }))
+
+  const { data, error } = await admin
+    .from('price_factors')
+    .insert(payload)
+    .select('id')
+
+  if (error) {
+    throw new Error(error.message || 'failed_to_persist_price_factors')
+  }
+
+  return Array.isArray(data) ? data.length : payload.length
 }
 
 async function queueMappingRecoveryJob() {
@@ -262,62 +479,14 @@ export async function POST(request: NextRequest) {
     const hasValidPropertyId =
       typeof property_id === 'string' && UUID_REGEX.test(property_id)
     let resolvedPropertyId = hasValidPropertyId ? property_id : null
-    if (!resolvedPropertyId && complex_id) {
-      const { data: property } = await supabase
-        .from('properties')
-        .select('id')
-        .eq('complex_id', complex_id)
-        .limit(1)
-        .single()
-
-      if (property) {
-        resolvedPropertyId = property.id
-      }
-    }
-
-    // Fallback when properties.complex_id links are missing:
-    // resolve by (complex name + sigungu) and nearest area_exclusive.
-    if (!resolvedPropertyId && complex_id) {
-      const { data: complex } = await supabase
-        .from('complexes')
-        .select('name,sigungu')
-        .eq('id', complex_id)
-        .maybeSingle()
-
-      const complexName = normalizeText(complex?.name)
-      const complexSigungu = normalizeText(complex?.sigungu)
-
-      const findByName = async (useLike: boolean) => {
-        let query = supabase
-          .from('properties')
-          .select('id,area_exclusive')
-          .eq('sigungu', complexSigungu)
-
-        query = useLike
-          ? query.ilike('name', `%${complexName}%`)
-          : query.eq('name', complexName)
-
-        if (areaExclusive) {
-          query = query
-            .gte('area_exclusive', areaExclusive * 0.88)
-            .lte('area_exclusive', areaExclusive * 1.12)
-        }
-
-        const { data } = await query.limit(20)
-        return pickClosestPropertyId(
-          Array.isArray(data)
-            ? (data as Array<{ id?: unknown; area_exclusive?: unknown }>)
-            : [],
-          areaExclusive
-        )
-      }
-
-      if (complexName && complexSigungu) {
-        resolvedPropertyId = await findByName(false)
-        if (!resolvedPropertyId) {
-          resolvedPropertyId = await findByName(true)
-        }
-      }
+    const hasValidComplexId =
+      typeof complex_id === 'string' && UUID_REGEX.test(complex_id)
+    if (!resolvedPropertyId && hasValidComplexId) {
+      resolvedPropertyId = await resolveOrCreatePropertyIdByComplex({
+        admin,
+        complexId: complex_id,
+        areaExclusive,
+      })
     }
     const canUseResolvedPropertyId =
       typeof resolvedPropertyId === 'string' &&
@@ -740,6 +909,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const normalizedFactors = normalizePredictionFactors(
+      (prediction as { factors?: unknown })?.factors
+    )
+
     // Persist only canonical property-level analyses (no scenario overrides).
     if (canUseResolvedPropertyId && shouldPersistAnalysis) {
       const persistedPropertyId = resolvedPropertyId as string
@@ -770,8 +943,11 @@ export async function POST(request: NextRequest) {
         const quality = await buildChamgabQuality(admin, {
           analysisId: null,
           propertyId: persistedPropertyId,
+          complexId: complex_id,
+          areaExclusive,
           chamgabPrice: prediction.chamgab_price,
           confidence: prediction.confidence,
+          factorCountOverride: normalizedFactors.length || null,
         })
         return NextResponse.json({
           analysis: prediction,
@@ -779,6 +955,19 @@ export async function POST(request: NextRequest) {
           quality,
           ...deriveChamgabQualityMeta(quality.quality_flags || [], null),
         })
+      }
+
+      let persistedFactorCount = 0
+      if (normalizedFactors.length > 0) {
+        try {
+          persistedFactorCount = await persistPriceFactors(
+            admin,
+            newAnalysis.id,
+            normalizedFactors
+          )
+        } catch (factorError) {
+          console.error('[Chamgab API] factor save error:', factorError)
+        }
       }
 
       await logEvent({
@@ -792,8 +981,11 @@ export async function POST(request: NextRequest) {
       const quality = await buildChamgabQuality(admin, {
         analysisId: newAnalysis.id,
         propertyId: persistedPropertyId,
+        complexId: complex_id,
+        areaExclusive,
         chamgabPrice: newAnalysis.chamgab_price,
         confidence: newAnalysis.confidence,
+        factorCountOverride: persistedFactorCount || null,
       })
       return NextResponse.json({
         analysis: newAnalysis,
@@ -817,8 +1009,11 @@ export async function POST(request: NextRequest) {
     const quality = await buildChamgabQuality(admin, {
       analysisId: null,
       propertyId: resolvedPropertyId,
+      complexId: complex_id,
+      areaExclusive,
       chamgabPrice: prediction.chamgab_price,
       confidence: prediction.confidence,
+      factorCountOverride: normalizedFactors.length || null,
     })
     return NextResponse.json({
       analysis: prediction,
@@ -868,6 +1063,7 @@ export async function GET(request: NextRequest) {
     const quality = await buildChamgabQuality(admin, {
       analysisId: analysis.id,
       propertyId,
+      factorCountOverride: null,
       chamgabPrice: analysis.chamgab_price,
       confidence: analysis.confidence,
     })

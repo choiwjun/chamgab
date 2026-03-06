@@ -20,9 +20,12 @@ export interface ChamgabQuality {
 interface BuildChamgabQualityParams {
   analysisId?: string | null
   propertyId?: string | null
+  complexId?: string | null
+  areaExclusive?: number | null
   chamgabPrice?: number | null
   confidence?: number | null
   factorTarget?: number
+  factorCountOverride?: number | null
   calibrationVersion?: string
 }
 
@@ -52,10 +55,79 @@ async function getFactorCount(
   return count ?? 0
 }
 
+async function resolveBenchmarkTarget(
+  admin: SupabaseClient,
+  params: {
+    propertyId?: string | null
+    complexId?: string | null
+    areaExclusive?: number | null
+  }
+): Promise<{ complexId: string | null; areaExclusive: number | null }> {
+  let complexId =
+    typeof params.complexId === 'string' && params.complexId.trim().length > 0
+      ? params.complexId.trim()
+      : null
+  let areaExclusive = toFiniteNumber(params.areaExclusive)
+
+  if ((!complexId || areaExclusive == null) && params.propertyId) {
+    const { data } = await admin
+      .from('properties')
+      .select('complex_id,area_exclusive')
+      .eq('id', params.propertyId)
+      .maybeSingle()
+
+    if (
+      !complexId &&
+      typeof data?.complex_id === 'string' &&
+      data.complex_id.trim()
+    ) {
+      complexId = data.complex_id.trim()
+    }
+    if (areaExclusive == null) {
+      areaExclusive = toFiniteNumber(data?.area_exclusive)
+    }
+  }
+
+  return { complexId, areaExclusive }
+}
+
 async function getLatestTransactionPrice(
   admin: SupabaseClient,
-  propertyId: string | null | undefined
+  params: {
+    propertyId?: string | null
+    complexId?: string | null
+    areaExclusive?: number | null
+  }
 ): Promise<number | null> {
+  const propertyId = params.propertyId
+  const benchmarkTarget = await resolveBenchmarkTarget(admin, params)
+
+  if (benchmarkTarget.complexId && benchmarkTarget.areaExclusive != null) {
+    const tolerance = Math.max(2.5, benchmarkTarget.areaExclusive * 0.05)
+    const { data, error } = await admin
+      .from('transactions')
+      .select('price,transaction_date,area_exclusive')
+      .eq('complex_id', benchmarkTarget.complexId)
+      .gte('area_exclusive', benchmarkTarget.areaExclusive - tolerance)
+      .lte('area_exclusive', benchmarkTarget.areaExclusive + tolerance)
+      .order('transaction_date', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (!error && data) {
+      const area = toFiniteNumber(data.area_exclusive)
+      const price = toFiniteNumber(data.price)
+      if (
+        price != null &&
+        price > 0 &&
+        area != null &&
+        Math.abs(area - benchmarkTarget.areaExclusive) <= tolerance
+      ) {
+        return price
+      }
+    }
+  }
+
   if (!propertyId) return null
 
   const { data, error } = await admin
@@ -123,9 +195,16 @@ export async function buildChamgabQuality(
       .trim()
       .slice(0, 64) || DEFAULT_CALIBRATION_VERSION
 
+  const factorCountOverride = toFiniteNumber(params.factorCountOverride)
   const [factorCount, latestTxPrice] = await Promise.all([
-    getFactorCount(admin, params.analysisId),
-    getLatestTransactionPrice(admin, params.propertyId),
+    factorCountOverride != null
+      ? Promise.resolve(Math.max(0, Math.trunc(factorCountOverride)))
+      : getFactorCount(admin, params.analysisId),
+    getLatestTransactionPrice(admin, {
+      propertyId: params.propertyId,
+      complexId: params.complexId,
+      areaExclusive: params.areaExclusive,
+    }),
   ])
 
   const chamgabPrice = toFiniteNumber(params.chamgabPrice)
