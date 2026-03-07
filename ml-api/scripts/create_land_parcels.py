@@ -286,8 +286,8 @@ def _iter_transaction_pages(
     page_size: int,
     max_rows: int,
 ) -> Iterator[List[Dict[str, Any]]]:
-    offset = 0
     fetched = 0
+    cursor_id: Optional[str] = None
     since_date = None
     if since_days > 0:
         since_date = (date.today() - timedelta(days=since_days)).isoformat()
@@ -296,23 +296,29 @@ def _iter_transaction_pages(
         query = (
             sb.table("land_transactions")
             .select(
-                "region_code,sido,sigungu,eupmyeondong,jibun,land_category,"
+                "id,region_code,sido,sigungu,eupmyeondong,jibun,land_category,"
                 "area_m2,price,price_per_m2,transaction_date"
             )
             .eq("is_cancelled", False)
             .eq("is_partial_sale", False)
-            .order("transaction_date", desc=False)
-            .range(offset, offset + page_size - 1)
+            .order("id", desc=False)
+            .range(0, page_size - 1)
         )
         if since_date:
             query = query.gte("transaction_date", since_date)
         if sigungu:
             query = query.eq("sigungu", sigungu)
+        if cursor_id:
+            query = query.gt("id", cursor_id)
 
         result = query.execute()
         rows = result.data or []
         if not rows:
             break
+
+        last_row_id = str(rows[-1].get("id") or "").strip()
+        if last_row_id:
+            cursor_id = last_row_id
 
         if max_rows > 0 and fetched + len(rows) > max_rows:
             rows = rows[: max_rows - fetched]
@@ -324,7 +330,6 @@ def _iter_transaction_pages(
             break
         if len(rows) < page_size:
             break
-        offset += page_size
 
 
 def aggregate_parcels(

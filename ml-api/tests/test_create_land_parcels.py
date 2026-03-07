@@ -3,7 +3,11 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from scripts.create_land_parcels import build_standard_pnu, parse_jibun_components
+from scripts.create_land_parcels import (
+    _iter_transaction_pages,
+    build_standard_pnu,
+    parse_jibun_components,
+)
 
 
 def test_parse_jibun_components_general_and_san() -> None:
@@ -93,3 +97,75 @@ def test_build_standard_pnu_resolves_compound_eupmyeondong() -> None:
     )
     assert reason is None
     assert pnu == "4882025326000120003"
+
+
+class _FakeQuery:
+    def __init__(self, pages, cursor_ref) -> None:
+        self._pages = pages
+        self._cursor_ref = cursor_ref
+
+    def select(self, *_args, **_kwargs):
+        return self
+
+    def eq(self, *_args, **_kwargs):
+        return self
+
+    def gte(self, *_args, **_kwargs):
+        return self
+
+    def order(self, *_args, **_kwargs):
+        return self
+
+    def range(self, *_args, **_kwargs):
+        return self
+
+    def gt(self, column, value):
+        assert column == "id"
+        self._cursor_ref["value"] = value
+        self._cursor_ref.setdefault("history", []).append(value)
+        return self
+
+    def execute(self):
+        cursor = self._cursor_ref["value"]
+        rows = self._pages.get(cursor, [])
+        return type("Resp", (), {"data": rows})()
+
+
+class _FakeSupabase:
+    def __init__(self, pages, cursor_ref) -> None:
+        self._pages = pages
+        self._cursor_ref = cursor_ref
+
+    def table(self, name):
+        assert name == "land_transactions"
+        return _FakeQuery(self._pages, self._cursor_ref)
+
+
+def test_iter_transaction_pages_uses_id_keyset_pagination() -> None:
+    cursor_ref = {"value": None}
+    pages = {
+        None: [
+            {"id": "a1", "transaction_date": "2025-01-01"},
+            {"id": "a2", "transaction_date": "2025-01-02"},
+        ],
+        "a2": [
+            {"id": "b1", "transaction_date": "2025-01-03"},
+        ],
+        "b1": [],
+    }
+    sb = _FakeSupabase(pages, cursor_ref)
+
+    result = list(
+        _iter_transaction_pages(
+            sb,
+            since_days=0,
+            sigungu="",
+            page_size=2,
+            max_rows=0,
+        )
+    )
+
+    assert len(result) == 2
+    assert [row["id"] for row in result[0]] == ["a1", "a2"]
+    assert [row["id"] for row in result[1]] == ["b1"]
+    assert cursor_ref["history"] == ["a2"]
