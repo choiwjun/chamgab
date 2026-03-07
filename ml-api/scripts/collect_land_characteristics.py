@@ -116,6 +116,36 @@ def default_reference_year() -> int:
     return max(2000, datetime.now().year - 1)
 
 
+def is_transient_source_error(exc: Exception) -> bool:
+    response = getattr(exc, "response", None)
+    status = int(getattr(response, "status_code", 0) or 0)
+    if status in {429, 500, 502, 503, 504}:
+        return True
+
+    lowered = str(exc).lower()
+    transient_markers = (
+        "timed out",
+        "timeout",
+        "connection aborted",
+        "connection reset",
+        "remote end closed",
+        "bad gateway",
+        "gateway timeout",
+        "service unavailable",
+        "transient http 429",
+        "transient http 500",
+        "transient http 502",
+        "transient http 503",
+        "transient http 504",
+        "http 429",
+        "http 500",
+        "http 502",
+        "http 503",
+        "http 504",
+    )
+    return any(marker in lowered for marker in transient_markers)
+
+
 @dataclass
 class ParcelRow:
     row_id: str
@@ -357,6 +387,8 @@ def fetch_land_characteristics(
     api_key: str,
     year: Optional[int] = None,
     timeout_sec: int = 12,
+    max_attempts: int = 3,
+    retry_base_sec: float = 1.2,
 ) -> Dict[str, Any]:
     url = os.environ.get(
         "LAND_CHARACTERISTICS_API_URL",
@@ -388,22 +420,44 @@ def fetch_land_characteristics(
         if year is not None:
             params["stdrYear"] = str(year)
 
-    response = requests.get(url, params=params, timeout=timeout_sec)
-    response.raise_for_status()
+    for attempt in range(1, max(1, max_attempts) + 1):
+        try:
+            response = requests.get(url, params=params, timeout=timeout_sec)
+            status = int(response.status_code or 0)
+            if status in {429, 500, 502, 503, 504}:
+                raise requests.HTTPError(
+                    f"transient HTTP {status}",
+                    response=response,
+                )
+            response.raise_for_status()
 
-    text = response.text.strip()
-    if not text:
-        return {}
+            text = response.text.strip()
+            if not text:
+                return {}
 
-    if text.startswith("<"):
-        raw = parse_xml_row(text)
-    else:
-        payload = json.loads(text)
-        raw = parse_json_row(payload)
-    if not raw:
-        return {}
+            if text.startswith("<"):
+                raw = parse_xml_row(text)
+            else:
+                payload = json.loads(text)
+                raw = parse_json_row(payload)
+            if not raw:
+                return {}
 
-    return map_characteristics_row(raw)
+            return map_characteristics_row(raw)
+        except Exception as exc:  # noqa: BLE001
+            transient = is_transient_source_error(exc)
+            if attempt < max(1, max_attempts) and transient:
+                time.sleep(min(8.0, retry_base_sec * (2 ** (attempt - 1))))
+                continue
+            if transient:
+                LOG.warning(
+                    "Transient land characteristics error treated as missing pnu=%s year=%s err=%s",
+                    pnu,
+                    year,
+                    exc,
+                )
+                return {}
+            raise
 
 
 def upsert_characteristics(

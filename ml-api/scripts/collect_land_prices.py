@@ -106,6 +106,36 @@ def default_reference_year() -> int:
     return max(2000, datetime.now().year - 1)
 
 
+def is_transient_vworld_error(exc: Exception) -> bool:
+    response = getattr(exc, "response", None)
+    status = int(getattr(response, "status_code", 0) or 0)
+    if status in {429, 500, 502, 503, 504}:
+        return True
+
+    lowered = str(exc).lower()
+    transient_markers = (
+        "timed out",
+        "timeout",
+        "connection aborted",
+        "connection reset",
+        "remote end closed",
+        "bad gateway",
+        "gateway timeout",
+        "service unavailable",
+        "transient http 429",
+        "transient http 500",
+        "transient http 502",
+        "transient http 503",
+        "transient http 504",
+        "http 429",
+        "http 500",
+        "http 502",
+        "http 503",
+        "http 504",
+    )
+    return any(marker in lowered for marker in transient_markers)
+
+
 @dataclass
 class ParcelRow:
     row_id: str
@@ -331,17 +361,6 @@ def fetch_official_price(
     if domain:
         params["domain"] = domain
 
-    transient_markers = (
-        "timed out",
-        "timeout",
-        "connection aborted",
-        "connection reset",
-        "remote end closed",
-        "bad gateway",
-        "gateway timeout",
-        "service unavailable",
-    )
-
     for attempt in range(1, max(1, max_attempts) + 1):
         try:
             response = requests.get(url, params=params, timeout=timeout_sec)
@@ -361,8 +380,7 @@ def fetch_official_price(
 
             return parse_price_payload(payload)
         except Exception as exc:  # noqa: BLE001
-            lowered = str(exc).lower()
-            transient = any(marker in lowered for marker in transient_markers)
+            transient = is_transient_vworld_error(exc)
             if attempt < max(1, max_attempts) and transient:
                 time.sleep(min(8.0, retry_base_sec * (2 ** (attempt - 1))))
                 continue
