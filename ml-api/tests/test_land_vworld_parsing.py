@@ -88,14 +88,15 @@ def test_fetch_official_price_treats_http_502_as_missing(monkeypatch) -> None:
     monkeypatch.setattr("scripts.collect_land_prices.requests.get", _fake_get)
     monkeypatch.setattr("scripts.collect_land_prices.time.sleep", lambda *_args, **_kwargs: None)
 
-    price = fetch_official_price(
+    result = fetch_official_price(
         pnu="1111010100100010000",
         year=2025,
         api_key="test-key",
         max_attempts=2,
     )
 
-    assert price is None
+    assert result.price is None
+    assert result.missing_reason == "transient"
 
 
 def test_fetch_land_characteristics_treats_http_502_as_missing(monkeypatch) -> None:
@@ -108,11 +109,12 @@ def test_fetch_land_characteristics_treats_http_502_as_missing(monkeypatch) -> N
         lambda *_args, **_kwargs: None,
     )
 
-    mapped = fetch_land_characteristics(
+    result = fetch_land_characteristics(
         pnu="1111010100100010000",
         year=2025,
         api_key="test-key",
         max_attempts=2,
     )
 
-    assert mapped == {}
+    assert result.mapped == {}
+    assert result.missing_reason == "transient"

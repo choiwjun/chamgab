@@ -19,6 +19,7 @@ logger = logging.getLogger("check_land_collection_status")
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPORTS_DIR = PROJECT_ROOT / "reports"
+LOGS_DIR = PROJECT_ROOT / "logs"
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 PNU_RE = re.compile(r"^\d{19}$")
 SIDO_PREFIX_GROUPS: tuple[tuple[str, ...], ...] = (
@@ -68,6 +69,17 @@ def _save_report(report: Dict[str, Any]) -> None:
     payload = json.dumps(report, ensure_ascii=False, indent=2)
     latest.write_text(payload, encoding="utf-8")
     history.write_text(payload, encoding="utf-8")
+
+
+def _load_summary_json(path: Path) -> Dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return payload if isinstance(payload, dict) else {}
+    except Exception as exc:
+        logger.warning("failed reading summary %s: %s", path, exc)
+        return {}
 
 
 def _to_float(value: Any) -> float | None:
@@ -419,6 +431,10 @@ def run_checks(args: argparse.Namespace) -> tuple[bool, Dict[str, Any]]:
         missing_eupmyeondong_count=missing_eupmyeondong_count,
         missing_jibun_count=missing_jibun_count,
     )
+    latest_prices_run = _load_summary_json(LOGS_DIR / "collect_land_prices_latest.json")
+    latest_characteristics_run = _load_summary_json(
+        LOGS_DIR / "collect_land_characteristics_latest.json"
+    )
 
     full_thresholds = {
         "min_sido_coverage": args.min_sido_coverage,
@@ -543,6 +559,10 @@ def run_checks(args: argparse.Namespace) -> tuple[bool, Dict[str, Any]]:
         },
         "checks": checks,
         "contract_checks": contract_checks,
+        "collector_runs": {
+            "land_prices": latest_prices_run,
+            "land_characteristics": latest_characteristics_run,
+        },
     }
 
     return (not hard_fail), report

@@ -30,6 +30,7 @@ from supabase import create_client
 
 LOG = logging.getLogger("collect_land_characteristics")
 STATE_PATH = Path("logs/collect_land_characteristics_state.json")
+LATEST_SUMMARY_PATH = Path("logs/collect_land_characteristics_latest.json")
 PNU_RE = re.compile(r"^\d{19}$")
 
 
@@ -154,6 +155,12 @@ class ParcelRow:
     sigungu: str
 
 
+@dataclass
+class LandCharacteristicsFetchResult:
+    mapped: Dict[str, Any]
+    missing_reason: Optional[str] = None
+
+
 def _state_key(sigungu: Optional[str]) -> str:
     return sigungu or "*"
 
@@ -176,6 +183,14 @@ def _save_state(path: Path, payload: Dict[str, Any]) -> None:
         json.dumps(payload, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+
+
+def _save_latest_summary(summary: Dict[str, Any]) -> None:
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    history_path = Path("logs") / f"collect_land_characteristics_{stamp}.json"
+    payload = json.dumps(summary, ensure_ascii=False, indent=2)
+    history_path.write_text(payload, encoding="utf-8")
+    LATEST_SUMMARY_PATH.write_text(payload, encoding="utf-8")
 
 
 def collect_target_parcels(
@@ -389,7 +404,7 @@ def fetch_land_characteristics(
     timeout_sec: int = 12,
     max_attempts: int = 3,
     retry_base_sec: float = 1.2,
-) -> Dict[str, Any]:
+) -> LandCharacteristicsFetchResult:
     url = os.environ.get(
         "LAND_CHARACTERISTICS_API_URL",
         "https://api.vworld.kr/ned/data/getLandCharacteristics",
@@ -433,7 +448,7 @@ def fetch_land_characteristics(
 
             text = response.text.strip()
             if not text:
-                return {}
+                return LandCharacteristicsFetchResult(mapped={}, missing_reason="no_data")
 
             if text.startswith("<"):
                 raw = parse_xml_row(text)
@@ -441,9 +456,9 @@ def fetch_land_characteristics(
                 payload = json.loads(text)
                 raw = parse_json_row(payload)
             if not raw:
-                return {}
+                return LandCharacteristicsFetchResult(mapped={}, missing_reason="no_data")
 
-            return map_characteristics_row(raw)
+            return LandCharacteristicsFetchResult(mapped=map_characteristics_row(raw))
         except Exception as exc:  # noqa: BLE001
             transient = is_transient_source_error(exc)
             if attempt < max(1, max_attempts) and transient:
@@ -456,7 +471,10 @@ def fetch_land_characteristics(
                     year,
                     exc,
                 )
-                return {}
+                return LandCharacteristicsFetchResult(
+                    mapped={},
+                    missing_reason="transient",
+                )
             raise
 
 
@@ -578,23 +596,29 @@ def main() -> None:
     total = 0
     success = 0
     missing = 0
+    missing_no_data = 0
+    missing_transient = 0
     failed = 0
 
     for parcel in parcels:
         total += 1
         try:
-            mapped = fetch_land_characteristics(
+            result = fetch_land_characteristics(
                 pnu=parcel.pnu,
                 api_key=source_api_key,
                 year=args.year,
             )
-            if not mapped:
+            if not result.mapped:
                 missing += 1
+                if result.missing_reason == "transient":
+                    missing_transient += 1
+                else:
+                    missing_no_data += 1
             else:
                 upsert_characteristics(
                     supabase=supabase,
                     parcel_id=parcel.parcel_id,
-                    mapped=mapped,
+                    mapped=result.mapped,
                     fallback_price_year=args.year,
                     dry_run=args.dry_run,
                 )
@@ -608,10 +632,12 @@ def main() -> None:
 
         if total % 100 == 0:
             LOG.info(
-                "Progress total=%d success=%d missing=%d failed=%d",
+                "Progress total=%d success=%d missing=%d (no_data=%d transient=%d) failed=%d",
                 total,
                 success,
                 missing,
+                missing_no_data,
+                missing_transient,
                 failed,
             )
 
@@ -634,11 +660,41 @@ def main() -> None:
             }
         _save_state(STATE_PATH, state)
 
+    summary = {
+        "generated_at": datetime.now().isoformat(),
+        "scope": {
+            "year": args.year,
+            "sigungu": args.sigungu or None,
+            "limit": args.limit,
+            "dry_run": bool(args.dry_run),
+            "resume": bool(args.resume),
+        },
+        "selection": {
+            "selected": len(parcels),
+            "next_cursor": next_cursor,
+            "reached_end": reached_end,
+        },
+        "result": {
+            "total": total,
+            "success": success,
+            "missing": missing,
+            "missing_no_data": missing_no_data,
+            "missing_transient": missing_transient,
+            "failed": failed,
+            "success_rate_pct": round((success / total * 100.0), 2) if total else 0.0,
+            "missing_rate_pct": round((missing / total * 100.0), 2) if total else 0.0,
+            "failed_rate_pct": round((failed / total * 100.0), 2) if total else 0.0,
+        },
+    }
+    _save_latest_summary(summary)
+
     LOG.info(
-        "Done collect_land_characteristics total=%d success=%d missing=%d failed=%d",
+        "Done collect_land_characteristics total=%d success=%d missing=%d (no_data=%d transient=%d) failed=%d",
         total,
         success,
         missing,
+        missing_no_data,
+        missing_transient,
         failed,
     )
     failed_rate_pct = (failed / total * 100.0) if total > 0 else 0.0

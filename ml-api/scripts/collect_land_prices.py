@@ -30,6 +30,7 @@ from supabase import create_client
 
 LOG = logging.getLogger("collect_land_prices")
 STATE_PATH = Path("logs/collect_land_prices_state.json")
+LATEST_SUMMARY_PATH = Path("logs/collect_land_prices_latest.json")
 PNU_RE = re.compile(r"^\d{19}$")
 
 
@@ -144,6 +145,12 @@ class ParcelRow:
     sigungu: str
 
 
+@dataclass
+class PriceFetchResult:
+    price: Optional[int]
+    missing_reason: Optional[str] = None
+
+
 def _state_key(year: int, sigungu: Optional[str]) -> str:
     return f"{year}:{sigungu or '*'}"
 
@@ -166,6 +173,14 @@ def _save_state(path: Path, payload: Dict[str, Any]) -> None:
         json.dumps(payload, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+
+
+def _save_latest_summary(summary: Dict[str, Any]) -> None:
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    history_path = Path("logs") / f"collect_land_prices_{stamp}.json"
+    payload = json.dumps(summary, ensure_ascii=False, indent=2)
+    history_path.write_text(payload, encoding="utf-8")
+    LATEST_SUMMARY_PATH.write_text(payload, encoding="utf-8")
 
 
 def _parse_int(value: Any) -> Optional[int]:
@@ -342,7 +357,7 @@ def fetch_official_price(
     timeout_sec: int = 12,
     max_attempts: int = 3,
     retry_base_sec: float = 1.2,
-) -> Optional[int]:
+) -> PriceFetchResult:
     url = os.environ.get(
         "VWORLD_LAND_PRICE_API_URL",
         "https://api.vworld.kr/ned/data/getLandCharacteristics",
@@ -378,7 +393,10 @@ def fetch_official_price(
             else:
                 payload = json.loads(response.text)
 
-            return parse_price_payload(payload)
+            price = parse_price_payload(payload)
+            if price is None:
+                return PriceFetchResult(price=None, missing_reason="no_data")
+            return PriceFetchResult(price=price)
         except Exception as exc:  # noqa: BLE001
             transient = is_transient_vworld_error(exc)
             if attempt < max(1, max_attempts) and transient:
@@ -391,7 +409,7 @@ def fetch_official_price(
                     year,
                     exc,
                 )
-                return None
+                return PriceFetchResult(price=None, missing_reason="transient")
             raise
 
 
@@ -485,24 +503,30 @@ def main() -> None:
     total = 0
     success = 0
     missing = 0
+    missing_no_data = 0
+    missing_transient = 0
     failed = 0
 
     for parcel in parcels:
         total += 1
         try:
-            price = fetch_official_price(
+            result = fetch_official_price(
                 pnu=parcel.pnu,
                 year=args.year,
                 api_key=vworld_key,
             )
-            if price is None:
+            if result.price is None:
                 missing += 1
+                if result.missing_reason == "transient":
+                    missing_transient += 1
+                else:
+                    missing_no_data += 1
             else:
                 upsert_price(
                     supabase=supabase,
                     parcel_id=parcel.parcel_id,
                     year=args.year,
-                    official_price_per_m2=price,
+                    official_price_per_m2=result.price,
                     dry_run=args.dry_run,
                 )
                 success += 1
@@ -515,10 +539,12 @@ def main() -> None:
 
         if total % 100 == 0:
             LOG.info(
-                "Progress total=%d success=%d missing=%d failed=%d",
+                "Progress total=%d success=%d missing=%d (no_data=%d transient=%d) failed=%d",
                 total,
                 success,
                 missing,
+                missing_no_data,
+                missing_transient,
                 failed,
             )
 
@@ -541,11 +567,41 @@ def main() -> None:
             }
         _save_state(STATE_PATH, state)
 
+    summary = {
+        "generated_at": datetime.now().isoformat(),
+        "scope": {
+            "year": args.year,
+            "sigungu": args.sigungu or None,
+            "limit": args.limit,
+            "dry_run": bool(args.dry_run),
+            "resume": bool(args.resume),
+        },
+        "selection": {
+            "selected": len(parcels),
+            "next_cursor": next_cursor,
+            "reached_end": reached_end,
+        },
+        "result": {
+            "total": total,
+            "success": success,
+            "missing": missing,
+            "missing_no_data": missing_no_data,
+            "missing_transient": missing_transient,
+            "failed": failed,
+            "success_rate_pct": round((success / total * 100.0), 2) if total else 0.0,
+            "missing_rate_pct": round((missing / total * 100.0), 2) if total else 0.0,
+            "failed_rate_pct": round((failed / total * 100.0), 2) if total else 0.0,
+        },
+    }
+    _save_latest_summary(summary)
+
     LOG.info(
-        "Done collect_land_prices total=%d success=%d missing=%d failed=%d",
+        "Done collect_land_prices total=%d success=%d missing=%d (no_data=%d transient=%d) failed=%d",
         total,
         success,
         missing,
+        missing_no_data,
+        missing_transient,
         failed,
     )
     failed_rate_pct = (failed / total * 100.0) if total > 0 else 0.0
