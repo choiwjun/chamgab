@@ -439,6 +439,43 @@ def build_parcel_records(
     return records
 
 
+def _merge_record_into(existing: Dict[str, Any], incoming: Dict[str, Any]) -> None:
+    existing_date = _normalized(existing.get("latest_transaction_date"))
+    incoming_date = _normalized(incoming.get("latest_transaction_date"))
+    if incoming_date and incoming_date > existing_date:
+        existing["latest_transaction_date"] = incoming.get("latest_transaction_date")
+        existing["latest_transaction_price"] = incoming.get("latest_transaction_price")
+        existing["latest_price_per_m2"] = incoming.get("latest_price_per_m2")
+
+    for key in ("sido", "sigungu", "eupmyeondong", "jibun"):
+        if not _normalized(existing.get(key)) and _normalized(incoming.get(key)):
+            existing[key] = incoming.get(key)
+
+    if (existing.get("land_category") in (None, "", "미상")) and _normalized(incoming.get("land_category")):
+        existing["land_category"] = incoming.get("land_category")
+
+    if existing.get("area_m2") is None and incoming.get("area_m2") is not None:
+        existing["area_m2"] = incoming.get("area_m2")
+
+
+def dedupe_parcel_records(records: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], int]:
+    deduped_by_pnu: Dict[str, Dict[str, Any]] = {}
+    merged = 0
+
+    for record in records:
+        pnu = _normalized(record.get("pnu"))
+        if not pnu:
+            continue
+        existing = deduped_by_pnu.get(pnu)
+        if not existing:
+            deduped_by_pnu[pnu] = dict(record)
+            continue
+        _merge_record_into(existing, record)
+        merged += 1
+
+    return list(deduped_by_pnu.values()), merged
+
+
 def upsert_parcels(
     sb,
     records: List[Dict[str, Any]],
@@ -655,7 +692,7 @@ def main() -> int:
                 },
                 "source": {"rows": 0, "skipped_rows": 0},
                 "contract_counters": quality_counters,
-                "records": {"prepared": 0, "upsert_success": 0, "upsert_failed": 0},
+                "records": {"prepared": 0, "deduped": 0, "duplicate_pnu_merged": 0, "upsert_success": 0, "upsert_failed": 0},
             }
         )
         return 0
@@ -665,6 +702,7 @@ def main() -> int:
         bjdong_codes=bjdong_codes,
         quality_counters=quality_counters,
     )
+    deduped_records, merged_duplicates = dedupe_parcel_records(records)
     contract_fail_count = sum(
         quality_counters.get(key, 0)
         for key in (
@@ -678,10 +716,12 @@ def main() -> int:
         )
     )
     logger.info(
-        "aggregated rows=%s into parcels=%s (records=%s, skipped_rows=%s, contract_skipped=%s)",
+        "aggregated rows=%s into parcels=%s (records=%s, deduped=%s, duplicate_pnu_merged=%s, skipped_rows=%s, contract_skipped=%s)",
         f"{fetched_rows:,}",
         f"{len(parcel_map):,}",
         f"{len(records):,}",
+        f"{len(deduped_records):,}",
+        f"{merged_duplicates:,}",
         f"{skipped_rows:,}",
         f"{contract_fail_count:,}",
     )
@@ -692,7 +732,7 @@ def main() -> int:
 
     success, failed = upsert_parcels(
         sb,
-        records,
+        deduped_records,
         dry_run=args.dry_run,
         batch_size=args.batch_size,
         sleep_ms=args.sleep_ms,
@@ -716,6 +756,8 @@ def main() -> int:
             "contract_counters": quality_counters,
             "records": {
                 "prepared": len(records),
+                "deduped": len(deduped_records),
+                "duplicate_pnu_merged": merged_duplicates,
                 "upsert_success": success,
                 "upsert_failed": failed,
             },
@@ -723,7 +765,7 @@ def main() -> int:
     )
 
     # Hard failure only when nothing could be saved in a non-dry run.
-    if not args.dry_run and records and success == 0:
+    if not args.dry_run and deduped_records and success == 0:
         logger.error("all upserts failed")
         return 3
     return 0

@@ -6,6 +6,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from scripts.create_land_parcels import (
     _iter_transaction_pages,
     build_standard_pnu,
+    dedupe_parcel_records,
     parse_jibun_components,
 )
 
@@ -169,3 +170,39 @@ def test_iter_transaction_pages_uses_id_keyset_pagination() -> None:
     assert [row["id"] for row in result[0]] == ["a1", "a2"]
     assert [row["id"] for row in result[1]] == ["b1"]
     assert cursor_ref["history"] == ["a2"]
+
+
+def test_dedupe_parcel_records_merges_duplicate_pnu() -> None:
+    deduped, merged = dedupe_parcel_records(
+        [
+            {
+                "pnu": "1111111111111111111",
+                "sido": "서울특별시",
+                "sigungu": "강남구",
+                "eupmyeondong": "역삼동",
+                "jibun": "123-4",
+                "land_category": "대",
+                "area_m2": 100.0,
+                "latest_transaction_price": 100000000,
+                "latest_transaction_date": "2025-01-01",
+                "latest_price_per_m2": 1000000,
+            },
+            {
+                "pnu": "1111111111111111111",
+                "sido": "서울특별시",
+                "sigungu": "강남구",
+                "eupmyeondong": "역삼동",
+                "jibun": "123-4",
+                "land_category": "대",
+                "area_m2": 100.0,
+                "latest_transaction_price": 120000000,
+                "latest_transaction_date": "2025-02-01",
+                "latest_price_per_m2": 1200000,
+            },
+        ]
+    )
+
+    assert merged == 1
+    assert len(deduped) == 1
+    assert deduped[0]["latest_transaction_date"] == "2025-02-01"
+    assert deduped[0]["latest_transaction_price"] == 120000000
