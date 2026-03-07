@@ -80,6 +80,10 @@ SCHEDULER_JOB_ENV_REQUIREMENTS: Dict[str, tuple[tuple[str, ...], ...]] = {
         ("SUPABASE_SERVICE_KEY",),
         ("KAKAO_REST_API_KEY",),
     ),
+    "land_coverage_backfill": (
+        ("SUPABASE_URL",),
+        ("SUPABASE_SERVICE_KEY",),
+    ),
     "fix_complex_names": (
         ("SUPABASE_URL",),
         ("SUPABASE_SERVICE_KEY",),
@@ -279,6 +283,35 @@ class DataScheduler:
             self._write_summary_json(self._preflight_state_path, payload)
         except Exception as exc:
             print(f"[scheduler] failed to persist preflight state: {exc}")
+        try:
+            self._reconcile_preflight_jobs()
+        except Exception as exc:
+            print(f"[scheduler] failed to reconcile preflight jobs: {exc}")
+
+    def _reconcile_preflight_jobs(self) -> None:
+        if not self.is_running:
+            return
+
+        launch_gate_job_id = "check_launch_readiness_gate"
+        launch_gate_enabled = launch_gate_job_id not in self.disabled_jobs
+        launch_gate_job = self.scheduler.get_job(launch_gate_job_id)
+
+        if launch_gate_enabled and launch_gate_job is None:
+            gate_check_hour = self._env_hour("CHECK_LAUNCH_READINESS_GATE_CRON_HOUR", 6)
+            gate_check_minute = self._env_minute("CHECK_LAUNCH_READINESS_GATE_CRON_MINUTE", 30)
+            self.scheduler.add_job(
+                self.run_now,
+                CronTrigger(hour=gate_check_hour, minute=gate_check_minute),
+                id=launch_gate_job_id,
+                name="check launch readiness gate",
+                replace_existing=True,
+                coalesce=True,
+                max_instances=1,
+                misfire_grace_time=3600,
+                args=["check_launch_readiness_gate"],
+            )
+        elif not launch_gate_enabled and launch_gate_job is not None:
+            self.scheduler.remove_job(launch_gate_job_id)
 
     def _should_register_job(self, job_type: str) -> bool:
         disabled = self.disabled_jobs.get(job_type)
@@ -372,6 +405,24 @@ class DataScheduler:
 
     def _should_enforce_land_daily_once(self) -> bool:
         return self._env_bool("LAND_COLLECTION_ENFORCE_DAILY_ONCE", True)
+
+    def _has_any_env(self, *keys: str) -> bool:
+        for key in keys:
+            value = (os.getenv(key) or "").strip()
+            if value:
+                return True
+        return False
+
+    def _default_land_reference_year(self) -> int:
+        return max(2000, datetime.now().year - 1)
+
+    def _resolve_land_reference_year(self, env_key: str) -> int:
+        return self._env_int(
+            env_key,
+            self._default_land_reference_year(),
+            min_value=2000,
+            max_value=max(2000, datetime.now().year),
+        )
 
     def _job_ran_today(self, job_type: str) -> tuple[bool, Optional[str]]:
         status = self.last_job_status_by_type.get(job_type)
@@ -987,6 +1038,14 @@ class DataScheduler:
             land_characteristics_sigungu = (
                 os.getenv("LAND_CHARACTERISTICS_SIGUNGU") or ""
             ).strip()
+            land_locations_in_daily = self._env_bool("LAND_LOCATIONS_INCLUDE_IN_DAILY", True)
+            land_location_sigungu = (os.getenv("LAND_LOCATION_SIGUNGU") or "").strip()
+            land_location_limit = self._env_int("LAND_LOCATION_CHUNK_LIMIT", 500, min_value=50)
+            land_location_sleep_ms = self._env_int("LAND_LOCATION_SLEEP_MS", 180, min_value=0)
+            land_location_timeout_sec = self._env_int("LAND_LOCATION_TIMEOUT_SEC", 12, min_value=3)
+            land_location_job_timeout = self._env_int(
+                "LAND_LOCATION_JOB_TIMEOUT_SEC", 3600, min_value=300
+            )
             land_parcels_since_days = self._env_int("LAND_PARCELS_SINCE_DAYS", 180, min_value=0)
             land_parcels_page_size = self._env_int("LAND_PARCELS_PAGE_SIZE", 1000, min_value=100)
             land_parcels_batch_size = self._env_int("LAND_PARCELS_BATCH_SIZE", 400, min_value=50)
@@ -1095,9 +1154,37 @@ class DataScheduler:
                 raise RuntimeError("link_land_transactions_parcel_id failed")
             step_results.append("link_land_transactions_parcel_id")
 
+            if land_locations_in_daily:
+                location_args = [
+                    "--limit",
+                    str(land_location_limit),
+                    "--resume",
+                    "--sleep-ms",
+                    str(land_location_sleep_ms),
+                    "--timeout-sec",
+                    str(land_location_timeout_sec),
+                ]
+                if land_location_sigungu:
+                    location_args.extend(["--sigungu", land_location_sigungu])
+                ok = await self._run_script(
+                    "scripts.collect_land_parcel_locations",
+                    args=location_args,
+                    timeout=land_location_job_timeout,
+                )
+                if not ok:
+                    self.last_land_collection_ok = False
+                    self.last_land_collection_error = "collect_land_parcel_locations failed"
+                    raise RuntimeError("collect_land_parcel_locations failed")
+                step_results.append("collect_land_parcel_locations")
+
+            land_price_year = self._resolve_land_reference_year("LAND_PRICE_YEAR")
+            land_characteristics_year = self._resolve_land_reference_year(
+                "LAND_CHARACTERISTICS_YEAR"
+            )
+
             price_args = [
                 "--year",
-                str(datetime.now().year),
+                str(land_price_year),
                 "--limit",
                 str(land_price_limit),
                 "--resume",
@@ -1118,6 +1205,8 @@ class DataScheduler:
             step_results.append("collect_land_prices")
 
             characteristics_args = [
+                "--year",
+                str(land_characteristics_year),
                 "--limit",
                 str(land_characteristics_limit),
                 "--resume",
@@ -1144,6 +1233,395 @@ class DataScheduler:
                     LOGS_DIR / "land_tx_parcel_link_latest.json"
                 ),
             }
+        finally:
+            self.last_land_collection_finished_at = datetime.now().isoformat()
+
+    async def land_coverage_backfill(self) -> None:
+        job_id = f"land_coverage_backfill_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        self.last_land_collection_job = job_id
+        self.last_land_collection_ok = None
+        self.last_land_collection_error = None
+        self.last_land_collection_finished_at = None
+
+        continue_on_failure = self._env_bool(
+            "LAND_COVERAGE_BACKFILL_CONTINUE_ON_FAILURE", False
+        )
+        sigungu = (os.getenv("LAND_COVERAGE_BACKFILL_SIGUNGU") or "").strip()
+        summary: Dict[str, Any] = {
+            "generated_at": datetime.now().isoformat(),
+            "job_id": job_id,
+            "mode": "apply",
+            "warnings": [],
+            "steps": [],
+            "config": {
+                "sigungu": sigungu or None,
+                "continue_on_failure": continue_on_failure,
+                "land_price_year": self._resolve_land_reference_year("LAND_PRICE_YEAR"),
+                "land_characteristics_year": self._resolve_land_reference_year(
+                    "LAND_CHARACTERISTICS_YEAR"
+                ),
+            },
+        }
+
+        async def _run_step(
+            *,
+            step_name: str,
+            module: str,
+            args: list[str],
+            timeout: int,
+            required: bool = True,
+        ) -> None:
+            started_at = datetime.now().isoformat()
+            ok = await self._run_script(module, args=args, timeout=timeout)
+            finished_at = datetime.now().isoformat()
+            summary["steps"].append(
+                {
+                    "step": step_name,
+                    "module": module,
+                    "args": args,
+                    "ok": ok,
+                    "required": required,
+                    "started_at": started_at,
+                    "finished_at": finished_at,
+                }
+            )
+            if ok:
+                return
+
+            message = f"{step_name} failed"
+            if not required or continue_on_failure:
+                summary["warnings"].append(message)
+                return
+            raise RuntimeError(message)
+
+        def _skip_step(step_name: str, reason: str) -> None:
+            summary["steps"].append(
+                {
+                    "step": step_name,
+                    "skipped": True,
+                    "reason": reason,
+                    "finished_at": datetime.now().isoformat(),
+                }
+            )
+            summary["warnings"].append(f"{step_name} skipped: {reason}")
+
+        try:
+            run_parcels = self._env_bool("LAND_COVERAGE_BACKFILL_RUN_CREATE_PARCELS", True)
+            run_link = self._env_bool("LAND_COVERAGE_BACKFILL_RUN_LINK_TRANSACTIONS", True)
+            run_locations = self._env_bool("LAND_COVERAGE_BACKFILL_RUN_LOCATIONS", True)
+            run_prices = self._env_bool("LAND_COVERAGE_BACKFILL_RUN_PRICES", True)
+            run_characteristics = self._env_bool(
+                "LAND_COVERAGE_BACKFILL_RUN_CHARACTERISTICS", True
+            )
+            run_status_check = self._env_bool(
+                "LAND_COVERAGE_BACKFILL_RUN_STATUS_CHECK", True
+            )
+
+            land_price_year = int(summary["config"]["land_price_year"])
+            land_characteristics_year = int(summary["config"]["land_characteristics_year"])
+
+            if run_parcels:
+                parcels_since_days = self._env_int(
+                    "LAND_COVERAGE_BACKFILL_PARCELS_SINCE_DAYS",
+                    self._env_int("LAND_PARCELS_SINCE_DAYS", 180, min_value=0),
+                    min_value=0,
+                )
+                parcels_page_size = self._env_int(
+                    "LAND_COVERAGE_BACKFILL_PARCELS_PAGE_SIZE",
+                    self._env_int("LAND_PARCELS_PAGE_SIZE", 1000, min_value=100),
+                    min_value=100,
+                )
+                parcels_batch_size = self._env_int(
+                    "LAND_COVERAGE_BACKFILL_PARCELS_BATCH_SIZE",
+                    self._env_int("LAND_PARCELS_BATCH_SIZE", 400, min_value=50),
+                    min_value=50,
+                )
+                parcels_sleep_ms = self._env_int(
+                    "LAND_COVERAGE_BACKFILL_PARCELS_SLEEP_MS",
+                    self._env_int("LAND_PARCELS_SLEEP_MS", 30, min_value=0),
+                    min_value=0,
+                )
+                parcels_max_rows = self._env_int(
+                    "LAND_COVERAGE_BACKFILL_PARCELS_MAX_ROWS",
+                    self._env_int("LAND_PARCELS_MAX_ROWS", 0, min_value=0),
+                    min_value=0,
+                )
+                parcels_full_scan = self._env_bool(
+                    "LAND_COVERAGE_BACKFILL_PARCELS_FULL_SCAN",
+                    self._env_bool("LAND_PARCELS_FULL_SCAN", True),
+                )
+                parcels_timeout = self._env_int(
+                    "LAND_COVERAGE_BACKFILL_PARCELS_TIMEOUT_SEC",
+                    self._env_int("LAND_PARCELS_TIMEOUT_SEC", 7200, min_value=300),
+                    min_value=300,
+                )
+                parcel_args = [
+                    "--since-days",
+                    str(parcels_since_days),
+                    "--page-size",
+                    str(parcels_page_size),
+                    "--batch-size",
+                    str(parcels_batch_size),
+                    "--sleep-ms",
+                    str(parcels_sleep_ms),
+                ]
+                if sigungu:
+                    parcel_args.extend(["--sigungu", sigungu])
+                if parcels_max_rows > 0:
+                    parcel_args.extend(["--max-rows", str(parcels_max_rows)])
+                if parcels_full_scan:
+                    parcel_args.append("--full-scan")
+                await _run_step(
+                    step_name="create_land_parcels",
+                    module="scripts.create_land_parcels",
+                    args=parcel_args,
+                    timeout=parcels_timeout,
+                )
+            else:
+                _skip_step("create_land_parcels", "disabled_by_env")
+
+            if run_link:
+                link_since_days = self._env_int(
+                    "LAND_COVERAGE_BACKFILL_LINK_SINCE_DAYS",
+                    self._env_int("LAND_TX_PARCEL_LINK_SINCE_DAYS", 0, min_value=0),
+                    min_value=0,
+                )
+                link_tx_page_size = self._env_int(
+                    "LAND_COVERAGE_BACKFILL_LINK_TX_PAGE_SIZE",
+                    self._env_int("LAND_TX_PARCEL_LINK_TX_PAGE_SIZE", 2000, min_value=200),
+                    min_value=200,
+                )
+                link_parcel_page_size = self._env_int(
+                    "LAND_COVERAGE_BACKFILL_LINK_PARCEL_PAGE_SIZE",
+                    self._env_int("LAND_TX_PARCEL_LINK_PARCEL_PAGE_SIZE", 2000, min_value=200),
+                    min_value=200,
+                )
+                link_update_batch_size = self._env_int(
+                    "LAND_COVERAGE_BACKFILL_LINK_UPDATE_BATCH_SIZE",
+                    self._env_int("LAND_TX_PARCEL_LINK_UPDATE_BATCH_SIZE", 200, min_value=20),
+                    min_value=20,
+                )
+                link_max_rows = self._env_int(
+                    "LAND_COVERAGE_BACKFILL_LINK_MAX_ROWS",
+                    self._env_int("LAND_TX_PARCEL_LINK_MAX_ROWS", 5000, min_value=0),
+                    min_value=0,
+                )
+                link_sleep_ms = self._env_int(
+                    "LAND_COVERAGE_BACKFILL_LINK_SLEEP_MS",
+                    self._env_int("LAND_TX_PARCEL_LINK_SLEEP_MS", 0, min_value=0),
+                    min_value=0,
+                )
+                link_timeout = self._env_int(
+                    "LAND_COVERAGE_BACKFILL_LINK_TIMEOUT_SEC",
+                    self._env_int("LAND_TX_PARCEL_LINK_TIMEOUT_SEC", 7200, min_value=300),
+                    min_value=300,
+                )
+                link_args = [
+                    "--since-days",
+                    str(link_since_days),
+                    "--tx-page-size",
+                    str(link_tx_page_size),
+                    "--parcel-page-size",
+                    str(link_parcel_page_size),
+                    "--update-batch-size",
+                    str(link_update_batch_size),
+                    "--sleep-ms",
+                    str(link_sleep_ms),
+                ]
+                if sigungu:
+                    link_args.extend(["--sigungu", sigungu])
+                if link_max_rows > 0:
+                    link_args.extend(["--max-rows", str(link_max_rows)])
+                await _run_step(
+                    step_name="link_land_transactions_parcel_id",
+                    module="scripts.link_land_transactions_parcel_id",
+                    args=link_args,
+                    timeout=link_timeout,
+                )
+                summary["land_tx_parcel_link_summary"] = self._load_summary_json(
+                    LOGS_DIR / "land_tx_parcel_link_latest.json"
+                )
+            else:
+                _skip_step("link_land_transactions_parcel_id", "disabled_by_env")
+
+            if run_locations:
+                if not self._has_any_env("KAKAO_REST_API_KEY"):
+                    _skip_step("collect_land_parcel_locations", "missing_kakao_rest_api_key")
+                else:
+                    location_limit = self._env_int(
+                        "LAND_COVERAGE_BACKFILL_LOCATION_LIMIT",
+                        self._env_int("LAND_LOCATION_CHUNK_LIMIT", 500, min_value=50),
+                        min_value=50,
+                    )
+                    location_sleep_ms = self._env_int(
+                        "LAND_COVERAGE_BACKFILL_LOCATION_SLEEP_MS",
+                        self._env_int("LAND_LOCATION_SLEEP_MS", 180, min_value=0),
+                        min_value=0,
+                    )
+                    location_timeout_sec = self._env_int(
+                        "LAND_COVERAGE_BACKFILL_LOCATION_TIMEOUT_SEC",
+                        self._env_int("LAND_LOCATION_TIMEOUT_SEC", 12, min_value=3),
+                        min_value=3,
+                    )
+                    location_job_timeout = self._env_int(
+                        "LAND_COVERAGE_BACKFILL_LOCATION_JOB_TIMEOUT_SEC",
+                        self._env_int("LAND_LOCATION_JOB_TIMEOUT_SEC", 3600, min_value=300),
+                        min_value=300,
+                    )
+                    location_args = [
+                        "--limit",
+                        str(location_limit),
+                        "--resume",
+                        "--sleep-ms",
+                        str(location_sleep_ms),
+                        "--timeout-sec",
+                        str(location_timeout_sec),
+                        "--soft-fail",
+                    ]
+                    if sigungu:
+                        location_args.extend(["--sigungu", sigungu])
+                    await _run_step(
+                        step_name="collect_land_parcel_locations",
+                        module="scripts.collect_land_parcel_locations",
+                        args=location_args,
+                        timeout=location_job_timeout,
+                    )
+            else:
+                _skip_step("collect_land_parcel_locations", "disabled_by_env")
+
+            if run_prices:
+                if not self._has_any_env(
+                    "VWORLD_API_KEY", "LAND_PRICE_API_KEY", "PUBLIC_DATA_API_KEY"
+                ):
+                    _skip_step("collect_land_prices", "missing_vworld_or_price_api_key")
+                else:
+                    price_limit = self._env_int(
+                        "LAND_COVERAGE_BACKFILL_PRICE_LIMIT",
+                        self._env_int("LAND_PRICE_CHUNK_LIMIT", 500, min_value=1),
+                        min_value=1,
+                    )
+                    price_sleep_ms = self._env_int(
+                        "LAND_COVERAGE_BACKFILL_PRICE_SLEEP_MS",
+                        self._env_int("LAND_PRICE_SLEEP_MS", 120, min_value=0),
+                        min_value=0,
+                    )
+                    price_timeout = self._env_int(
+                        "LAND_COVERAGE_BACKFILL_PRICE_TIMEOUT_SEC", 7200, min_value=300
+                    )
+                    price_sigungu = (
+                        sigungu or (os.getenv("LAND_PRICE_SIGUNGU") or "").strip()
+                    )
+                    price_args = [
+                        "--year",
+                        str(land_price_year),
+                        "--limit",
+                        str(price_limit),
+                        "--resume",
+                        "--sleep-ms",
+                        str(price_sleep_ms),
+                        "--soft-fail",
+                    ]
+                    if price_sigungu:
+                        price_args.extend(["--sigungu", price_sigungu])
+                    await _run_step(
+                        step_name="collect_land_prices",
+                        module="scripts.collect_land_prices",
+                        args=price_args,
+                        timeout=price_timeout,
+                    )
+            else:
+                _skip_step("collect_land_prices", "disabled_by_env")
+
+            if run_characteristics:
+                if not self._has_any_env(
+                    "LAND_CHARACTERISTICS_API_KEY",
+                    "NSDI_API_KEY",
+                    "DATA_GO_KR_API_KEY",
+                    "PUBLIC_DATA_API_KEY",
+                    "MOLIT_API_KEY",
+                    "VWORLD_API_KEY",
+                    "LAND_PRICE_API_KEY",
+                ):
+                    _skip_step(
+                        "collect_land_characteristics",
+                        "missing_land_characteristics_api_key",
+                    )
+                else:
+                    characteristics_limit = self._env_int(
+                        "LAND_COVERAGE_BACKFILL_CHARACTERISTICS_LIMIT",
+                        self._env_int("LAND_CHARACTERISTICS_CHUNK_LIMIT", 500, min_value=1),
+                        min_value=1,
+                    )
+                    characteristics_sleep_ms = self._env_int(
+                        "LAND_COVERAGE_BACKFILL_CHARACTERISTICS_SLEEP_MS",
+                        self._env_int("LAND_CHARACTERISTICS_SLEEP_MS", 120, min_value=0),
+                        min_value=0,
+                    )
+                    characteristics_timeout = self._env_int(
+                        "LAND_COVERAGE_BACKFILL_CHARACTERISTICS_TIMEOUT_SEC",
+                        7200,
+                        min_value=300,
+                    )
+                    characteristics_sigungu = (
+                        sigungu or (os.getenv("LAND_CHARACTERISTICS_SIGUNGU") or "").strip()
+                    )
+                    characteristics_args = [
+                        "--year",
+                        str(land_characteristics_year),
+                        "--limit",
+                        str(characteristics_limit),
+                        "--resume",
+                        "--sleep-ms",
+                        str(characteristics_sleep_ms),
+                        "--soft-fail",
+                    ]
+                    if characteristics_sigungu:
+                        characteristics_args.extend(["--sigungu", characteristics_sigungu])
+                    await _run_step(
+                        step_name="collect_land_characteristics",
+                        module="scripts.collect_land_characteristics",
+                        args=characteristics_args,
+                        timeout=characteristics_timeout,
+                    )
+            else:
+                _skip_step("collect_land_characteristics", "disabled_by_env")
+
+            if run_status_check:
+                land_gate_mode = (os.getenv("LAND_COLLECTION_GATE_MODE") or "").strip().lower()
+                land_gate_profile = (
+                    os.getenv("LAND_COLLECTION_GATE_PROFILE") or ""
+                ).strip().lower()
+                status_timeout = self._env_int(
+                    "LAND_COVERAGE_BACKFILL_STATUS_TIMEOUT_SEC", 1200, min_value=120
+                )
+                status_strict = self._env_bool(
+                    "LAND_COVERAGE_BACKFILL_STATUS_STRICT", False
+                )
+                status_args = ["--strict-exit"] if status_strict else ["--soft-fail"]
+                if land_gate_mode in {"full", "quota"}:
+                    status_args.extend(["--gate-mode", land_gate_mode])
+                if land_gate_profile in {"default", "land-ops-v1"}:
+                    status_args.extend(["--gate-profile", land_gate_profile])
+                await _run_step(
+                    step_name="check_land_collection_status",
+                    module="scripts.check_land_collection_status",
+                    args=status_args,
+                    timeout=status_timeout,
+                    required=False,
+                )
+                summary["land_collection_status_summary"] = self._load_summary_json(
+                    REPORTS_DIR / "land_collection_status_latest.json"
+                )
+            else:
+                _skip_step("check_land_collection_status", "disabled_by_env")
+
+            self.last_land_collection_ok = True
+            self.current_job_result = summary
+        except Exception as exc:
+            self.last_land_collection_ok = False
+            self.last_land_collection_error = str(exc)
+            self.current_job_result = summary
+            raise
         finally:
             self.last_land_collection_finished_at = datetime.now().isoformat()
 
@@ -1953,16 +2431,28 @@ class DataScheduler:
         self.current_job_result = {"step": "check_school_data_quality"}
 
     async def check_land_collection_status_now(self) -> None:
+        args = self._quality_gate_script_args(
+            "SCHEDULER_CHECK_LAND_COLLECTION_STATUS_STRICT_EXIT", default_strict=True
+        )
+        land_gate_mode = (os.getenv("LAND_COLLECTION_GATE_MODE") or "").strip().lower()
+        if land_gate_mode in {"full", "quota"}:
+            args.extend(["--gate-mode", land_gate_mode])
+        land_gate_profile = (os.getenv("LAND_COLLECTION_GATE_PROFILE") or "").strip().lower()
+        if land_gate_profile in {"default", "land-ops-v1"}:
+            args.extend(["--gate-profile", land_gate_profile])
+
         ok = await self._run_script(
             "scripts.check_land_collection_status",
-            args=self._quality_gate_script_args(
-                "SCHEDULER_CHECK_LAND_COLLECTION_STATUS_STRICT_EXIT", default_strict=True
-            ),
+            args=args,
             timeout=1200,
         )
         if not ok:
             raise RuntimeError("check_land_collection_status failed")
-        self.current_job_result = {"step": "check_land_collection_status"}
+        self.current_job_result = {
+            "step": "check_land_collection_status",
+            "gate_mode": land_gate_mode or None,
+            "gate_profile": land_gate_profile or None,
+        }
 
     async def school_full_rebuild(self) -> None:
         self.last_collection_job = f"school_full_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -2159,6 +2649,22 @@ class DataScheduler:
             return
 
         self._refresh_preflight_state()
+        preflight_refresh_interval_min = self._env_int(
+            "SCHEDULER_PREFLIGHT_REFRESH_INTERVAL_MIN",
+            10,
+            min_value=1,
+            max_value=1440,
+        )
+        self.scheduler.add_job(
+            self._refresh_preflight_state,
+            IntervalTrigger(minutes=preflight_refresh_interval_min),
+            id="scheduler_preflight_refresh",
+            name="scheduler preflight refresh",
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+            misfire_grace_time=300,
+        )
 
         daily_collection_hour = self._env_hour("DAILY_COLLECTION_CRON_HOUR", 3)
         daily_collection_minute = self._env_minute("DAILY_COLLECTION_CRON_MINUTE", 0)
@@ -2186,6 +2692,31 @@ class DataScheduler:
                 max_instances=1,
                 misfire_grace_time=3600,
                 args=["collect_land_daily"],
+            )
+        if (
+            self._env_bool("LAND_COVERAGE_BACKFILL_CRON_ENABLED", False)
+            and self._should_register_job("land_coverage_backfill")
+        ):
+            land_coverage_interval_minutes = self._env_int(
+                "LAND_COVERAGE_BACKFILL_INTERVAL_MINUTES", 240, min_value=30
+            )
+            land_coverage_start_delay_minutes = self._env_int(
+                "LAND_COVERAGE_BACKFILL_START_DELAY_MINUTES", 45, min_value=0
+            )
+            self.scheduler.add_job(
+                self.run_now,
+                IntervalTrigger(
+                    minutes=land_coverage_interval_minutes,
+                    start_date=datetime.now()
+                    + timedelta(minutes=land_coverage_start_delay_minutes),
+                ),
+                id="land_coverage_backfill",
+                name="land coverage backfill",
+                replace_existing=True,
+                coalesce=True,
+                max_instances=1,
+                misfire_grace_time=3600,
+                args=["land_coverage_backfill"],
             )
         if self._env_bool("LAND_LOCATION_CRON_ENABLED", True):
             land_location_hour = self._env_hour("LAND_LOCATION_CRON_HOUR", 2)
@@ -2487,6 +3018,7 @@ class DataScheduler:
 
         self.scheduler.start()
         self.is_running = True
+        self._refresh_preflight_state()
 
     def stop(self) -> None:
         if not self.is_running:
@@ -2525,6 +3057,8 @@ class DataScheduler:
             await self.check_launch_readiness_gate()
         elif job_type == "collect_land_daily":
             await self.daily_land_collection()
+        elif job_type == "land_coverage_backfill":
+            await self.land_coverage_backfill()
         elif job_type == "collect_land_locations":
             await self.collect_land_locations_chunk()
         elif job_type == "link_complexes":
@@ -2574,6 +3108,8 @@ class DataScheduler:
 
     async def run_now(self, job_type: str) -> None:
         async with self._run_lock:
+            # Keep preflight in sync with runtime env changes without restart.
+            self._refresh_preflight_state()
             self.current_job_running = True
             self.current_job_type = job_type
             self.current_job_started_at = datetime.now().isoformat()

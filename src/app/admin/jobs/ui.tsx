@@ -47,6 +47,7 @@ const JOBS = [
   'weekly',
   'monthly',
   'collect_commercial',
+  'land_coverage_backfill',
   'train_business',
   'train_all',
 ]
@@ -59,7 +60,7 @@ export function AdminJobsClient() {
   const [loading, setLoading] = useState(false)
 
   // Known-good probe pair (has data coverage in Supabase). This is used to verify
-  // that ML_API_URL points to the compatible "ml-api" service.
+  // that ML_API_URL points to the active chamgab-ml-api Railway service.
   const [districtCode, setDistrictCode] = useState('11680')
   const [industryCode, setIndustryCode] = useState('Q12')
   const [dataHealth, setDataHealth] = useState<CommercialDataHealth | null>(
@@ -287,7 +288,7 @@ export function AdminJobsClient() {
       }
       if (hData?.compat === false) {
         throw new Error(
-          'ML API is incompatible. ML_API_URL must point to the latest ml-api deployment.'
+          'ML API is incompatible. ML_API_URL must point to the active chamgab-ml-api deployment.'
         )
       }
 
@@ -344,7 +345,7 @@ export function AdminJobsClient() {
         setFixFlow({
           running: false,
           step: 'probe',
-          note: "Probe finished but source isn't ml_model. Check ML_API_URL, data coverage, and ML API logs.",
+          note: "Probe finished but source isn't ml_model. Check ML_API_URL, data coverage, and the active chamgab-ml-api logs.",
         })
         return
       }

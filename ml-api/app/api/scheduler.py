@@ -24,6 +24,7 @@ VALID_JOB_TYPES = [
     "check_land_collection_status",
     "check_launch_readiness_gate",
     "collect_land_daily",
+    "land_coverage_backfill",
     "collect_land_locations",
     "link_complexes",
     "fix_complex_names",
@@ -86,6 +87,7 @@ class RunNowRequest(BaseModel):
         description=(
             "job type "
             "(daily/weekly/monthly/collect_commercial/build_commercial_quality_snapshot/check_commercial_data_quality/check_land_collection_status/check_launch_readiness_gate/collect_land_daily/"
+            "land_coverage_backfill/"
             "collect_land_locations/"
             "link_complexes/fix_complex_names/sync_complexes_to_properties/train_business/train_all/"
             "chamgab_backfill_property_id/chamgab_audit_gap/chamgab_reanalyze_severe/"

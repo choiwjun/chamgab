@@ -98,8 +98,9 @@ export function MyPageContent() {
   const menuItems = useMemo<
     Array<{ icon: typeof User; label: string; href: string }>
   >(() => [], [])
+  const hasRenderableIdentity = Boolean(user || profile)
 
-  if (isLoading && !isAuthLoadDelayed) {
+  if (isLoading && !isAuthLoadDelayed && !hasRenderableIdentity) {
     return (
       <div className="mx-auto max-w-lg px-6 py-12 md:px-8">
         <div className="mb-8">
@@ -118,7 +119,7 @@ export function MyPageContent() {
     )
   }
 
-  if (isLoading && isAuthLoadDelayed) {
+  if (isLoading && isAuthLoadDelayed && !hasRenderableIdentity) {
     return (
       <div className="mx-auto max-w-lg px-6 py-12 md:px-8">
         <div className="rounded-xl border border-[#E5E8EB] bg-white p-6">

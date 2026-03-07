@@ -750,6 +750,49 @@ def generate_analyses(sb, model, artifacts, shap_explainer, residual_info, skip_
                 df[col] = fill_values.get(col, 0)
         return df[feature_names]
 
+    def env_float(name, default):
+        raw = (os.getenv(name) or "").strip()
+        if not raw:
+            return default
+        try:
+            return float(raw)
+        except ValueError:
+            return default
+
+    def apply_prediction_guardrail(prediction, feature_row):
+        enabled = (os.getenv("CHAMGAB_PREDICTION_GUARDRAIL_ENABLED", "1") or "").strip().lower()
+        if enabled in {"0", "false", "off", "no"}:
+            return prediction
+
+        refs = []
+        for key in ("price_lag_1m", "price_lag_3m", "price_rolling_6m_mean"):
+            value = feature_row.get(key)
+            try:
+                value = float(value)
+            except (TypeError, ValueError):
+                value = None
+            if value is not None and np.isfinite(value) and value > 0:
+                refs.append(value)
+
+        if not refs:
+            return prediction
+
+        ref_price = float(np.median(refs))
+        if ref_price < 100_000_000:
+            cap_ratio = env_float("CHAMGAB_GUARDRAIL_CAP_LT100M", 1.20)
+        elif ref_price < 300_000_000:
+            cap_ratio = env_float("CHAMGAB_GUARDRAIL_CAP_LT300M", 1.25)
+        elif ref_price < 700_000_000:
+            cap_ratio = env_float("CHAMGAB_GUARDRAIL_CAP_LT700M", 1.30)
+        else:
+            cap_ratio = env_float("CHAMGAB_GUARDRAIL_CAP_GTE700M", 1.40)
+
+        cap_ratio = max(1.0, cap_ratio)
+        cap_price = int(ref_price * cap_ratio)
+        if cap_price > 0 and prediction > cap_price:
+            return cap_price
+        return prediction
+
     def calculate_confidence(prop, prediction=0, min_price=0, max_price=0,
                               mape=None):
         """3-factor weighted confidence (matches ModelService logic)."""
@@ -820,6 +863,7 @@ def generate_analyses(sb, model, artifacts, shap_explainer, residual_info, skip_
     total_analyses = 0
     total_factors = 0
     errors = 0
+    guardrail_capped = 0
 
     for idx, prop in enumerate(all_properties):
         try:
@@ -829,6 +873,13 @@ def generate_analyses(sb, model, artifacts, shap_explainer, residual_info, skip_
             # XGBoost 예측 + recalibration
             raw_prediction = model.predict(features)[0]
             prediction = max(0, int(raw_prediction * recalibration_factor))
+            adjusted_prediction = apply_prediction_guardrail(
+                prediction,
+                features.iloc[0].to_dict(),
+            )
+            if adjusted_prediction < prediction:
+                guardrail_capped += 1
+            prediction = adjusted_prediction
 
             # 신뢰 구간 (보정된 예측 기준)
             if residual_percentiles:

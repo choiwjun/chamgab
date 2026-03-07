@@ -6,11 +6,29 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 const AUTH_REQUEST_TIMEOUT_MS = 8000
-const REMOVED_PREFIX_ROUTES = [
-  '/compare',
-  '/business-analysis/compare',
-  '/land/search',
-]
+const DOMAIN_GATE_TIMEOUT_MS = 5000
+const REMOVED_PREFIX_ROUTES = ['/compare', '/business-analysis/compare']
+type DomainKey = 'apartment' | 'commercial' | 'school' | 'land'
+type DomainLocks = Record<DomainKey, boolean>
+
+const DEFAULT_FAIL_CLOSED_LOCKS: DomainLocks = {
+  apartment: true,
+  commercial: true,
+  school: true,
+  land: true,
+}
+const DEFAULT_FAIL_OPEN_LOCKS: DomainLocks = {
+  apartment: false,
+  commercial: false,
+  school: false,
+  land: false,
+}
+const DOMAIN_GATE_FAIL_CLOSED =
+  (process.env.DOMAIN_GATE_FAIL_CLOSED || 'false').trim().toLowerCase() ===
+  'true'
+const DOMAIN_GATE_FALLBACK_LOCKS = DOMAIN_GATE_FAIL_CLOSED
+  ? DEFAULT_FAIL_CLOSED_LOCKS
+  : DEFAULT_FAIL_OPEN_LOCKS
 
 async function withTimeout<T>(
   operation: Promise<T>,
@@ -39,20 +57,8 @@ async function withTimeout<T>(
  * 공개 라우트 목록
  * 인증이 필요하지 않은 경로
  */
-const PUBLIC_EXACT_ROUTES = [
-  '/',
-  '/search',
-  '/business-analysis',
-  '/school-analysis',
-]
-const PUBLIC_PREFIX_ROUTES = [
-  '/auth',
-  '/terms',
-  '/complex',
-  '/property',
-  '/land',
-  '/school-analysis/share',
-]
+const PUBLIC_EXACT_ROUTES = ['/']
+const PUBLIC_PREFIX_ROUTES = ['/auth', '/terms', '/school-analysis/share']
 
 /**
  * Auth 관련 라우트 (로그인된 상태에서 접근 시 리다이렉트)
@@ -70,6 +76,68 @@ function isExactRouteMatch(pathname: string, route: string) {
 
 function isPrefixRouteMatch(pathname: string, route: string) {
   return pathname === route || pathname.startsWith(`${route}/`)
+}
+
+function getDomainByPathname(pathname: string): DomainKey | null {
+  if (
+    pathname === '/search' ||
+    pathname.startsWith('/search/') ||
+    pathname.startsWith('/property/') ||
+    pathname.startsWith('/complex/')
+  ) {
+    return 'apartment'
+  }
+  if (
+    pathname === '/business-analysis' ||
+    pathname.startsWith('/business-analysis/')
+  ) {
+    return 'commercial'
+  }
+  if (
+    pathname === '/school-analysis' ||
+    pathname.startsWith('/school-analysis/')
+  ) {
+    if (
+      pathname === '/school-analysis/share' ||
+      pathname.startsWith('/school-analysis/share/')
+    ) {
+      return null
+    }
+    return 'school'
+  }
+  if (pathname === '/land' || pathname.startsWith('/land/')) {
+    return 'land'
+  }
+  return null
+}
+
+async function fetchDomainLocks(request: NextRequest): Promise<DomainLocks> {
+  const url = new URL('/api/domain-gates', request.url)
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), DOMAIN_GATE_TIMEOUT_MS)
+  try {
+    const res = await fetch(url.toString(), {
+      method: 'GET',
+      cache: 'no-store',
+      signal: controller.signal,
+    })
+    if (!res.ok) return DOMAIN_GATE_FALLBACK_LOCKS
+    const payload = (await res.json()) as {
+      locked?: Partial<DomainLocks>
+    }
+    return {
+      apartment:
+        payload.locked?.apartment ?? DOMAIN_GATE_FALLBACK_LOCKS.apartment,
+      commercial:
+        payload.locked?.commercial ?? DOMAIN_GATE_FALLBACK_LOCKS.commercial,
+      school: payload.locked?.school ?? DOMAIN_GATE_FALLBACK_LOCKS.school,
+      land: payload.locked?.land ?? DOMAIN_GATE_FALLBACK_LOCKS.land,
+    }
+  } catch {
+    return DOMAIN_GATE_FALLBACK_LOCKS
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 /**
@@ -102,6 +170,16 @@ export async function middleware(request: NextRequest) {
         'content-type': 'text/plain; charset=utf-8',
       },
     })
+  }
+
+  const targetDomain = getDomainByPathname(pathname)
+  if (targetDomain) {
+    const locks = await fetchDomainLocks(request)
+    if (locks[targetDomain]) {
+      const redirectUrl = new URL('/', request.url)
+      redirectUrl.searchParams.set('domain_locked', targetDomain)
+      return NextResponse.redirect(redirectUrl)
+    }
   }
 
   let response = NextResponse.next({

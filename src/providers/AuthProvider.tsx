@@ -203,16 +203,20 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }, 15000)
 
     try {
-      const {
-        data: { session },
-      } = await withTimeout(supabase.auth.getSession(), {
+      const sessionPromise = withTimeout(supabase.auth.getSession(), {
         data: { session: null },
         error: null,
       })
-      const userRes = await withTimeout(supabase.auth.getUser(), {
+      const userPromise = withTimeout(supabase.auth.getUser(), {
         data: { user: null },
         error: null,
       } as unknown as Awaited<ReturnType<typeof supabase.auth.getUser>>)
+      const [
+        {
+          data: { session },
+        },
+        userRes,
+      ] = await Promise.all([sessionPromise, userPromise])
       const currentUser = userRes.data.user
 
       setUser(currentUser)

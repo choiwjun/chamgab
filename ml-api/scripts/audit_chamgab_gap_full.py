@@ -5,8 +5,8 @@ Full audit for gap between AI chamgab price and latest real transaction.
 Method:
 1) Load latest analysis per property from chamgab_analyses (by analyzed_at desc).
 2) Find latest transaction:
-   - Prefer exact property_id match.
-   - Fallback to same complex_id with area within +/-10%.
+   - Prefer exact property_id match (area-aware).
+   - Fallback to same complex_id with area tolerance.
 3) Compute gap statistics and write severe outliers CSV.
 """
 
@@ -19,7 +19,7 @@ import math
 import os
 import sys
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -73,6 +73,60 @@ def safe_num(v: Any) -> Optional[float]:
     if not math.isfinite(n):
         return None
     return n
+
+
+def _contains_hangul(text: str) -> bool:
+    return any("\uac00" <= ch <= "\ud7a3" for ch in text)
+
+
+def _contains_cjk(text: str) -> bool:
+    return any("\u4e00" <= ch <= "\u9fff" for ch in text)
+
+
+def _looks_like_mojibake(text: str) -> bool:
+    raw = (text or "").strip()
+    if not raw:
+        return False
+    if "\ufffd" in raw or "??" in raw:
+        return True
+    if raw.count("?") >= 2:
+        return True
+    if _contains_cjk(raw) and not _contains_hangul(raw):
+        return True
+    return False
+
+
+def _try_redecode_mojibake(text: str) -> Optional[str]:
+    raw = (text or "").strip()
+    if not raw:
+        return None
+
+    for src, dst in (("latin1", "utf-8"), ("cp1252", "utf-8"), ("cp949", "utf-8")):
+        try:
+            candidate = raw.encode(src).decode(dst)
+        except Exception:
+            continue
+        candidate = " ".join(candidate.split())
+        if not candidate:
+            continue
+        if _contains_hangul(candidate) and not _looks_like_mojibake(candidate):
+            return candidate
+    return None
+
+
+def normalize_region_label(sido: Any, sigungu: Any) -> Tuple[str, bool, str]:
+    raw_sido = str(sido or "").strip()
+    raw_sigungu = str(sigungu or "").strip()
+    raw_label = " ".join(part for part in [raw_sido, raw_sigungu] if part) or "-"
+    raw_label = " ".join(raw_label.split())
+
+    if not _looks_like_mojibake(raw_label):
+        return raw_label, False, raw_label
+
+    repaired = _try_redecode_mojibake(raw_label)
+    if repaired:
+        return repaired, True, raw_label
+    return "UNKNOWN_REGION", True, raw_label
 
 
 def paginated_select(
@@ -134,7 +188,27 @@ def load_properties(sb, property_ids: Sequence[str]) -> Dict[str, Dict[str, Any]
     return out
 
 
-def load_latest_tx_exact(sb, property_ids: Sequence[str]) -> Dict[str, Dict[str, Any]]:
+def _build_area_bounds(
+    property_ids: Sequence[str],
+    properties: Dict[str, Dict[str, Any]],
+    area_tolerance_pct: float,
+) -> Dict[str, Tuple[float, float]]:
+    tolerance = max(0.0, float(area_tolerance_pct)) / 100.0
+    out: Dict[str, Tuple[float, float]] = {}
+    for pid in property_ids:
+        a = safe_num((properties.get(pid) or {}).get("area_exclusive"))
+        if a and a > 0:
+            out[pid] = (a * (1.0 - tolerance), a * (1.0 + tolerance))
+    return out
+
+
+def load_latest_tx_exact(
+    sb,
+    property_ids: Sequence[str],
+    properties: Dict[str, Dict[str, Any]],
+    area_tolerance_pct: float,
+    tx_cutoff_date: Optional[str] = None,
+) -> Dict[str, Dict[str, Any]]:
     exact_chunk_size = max(
         1, int(os.getenv("CHAMGAB_AUDIT_EXACT_CHUNK_SIZE", "120"))
     )
@@ -145,6 +219,7 @@ def load_latest_tx_exact(sb, property_ids: Sequence[str]) -> Dict[str, Dict[str,
     def _load_exact_chunk(ids_chunk: Sequence[str]) -> Dict[str, Dict[str, Any]]:
         latest_chunk: Dict[str, Dict[str, Any]] = {}
         unresolved = set(ids_chunk)
+        area_bounds = _build_area_bounds(ids_chunk, properties, area_tolerance_pct)
         offset = 0
 
         while unresolved:
@@ -153,9 +228,10 @@ def load_latest_tx_exact(sb, property_ids: Sequence[str]) -> Dict[str, Dict[str,
                 sb.table("transactions")
                 .select("property_id,complex_id,transaction_date,price,area_exclusive")
                 .in_("property_id", unresolved_ids)
-                .order("transaction_date", desc=True)
-                .range(offset, offset + exact_page_size - 1)
             )
+            if tx_cutoff_date:
+                q = q.gte("transaction_date", tx_cutoff_date)
+            q = q.order("transaction_date", desc=True).range(offset, offset + exact_page_size - 1)
             try:
                 res = q.execute()
             except APIError as exc:
@@ -175,7 +251,21 @@ def load_latest_tx_exact(sb, property_ids: Sequence[str]) -> Dict[str, Dict[str,
 
             for tx in rows:
                 pid = tx.get("property_id")
-                if pid and pid in unresolved:
+                if not pid or pid not in unresolved:
+                    continue
+
+                bounds = area_bounds.get(pid)
+                if not bounds:
+                    # If property area is unavailable, keep latest exact transaction.
+                    latest_chunk[pid] = tx
+                    unresolved.remove(pid)
+                    continue
+
+                tx_area = safe_num(tx.get("area_exclusive"))
+                if tx_area is None:
+                    continue
+                lo, hi = bounds
+                if lo <= tx_area <= hi:
                     latest_chunk[pid] = tx
                     unresolved.remove(pid)
 
@@ -195,6 +285,8 @@ def load_latest_tx_fallback(
     sb,
     missing_property_ids: Sequence[str],
     properties: Dict[str, Dict[str, Any]],
+    area_tolerance_pct: float,
+    tx_cutoff_date: Optional[str] = None,
 ) -> Dict[str, Dict[str, Any]]:
     by_complex: Dict[str, List[str]] = defaultdict(list)
     for pid in missing_property_ids:
@@ -219,11 +311,7 @@ def load_latest_tx_fallback(
         for cid in cids_chunk:
             unresolved.update(by_complex[cid])
 
-        area_bounds: Dict[str, Tuple[float, float]] = {}
-        for pid in unresolved:
-            a = safe_num((properties.get(pid) or {}).get("area_exclusive"))
-            if a and a > 0:
-                area_bounds[pid] = (a * 0.9, a * 1.1)
+        area_bounds = _build_area_bounds(list(unresolved), properties, area_tolerance_pct)
 
         offset = 0
         while unresolved:
@@ -231,9 +319,10 @@ def load_latest_tx_fallback(
                 sb.table("transactions")
                 .select("property_id,complex_id,transaction_date,price,area_exclusive")
                 .in_("complex_id", list(cids_chunk))
-                .order("transaction_date", desc=True)
-                .range(offset, offset + fallback_page_size - 1)
             )
+            if tx_cutoff_date:
+                q = q.gte("transaction_date", tx_cutoff_date)
+            q = q.order("transaction_date", desc=True).range(offset, offset + fallback_page_size - 1)
             try:
                 res = q.execute()
             except APIError as exc:
@@ -297,6 +386,7 @@ def run(
     *,
     min_tx_price: int,
     exact_area_tolerance_pct: float,
+    max_tx_age_months: int,
 ) -> int:
     load_env_file(ML_ENV_PATH)
     disable_proxy_env()
@@ -321,13 +411,35 @@ def run(
     properties = load_properties(sb, property_ids)
     print(f"  properties resolved: {len(properties):,}")
 
-    print("[3/6] Loading latest exact transactions by property_id...")
-    tx_exact = load_latest_tx_exact(sb, property_ids)
+    tx_cutoff_date: Optional[str] = None
+    max_age_months = max(0, int(max_tx_age_months))
+    if max_age_months > 0:
+        tx_cutoff_date = (datetime.now() - timedelta(days=int(max_age_months * 30.44))).strftime(
+            "%Y-%m-%d"
+        )
+        print(f"  tx recency filter: <= {max_age_months} months (since {tx_cutoff_date})")
+    else:
+        print("  tx recency filter: disabled")
+
+    print("[3/6] Loading latest exact transactions by property_id (area-aware)...")
+    tx_exact = load_latest_tx_exact(
+        sb,
+        property_ids,
+        properties,
+        exact_area_tolerance_pct,
+        tx_cutoff_date=tx_cutoff_date,
+    )
     print(f"  exact tx matched: {len(tx_exact):,}")
 
     missing = [pid for pid in property_ids if pid not in tx_exact]
     print("[4/6] Loading fallback transactions by complex_id + area...")
-    tx_fallback = load_latest_tx_fallback(sb, missing, properties)
+    tx_fallback = load_latest_tx_fallback(
+        sb,
+        missing,
+        properties,
+        exact_area_tolerance_pct,
+        tx_cutoff_date=tx_cutoff_date,
+    )
     print(f"  fallback tx matched: {len(tx_fallback):,}")
 
     tx_all = dict(tx_exact)
@@ -384,8 +496,10 @@ def run(
         return 1
 
     total = len(latest_analyses)
+    tx_eligible = len(tx_all)
     comparable = len(rows)
-    coverage = (comparable / total) * 100.0 if total else 0.0
+    coverage = (comparable / tx_eligible) * 100.0 if tx_eligible else 0.0
+    coverage_vs_total = (comparable / total) * 100.0 if total else 0.0
 
     severe_25 = [r for r in rows if r["abs_gap_pct"] >= 25]
     severe_40 = [r for r in rows if r["abs_gap_pct"] >= 40]
@@ -443,11 +557,22 @@ def run(
 
     region_totals = defaultdict(int)
     region_severe = defaultdict(int)
+    region_raw_samples = defaultdict(set)
+    encoding_issue_row_count = 0
+    encoding_issue_unique_raw_regions = set()
     for r in rows:
-        key = f"{r.get('sido') or '-'} {r.get('sigungu') or '-'}".strip()
+        key, had_encoding_issue, raw_region = normalize_region_label(
+            r.get("sido"),
+            r.get("sigungu"),
+        )
         region_totals[key] += 1
         if r["abs_gap_pct"] >= 25:
             region_severe[key] += 1
+        if had_encoding_issue:
+            encoding_issue_row_count += 1
+            if raw_region:
+                encoding_issue_unique_raw_regions.add(raw_region)
+                region_raw_samples[key].add(raw_region)
 
     region_rank = sorted(
         region_severe.items(),
@@ -463,7 +588,8 @@ def run(
 
     print("[6/6] Summary")
     print(f"  total latest analyses: {total:,}")
-    print(f"  comparable rows:       {comparable:,} ({coverage:.1f}%)")
+    print(f"  tx-eligible rows:      {tx_eligible:,}")
+    print(f"  comparable rows:       {comparable:,} ({coverage:.1f}%, vs total={coverage_vs_total:.1f}%)")
     print(f"  filtered low tx price: {low_price_filtered:,} (threshold={min_tx_price:,})")
     print(f"  filtered area mismatch:{area_mismatch_filtered:,} (tol={exact_area_tolerance_pct:.1f}%)")
     print(f"  tx match exact:        {tx_match_exact:,} ({tx_match_exact/comparable*100:.1f}%)")
@@ -491,6 +617,7 @@ def run(
     print(f"  full csv:   {full_csv_path}")
     print(f"  severe csv: {severe_csv_path}")
     print(f"  top300 csv: {top_csv_path}")
+    print(f"  encoding issue rows: {encoding_issue_row_count:,}")
 
     print("\nTop 15 regions by severe(abs>=25) count:")
     for region, cnt in region_rank:
@@ -500,8 +627,9 @@ def run(
 
     print("\nTop 20 severe outliers:")
     for r in top_outliers[:20]:
+        region_label, _, _ = normalize_region_label(r.get("sido"), r.get("sigungu"))
         print(
-            f"  {r['sigungu'] or '-':<8} | gap={r['gap_pct']:+7.2f}% | "
+            f"  {region_label:<20} | gap={r['gap_pct']:+7.2f}% | "
             f"AI={r['ai_price']:,} | TX={r['tx_price']:,} | "
             f"tx={r['tx_date']} | {r['property_name'] or r['property_id']}"
         )
@@ -509,12 +637,15 @@ def run(
     summary = {
         "generated_at": datetime.now().isoformat(),
         "total_latest_analyses": total,
+        "tx_eligible_rows": tx_eligible,
         "comparable_rows": comparable,
         "coverage_pct": round(coverage, 2),
+        "coverage_vs_total_pct": round(coverage_vs_total, 2),
         "filtered_low_tx_price_count": low_price_filtered,
         "filtered_area_mismatch_count": area_mismatch_filtered,
         "min_tx_price_threshold": int(min_tx_price),
         "exact_area_tolerance_pct": float(exact_area_tolerance_pct),
+        "max_tx_age_months": max_age_months,
         "tx_match_exact": tx_match_exact,
         "tx_match_fallback": tx_match_fallback,
         "abs_gap_mean_pct": round(mean_abs, 2),
@@ -524,6 +655,8 @@ def run(
         "severe_abs_gte_60": len(severe_60),
         "overvalued_count": len(overvalued),
         "undervalued_count": len(undervalued),
+        "encoding_issue_row_count": encoding_issue_row_count,
+        "encoding_issue_unique_raw_regions": sorted(encoding_issue_unique_raw_regions)[:30],
         "full_csv_path": str(full_csv_path),
         "severe_csv_path": str(severe_csv_path),
         "top_csv_path": str(top_csv_path),
@@ -532,6 +665,7 @@ def run(
                 "region": region,
                 "severe": cnt,
                 "total": region_totals.get(region, 0),
+                "raw_region_samples": sorted(region_raw_samples.get(region, set()))[:3],
             }
             for region, cnt in region_rank
         ],
@@ -560,10 +694,17 @@ if __name__ == "__main__":
         default=max(1.0, float(os.getenv("CHAMGAB_AUDIT_EXACT_AREA_TOL_PCT", "20"))),
         help="Area tolerance for comparability filter.",
     )
+    parser.add_argument(
+        "--max-tx-age-months",
+        type=int,
+        default=max(0, int(os.getenv("CHAMGAB_AUDIT_MAX_TX_AGE_MONTHS", "5"))),
+        help="Only use transactions newer than this many months (0 disables).",
+    )
     args = parser.parse_args()
     raise SystemExit(
         run(
             min_tx_price=args.min_tx_price,
             exact_area_tolerance_pct=args.exact_area_tolerance_pct,
+            max_tx_age_months=args.max_tx_age_months,
         )
     )

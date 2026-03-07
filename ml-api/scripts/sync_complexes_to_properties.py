@@ -84,9 +84,7 @@ def paginated_select(sb, table: str, columns: str, where_fn, page_size: int = 10
         if not data:
             break
         rows.extend(data)
-        if len(data) < page_size:
-            break
-        offset += page_size
+        offset += len(data)
     return rows
 
 
@@ -112,9 +110,7 @@ def estimate_area_map(sb, complex_ids: List[str], tx_page_size: int) -> Dict[str
                 if not cid or area is None:
                     continue
                 by_complex.setdefault(cid, []).append(area)
-            if len(rows) < tx_page_size:
-                break
-            offset += tx_page_size
+            offset += len(rows)
 
     out: Dict[str, float] = {}
     for cid, areas in by_complex.items():
@@ -151,7 +147,7 @@ def main() -> int:
     complexes = paginated_select(
         sb,
         "complexes",
-        "id,name,address,sido,sigungu,eupmyeondong,built_year",
+        "id,name,address,sido,sigungu,eupmyeondong,built_year,location,total_floors,total_buildings",
         where_fn=lambda q: q,
         page_size=1000,
     )
@@ -234,6 +230,15 @@ def main() -> int:
                 "built_year": cx.get("built_year"),
                 "complex_id": cid,
             }
+            location = cx.get("location")
+            if location:
+                rec["location"] = location
+            total_floors = cx.get("total_floors")
+            total_buildings = cx.get("total_buildings")
+            if isinstance(total_floors, (int, float)) and total_floors > 0:
+                rec["floors"] = int(total_floors)
+            elif isinstance(total_buildings, (int, float)) and total_buildings > 0:
+                rec["floors"] = int(total_buildings)
             area = area_map.get(cid)
             if area:
                 rec["area_exclusive"] = area

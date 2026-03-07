@@ -34,6 +34,24 @@ async function fetchParcelByPnu(pnu: string): Promise<LandParcel | null> {
   return data as LandParcel
 }
 
+async function fetchParcelById(parcelId: string): Promise<LandParcel | null> {
+  const supabase = getSupabase()
+  const { data, error } = await supabase
+    .from('land_parcels')
+    .select('*')
+    .eq('id', parcelId)
+    .single()
+
+  if (error || !data) return null
+  return data as LandParcel
+}
+
+function looksLikeUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value
+  )
+}
+
 async function fetchTransactionById(
   transactionId: string
 ): Promise<LandTransaction | null> {
@@ -553,6 +571,9 @@ export default async function LandDetailPage({ params }: PageProps) {
   const decodedPnu = decodeURIComponent(pnu)
 
   let parcel = await fetchParcelByPnu(decodedPnu)
+  if (!parcel && looksLikeUuid(decodedPnu)) {
+    parcel = await fetchParcelById(decodedPnu)
+  }
   let seedTransactionId: string | undefined
 
   if (!parcel && decodedPnu.startsWith('tx-')) {

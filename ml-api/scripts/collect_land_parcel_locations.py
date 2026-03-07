@@ -16,6 +16,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import sys
 import time
 from dataclasses import dataclass
@@ -31,6 +32,7 @@ from supabase import create_client
 LOG = logging.getLogger("collect_land_parcel_locations")
 STATE_PATH = Path("logs/collect_land_parcel_locations_state.json")
 KAKAO_GEOCODE_URL = "https://dapi.kakao.com/v2/local/search/address.json"
+PNU_RE = re.compile(r"^[0-9]{19}$")
 
 
 def setup_logging() -> None:
@@ -73,6 +75,10 @@ def _env_bool(name: str, default: bool) -> bool:
     if normalized in {"0", "false", "no", "off"}:
         return False
     return default
+
+
+def is_valid_pnu(pnu: str) -> bool:
+    return bool(PNU_RE.match((pnu or "").strip()))
 
 
 def point_wkt(lon: float | None, lat: float | None) -> Optional[str]:
@@ -145,6 +151,7 @@ def collect_target_parcels(
     cursor = (resume_cursor or "").strip() or None
     reached_end = False
     scanned = 0
+    invalid_pnu = 0
 
     while True:
         query = (
@@ -174,6 +181,9 @@ def collect_target_parcels(
             pnu = str(row.get("pnu") or "")
             if not pnu:
                 continue
+            if not is_valid_pnu(pnu):
+                invalid_pnu += 1
+                continue
 
             target.append(
                 ParcelRow(
@@ -193,9 +203,10 @@ def collect_target_parcels(
             break
 
     LOG.info(
-        "Parcel selection done: scanned=%d selected=%d reached_end=%s",
+        "Parcel selection done: scanned=%d selected=%d invalid_pnu=%d reached_end=%s",
         scanned,
         len(target),
+        invalid_pnu,
         reached_end,
     )
     return target, cursor, reached_end

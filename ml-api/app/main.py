@@ -23,6 +23,7 @@ from app.api import (
     integrated,
     land,
     predict,
+    quality,
     reports,
     scheduler,
     similar,
@@ -186,6 +187,7 @@ app.include_router(land.router, tags=["Land"])
 app.include_router(chamgab.router, tags=["Chamgab"])
 app.include_router(integrated.router, tags=["Integrated"])
 app.include_router(reports.router, tags=["Reports"])
+app.include_router(quality.router, tags=["Quality"])
 
 
 @app.get("/")

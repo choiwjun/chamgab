@@ -4,13 +4,15 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
+import json
 import logging
 import os
+import re
 import statistics
 import sys
 import time
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from dotenv import load_dotenv
@@ -34,16 +36,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
-SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
-
-if not SUPABASE_URL or not SUPABASE_KEY:
-    logger.error("SUPABASE_URL / SUPABASE_SERVICE_KEY is required")
-    sys.exit(1)
-
+BJDONG_CODES_PATH = Path(__file__).with_name("bjdong_codes.json")
+PNU_RE = re.compile(r"^\d{19}$")
+REGION_CODE_RE = re.compile(r"^\d{5}$")
+LOCALITY_TOKEN_RE = re.compile(r"[0-9A-Za-z\uac00-\ud7a3]+")
+LATEST_SUMMARY_PATH = Path(LOG_DIR) / "create_land_parcels_latest.json"
 
 # Parcel identity intentionally excludes `land_category` to avoid pnu collisions.
-ParcelKey = Tuple[str, str, str, str]
+ParcelKey = Tuple[str, str, str, str, str]
 
 
 def _to_positive_float(value: Any) -> Optional[float]:
@@ -66,10 +66,216 @@ def _disable_dead_local_proxy() -> None:
             os.environ.pop(key, None)
 
 
-def generate_pnu(sido: str, sigungu: str, eupmyeondong: str, jibun: str) -> str:
-    raw = f"{sido}{sigungu}{eupmyeondong}{jibun}"
-    digest = hashlib.md5(raw.encode("utf-8")).hexdigest()
-    return f"PNU-{digest[:15]}"
+def _required_env(name: str) -> str:
+    value = _normalized(os.environ.get(name))
+    if not value:
+        raise RuntimeError(f"Missing required env: {name}")
+    return value
+
+
+def _create_supabase_client():
+    return create_client(_required_env("SUPABASE_URL"), _required_env("SUPABASE_SERVICE_KEY"))
+
+
+def _normalize_dong_key(value: Any) -> str:
+    # Keep only alpha-numeric/Korean syllables so punctuation and spacing variants
+    # map to the same legal dong key.
+    return re.sub(r"[^0-9A-Za-z\uac00-\ud7a3]+", "", _normalized(value))
+
+
+def _strip_digits(value: str) -> str:
+    return re.sub(r"\d+", "", value)
+
+
+def _iter_dong_name_candidates(value: str) -> Iterator[str]:
+    base = _normalized(value)
+    if not base:
+        return
+
+    seen: set[str] = set()
+
+    def emit(candidate: str) -> Iterator[str]:
+        cleaned = _normalized(candidate)
+        if cleaned and cleaned not in seen:
+            seen.add(cleaned)
+            yield cleaned
+
+    yield from emit(base)
+
+    compact = _normalize_dong_key(base)
+    if compact != base:
+        yield from emit(compact)
+
+    tokens = [token for token in LOCALITY_TOKEN_RE.findall(base) if token]
+    if len(tokens) < 2:
+        return
+
+    yield from emit("".join(tokens))
+    # Typical noisy source string: "<읍/면> <리>".
+    # Prioritize the leaf token because bjdong dictionary keys are often stored
+    # as the legal-ri name only.
+    yield from emit(tokens[-1])
+    yield from emit("".join(tokens[:-1]))
+
+
+def _match_dong_code(dong_map: Dict[str, str], candidate: str) -> Optional[str]:
+    if candidate in dong_map:
+        return dong_map[candidate]
+
+    normalized_target = _normalize_dong_key(candidate)
+    if not normalized_target:
+        return None
+
+    exact_matches = sorted(
+        {
+            code
+            for name, code in dong_map.items()
+            if _normalize_dong_key(name) == normalized_target
+        }
+    )
+    if exact_matches:
+        return exact_matches[0]
+
+    stripped_target = _strip_digits(normalized_target)
+    if not stripped_target:
+        return None
+    stripped_matches = sorted(
+        {
+            code
+            for name, code in dong_map.items()
+            if _strip_digits(_normalize_dong_key(name)) == stripped_target
+        }
+    )
+    if stripped_matches:
+        return stripped_matches[0]
+
+    return None
+
+
+def _load_bjdong_codes(path: Path) -> Dict[str, Dict[str, str]]:
+    if not path.exists():
+        logger.warning("bjdong code file not found: %s", path)
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        logger.warning("failed to load bjdong code file %s: %s", path, exc)
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+
+    normalized: Dict[str, Dict[str, str]] = {}
+    for region_code, dong_map in payload.items():
+        region = _normalized(region_code)
+        if not REGION_CODE_RE.match(region):
+            continue
+        if not isinstance(dong_map, dict):
+            continue
+        converted: Dict[str, str] = {}
+        for dong_name, dong_code in dong_map.items():
+            dong = _normalized(dong_name)
+            code = _normalized(dong_code)
+            if dong and re.match(r"^\d{5}$", code):
+                converted[dong] = code
+        if converted:
+            normalized[region] = converted
+    return normalized
+
+
+def parse_jibun_components(jibun: str) -> Optional[Tuple[str, str, str]]:
+    text = _normalized(jibun)
+    if not text:
+        return None
+
+    sanitized = text.replace("번지", "").replace(" ", "")
+    san_flag = "0"
+    if sanitized.startswith("산"):
+        san_flag = "1"
+        sanitized = sanitized[1:]
+
+    sanitized = re.sub(r"[^0-9-]", "", sanitized)
+    if not sanitized:
+        return None
+
+    parts = [item for item in sanitized.split("-") if item]
+    if not parts:
+        return None
+
+    try:
+        bun = int(parts[0])
+        ji = int(parts[1]) if len(parts) > 1 else 0
+    except ValueError:
+        return None
+
+    if bun <= 0 or bun > 9999 or ji < 0 or ji > 9999:
+        return None
+
+    return san_flag, f"{bun:04d}", f"{ji:04d}"
+
+
+def _resolve_bjdong_code(
+    *,
+    region_code: str,
+    eupmyeondong: str,
+    bjdong_codes: Dict[str, Dict[str, str]],
+) -> Optional[str]:
+    dong_map = bjdong_codes.get(region_code)
+    if not dong_map:
+        return None
+
+    normalized = _normalized(eupmyeondong)
+    if not normalized:
+        return None
+
+    for candidate in _iter_dong_name_candidates(normalized):
+        matched = _match_dong_code(dong_map, candidate)
+        if matched:
+            return matched
+    return None
+
+
+def build_standard_pnu(
+    *,
+    region_code: str,
+    eupmyeondong: str,
+    jibun: str,
+    bjdong_codes: Dict[str, Dict[str, str]],
+) -> Tuple[Optional[str], Optional[str]]:
+    normalized_region = _normalized(region_code)
+    if not REGION_CODE_RE.match(normalized_region):
+        return None, "missing_or_invalid_region_code"
+    if not _normalized(eupmyeondong):
+        return None, "missing_eupmyeondong"
+    if not _normalized(jibun):
+        return None, "missing_jibun"
+
+    bjdong_code = _resolve_bjdong_code(
+        region_code=normalized_region,
+        eupmyeondong=eupmyeondong,
+        bjdong_codes=bjdong_codes,
+    )
+    if not bjdong_code:
+        return None, "unresolved_bjdong_code"
+
+    parsed = parse_jibun_components(jibun)
+    if parsed is None:
+        return None, "invalid_jibun"
+    san_flag, bun, ji = parsed
+
+    pnu = f"{normalized_region}{bjdong_code}{san_flag}{bun}{ji}"
+    if not PNU_RE.match(pnu):
+        return None, "invalid_pnu_contract"
+    return pnu, None
+
+
+def _save_latest_summary(summary: Dict[str, Any]) -> None:
+    try:
+        LATEST_SUMMARY_PATH.write_text(
+            json.dumps(summary, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        logger.warning("failed to save latest summary: %s", exc)
 
 
 def _iter_transaction_pages(
@@ -90,7 +296,7 @@ def _iter_transaction_pages(
         query = (
             sb.table("land_transactions")
             .select(
-                "sido,sigungu,eupmyeondong,jibun,land_category,"
+                "region_code,sido,sigungu,eupmyeondong,jibun,land_category,"
                 "area_m2,price,price_per_m2,transaction_date"
             )
             .eq("is_cancelled", False)
@@ -124,10 +330,13 @@ def _iter_transaction_pages(
 def aggregate_parcels(
     page_rows: List[Dict[str, Any]],
     parcel_map: Dict[ParcelKey, Dict[str, Any]],
+    *,
+    quality_counters: Dict[str, int],
 ) -> int:
     skipped = 0
 
     for tx in page_rows:
+        region_code = _normalized(tx.get("region_code"))
         sido = _normalized(tx.get("sido"))
         sigungu = _normalized(tx.get("sigungu"))
         eupmyeondong = _normalized(tx.get("eupmyeondong"))
@@ -138,9 +347,17 @@ def aggregate_parcels(
             skipped += 1
             continue
 
-        key: ParcelKey = (sido, sigungu, eupmyeondong, jibun)
+        if not region_code:
+            quality_counters["source_rows_missing_or_invalid_region_code"] += 1
+        if not eupmyeondong:
+            quality_counters["source_rows_missing_eupmyeondong"] += 1
+        if not jibun:
+            quality_counters["source_rows_missing_jibun"] += 1
+
+        key: ParcelKey = (region_code, sido, sigungu, eupmyeondong, jibun)
         if key not in parcel_map:
             parcel_map[key] = {
+                "region_code": region_code or None,
                 "sido": sido,
                 "sigungu": sigungu,
                 "eupmyeondong": eupmyeondong or None,
@@ -177,17 +394,31 @@ def _pick_land_category(category_counts: Dict[str, int]) -> str:
     return sorted(category_counts.items(), key=lambda item: (-item[1], item[0]))[0][0]
 
 
-def build_parcel_records(parcel_map: Dict[ParcelKey, Dict[str, Any]]) -> List[Dict[str, Any]]:
+def build_parcel_records(
+    parcel_map: Dict[ParcelKey, Dict[str, Any]],
+    *,
+    bjdong_codes: Dict[str, Dict[str, str]],
+    quality_counters: Dict[str, int],
+) -> List[Dict[str, Any]]:
     records: List[Dict[str, Any]] = []
 
     for info in parcel_map.values():
         eupmyeondong = info["eupmyeondong"] or ""
         jibun = info["jibun"] or ""
         area_m2 = round(statistics.median(info["areas"]), 2) if info["areas"] else None
+        pnu, failure_reason = build_standard_pnu(
+            region_code=str(info.get("region_code") or ""),
+            eupmyeondong=eupmyeondong,
+            jibun=jibun,
+            bjdong_codes=bjdong_codes,
+        )
+        if not pnu:
+            quality_counters[failure_reason or "unknown_contract_failure"] += 1
+            continue
 
         records.append(
             {
-                "pnu": generate_pnu(info["sido"], info["sigungu"], eupmyeondong, jibun),
+                "pnu": pnu,
                 "sido": info["sido"],
                 "sigungu": info["sigungu"],
                 "eupmyeondong": info["eupmyeondong"],
@@ -355,11 +586,31 @@ def main() -> int:
     )
     logger.info("=" * 72)
 
-    sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+    try:
+        sb = _create_supabase_client()
+    except Exception as exc:
+        logger.error(str(exc))
+        return 1
+
+    bjdong_codes = _load_bjdong_codes(BJDONG_CODES_PATH)
+    if not bjdong_codes:
+        logger.warning("bjdong_codes is empty. PNU contract checks will likely skip many rows.")
     if args.clean:
         clean_existing_data(sb)
 
     parcel_map: Dict[ParcelKey, Dict[str, Any]] = {}
+    quality_counters: Dict[str, int] = {
+        "source_rows_missing_or_invalid_region_code": 0,
+        "source_rows_missing_eupmyeondong": 0,
+        "source_rows_missing_jibun": 0,
+        "missing_or_invalid_region_code": 0,
+        "missing_eupmyeondong": 0,
+        "missing_jibun": 0,
+        "unresolved_bjdong_code": 0,
+        "invalid_jibun": 0,
+        "invalid_pnu_contract": 0,
+        "unknown_contract_failure": 0,
+    }
     fetched_rows = 0
     skipped_rows = 0
     next_log_at = args.log_every
@@ -372,7 +623,11 @@ def main() -> int:
         max_rows=args.max_rows,
     ):
         fetched_rows += len(page)
-        skipped_rows += aggregate_parcels(page, parcel_map)
+        skipped_rows += aggregate_parcels(
+            page,
+            parcel_map,
+            quality_counters=quality_counters,
+        )
         if fetched_rows >= next_log_at:
             logger.info(
                 "source progress: rows=%s parcels=%s skipped=%s",
@@ -384,15 +639,50 @@ def main() -> int:
 
     if fetched_rows == 0:
         logger.warning("no land_transactions matched filters; nothing to upsert")
+        _save_latest_summary(
+            {
+                "generated_at": datetime.now().isoformat(),
+                "dry_run": bool(args.dry_run),
+                "scope": {
+                    "since_days": since_days,
+                    "full_scan": bool(args.full_scan),
+                    "sigungu": args.sigungu or None,
+                },
+                "source": {"rows": 0, "skipped_rows": 0},
+                "contract_counters": quality_counters,
+                "records": {"prepared": 0, "upsert_success": 0, "upsert_failed": 0},
+            }
+        )
         return 0
 
-    records = build_parcel_records(parcel_map)
+    records = build_parcel_records(
+        parcel_map,
+        bjdong_codes=bjdong_codes,
+        quality_counters=quality_counters,
+    )
+    contract_fail_count = sum(
+        quality_counters.get(key, 0)
+        for key in (
+            "missing_or_invalid_region_code",
+            "missing_eupmyeondong",
+            "missing_jibun",
+            "unresolved_bjdong_code",
+            "invalid_jibun",
+            "invalid_pnu_contract",
+            "unknown_contract_failure",
+        )
+    )
     logger.info(
-        "aggregated rows=%s into parcels=%s (records=%s, skipped_rows=%s)",
+        "aggregated rows=%s into parcels=%s (records=%s, skipped_rows=%s, contract_skipped=%s)",
         f"{fetched_rows:,}",
         f"{len(parcel_map):,}",
         f"{len(records):,}",
         f"{skipped_rows:,}",
+        f"{contract_fail_count:,}",
+    )
+    logger.info(
+        "contract_counters=%s",
+        json.dumps(quality_counters, ensure_ascii=False, sort_keys=True),
     )
 
     success, failed = upsert_parcels(
@@ -403,6 +693,29 @@ def main() -> int:
         sleep_ms=args.sleep_ms,
     )
     logger.info("completed: upsert_success=%s upsert_failed=%s", f"{success:,}", f"{failed:,}")
+    _save_latest_summary(
+        {
+            "generated_at": datetime.now().isoformat(),
+            "dry_run": bool(args.dry_run),
+            "scope": {
+                "since_days": since_days,
+                "full_scan": bool(args.full_scan),
+                "sigungu": args.sigungu or None,
+                "max_rows": args.max_rows,
+            },
+            "source": {
+                "rows": fetched_rows,
+                "aggregated_parcels": len(parcel_map),
+                "skipped_rows": skipped_rows,
+            },
+            "contract_counters": quality_counters,
+            "records": {
+                "prepared": len(records),
+                "upsert_success": success,
+                "upsert_failed": failed,
+            },
+        }
+    )
 
     # Hard failure only when nothing could be saved in a non-dry run.
     if not args.dry_run and records and success == 0:

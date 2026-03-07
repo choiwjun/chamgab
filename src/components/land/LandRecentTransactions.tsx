@@ -3,55 +3,58 @@
 import { motion } from 'framer-motion'
 import Link from 'next/link'
 import type { Route } from 'next'
-import { FileText, Calendar, MapPin } from 'lucide-react'
+import { Calendar, FileText, MapPin } from 'lucide-react'
+import { formatNumber } from '@/lib/format'
 import type { LandTransaction } from '@/types/land'
 import { LAND_CATEGORY_LABELS } from '@/types/land'
-import { formatNumber } from '@/lib/format'
 
 interface LandRecentTransactionsProps {
   transactions: LandTransaction[]
+  title?: string
+  subtitle?: string
+  emptyMessage?: string
+}
+
+function formatDate(dateStr: string) {
+  const date = new Date(dateStr)
+  return date.toLocaleDateString('ko-KR', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  })
+}
+
+function formatPyeong(m2: number) {
+  return (m2 / 3.305785).toFixed(0)
 }
 
 export function LandRecentTransactions({
   transactions,
+  title = '최근 거래',
+  subtitle = '최근 토지 거래 이력을 확인하세요',
+  emptyMessage = '조건에 맞는 거래 이력이 없습니다.',
 }: LandRecentTransactionsProps) {
   if (transactions.length === 0) {
     return (
       <section className="bg-white py-16">
         <div className="mx-auto max-w-5xl px-6">
           <h2 className="text-2xl font-bold tracking-[-0.01em] text-[#191F28]">
-            최근 거래
+            {title}
           </h2>
           <div className="mt-8 text-center">
             <div className="inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-[#F2F4F6]">
               <FileText className="h-8 w-8 text-[#8B95A1]" strokeWidth={2} />
             </div>
-            <p className="mt-4 text-[#8B95A1]">
-              최근 거래 내역을 불러오는 중입니다
-            </p>
+            <p className="mt-4 text-[#8B95A1]">{emptyMessage}</p>
           </div>
         </div>
       </section>
     )
   }
 
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr)
-    return date.toLocaleDateString('ko-KR', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    })
-  }
-
-  const formatPyeong = (m2: number) => {
-    return (m2 / 3.305785).toFixed(0)
-  }
-
   return (
     <section className="bg-white py-16 md:py-20">
       <div className="mx-auto max-w-5xl px-6">
-        {/* Section header */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
@@ -59,14 +62,11 @@ export function LandRecentTransactions({
           transition={{ duration: 0.5 }}
         >
           <h2 className="text-2xl font-bold tracking-[-0.01em] text-[#191F28]">
-            최근 거래
+            {title}
           </h2>
-          <p className="mt-2 text-[#4E5968]">
-            최신 토지 실거래 내역을 확인하세요
-          </p>
+          <p className="mt-2 text-[#4E5968]">{subtitle}</p>
         </motion.div>
 
-        {/* Transactions list */}
         <div className="mt-8 space-y-3">
           {transactions.map((tx, index) => (
             <motion.div
@@ -77,7 +77,6 @@ export function LandRecentTransactions({
               transition={{ delay: index * 0.03, duration: 0.3 }}
             >
               <div className="rounded-2xl border border-[#E5E8EB] bg-white p-5 transition-all duration-200 hover:border-[#D1D6DB]">
-                {/* Location */}
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
@@ -94,7 +93,6 @@ export function LandRecentTransactions({
                     )}
                   </div>
 
-                  {/* Land category badge */}
                   {tx.land_category && (
                     <span className="rounded-lg bg-[#FFF7ED] px-3 py-1 text-xs font-medium text-[#F59E0B]">
                       {LAND_CATEGORY_LABELS[tx.land_category] ||
@@ -103,9 +101,7 @@ export function LandRecentTransactions({
                   )}
                 </div>
 
-                {/* Details grid */}
                 <div className="mt-4 grid grid-cols-2 gap-4 border-t border-[#F2F4F6] pt-4 md:grid-cols-4">
-                  {/* Area */}
                   <div>
                     <p className="text-xs text-[#8B95A1]">면적</p>
                     <p className="mt-1 font-semibold text-[#191F28]">
@@ -116,7 +112,6 @@ export function LandRecentTransactions({
                     </p>
                   </div>
 
-                  {/* Price */}
                   <div>
                     <p className="text-xs text-[#8B95A1]">거래금액</p>
                     <p className="mt-1 font-semibold text-[#191F28]">
@@ -127,7 +122,6 @@ export function LandRecentTransactions({
                     </p>
                   </div>
 
-                  {/* Price per m2 */}
                   <div>
                     <p className="text-xs text-[#8B95A1]">단가</p>
                     <p className="mt-1 font-semibold text-[#191F28]">
@@ -138,7 +132,6 @@ export function LandRecentTransactions({
                     <p className="text-xs text-[#8B95A1]">/m²</p>
                   </div>
 
-                  {/* Transaction date */}
                   <div>
                     <p className="text-xs text-[#8B95A1]">거래일</p>
                     <div className="mt-1 flex items-center gap-1">
@@ -153,16 +146,16 @@ export function LandRecentTransactions({
                   </div>
                 </div>
 
-                {tx.pnu ? (
-                  <div className="mt-4 border-t border-[#F2F4F6] pt-3">
-                    <Link
-                      href={`/land/${encodeURIComponent(tx.pnu)}` as Route}
-                      className="text-sm font-semibold text-[#F59E0B] hover:text-[#EA8A0C]"
-                    >
-                      상세 분석 보기
-                    </Link>
-                  </div>
-                ) : null}
+                <div className="mt-4 border-t border-[#F2F4F6] pt-3">
+                  <Link
+                    href={
+                      `/land/${encodeURIComponent(tx.pnu || `tx-${tx.id}`)}` as Route
+                    }
+                    className="text-sm font-semibold text-[#F59E0B] hover:text-[#EA8A0C]"
+                  >
+                    상세 분석 보기
+                  </Link>
+                </div>
               </div>
             </motion.div>
           ))}

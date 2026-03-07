@@ -1,24 +1,35 @@
-﻿import { createAdminClient } from '@/lib/supabase/admin'
-import {
-  compressMlProbability,
-  FACTOR_NAME_MAP,
-  INDUSTRY_NAMES,
-} from '@/app/api/commercial/_helpers'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { FACTOR_NAME_MAP, INDUSTRY_NAMES } from '@/app/api/commercial/_helpers'
 
 type AnyRow = Record<string, unknown>
 type AdminClient = ReturnType<typeof createAdminClient>
 
+function envNumber(name: string, fallback: number): number {
+  const raw = process.env[name]
+  if (!raw) return fallback
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function envString(name: string, fallback: string): string {
+  const raw = (process.env[name] || '').trim()
+  return raw || fallback
+}
+
 export const COMMERCIAL_THRESHOLDS = {
   lowProbHighConfidencePctMax: 3,
-  highProbBucketPctMin: 5,
-  highProbBucketPctMax: 20,
+  highProbBucketPctMin: envNumber('COMMERCIAL_HIGH_PROB_BUCKET_PCT_MIN', 1),
+  highProbBucketPctMax: envNumber('COMMERCIAL_HIGH_PROB_BUCKET_PCT_MAX', 20),
   sigunguCoverageMin: 227,
   freshnessMonthsMax: 3,
   snapshotAgeHoursMax: 24,
 } as const
 
 export const COMMERCIAL_QUALITY_VERSION = 'commercial-quality-v1'
-export const COMMERCIAL_CALIBRATION_VERSION = 'commercial-cal-v3'
+export const COMMERCIAL_CALIBRATION_VERSION = envString(
+  'COMMERCIAL_CALIBRATION_VERSION',
+  'commercial-cal-v4'
+)
 
 export type CommercialQualitySnapshotPayload = {
   computed_at: string
@@ -61,6 +72,16 @@ function clamp(value: number, min: number, max: number): number {
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100
+}
+
+// Keep commercial quality gate calibration aligned with
+// ml-api/scripts/build_commercial_quality_snapshot.py.
+function compressCommercialQualityProbability(raw: number): number {
+  const x = clamp(raw, 0, 100)
+  if (x < 40) return round2(40 - (40 - x) * 0.75)
+  if (x < 70) return round2(40 + (x - 40) * 0.95)
+  if (x < 85) return round2(68.5 + (x - 70) * 0.7)
+  return round2(79 + (x - 85) * 0.6)
 }
 
 function monthsSince(yyyymm: string | null): number | null {
@@ -484,7 +505,8 @@ export async function computeCommercialQualitySnapshot(): Promise<CommercialQual
       storeCount,
       franchiseRatio,
     })
-    const calibratedProbability = compressMlProbability(rawProbability)
+    const calibratedProbability =
+      compressCommercialQualityProbability(rawProbability)
 
     const districtProfile = districtProfiles.get(sigunguCode || '')
     const fit = calcIndustryFitAdjustment({
@@ -630,10 +652,35 @@ export async function getLatestCommercialQualitySnapshot() {
     .from('commercial_quality_snapshots')
     .select('*')
     .order('computed_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
+    .limit(50)
   if (error) throw new Error(error.message)
-  return data
+
+  const rows = (data || []) as AnyRow[]
+  if (rows.length === 0) return null
+
+  // Prevent stale/mixed calibration writers from overriding gate status.
+  const compatible = rows.find((row) => {
+    const details =
+      row.details && typeof row.details === 'object'
+        ? (row.details as AnyRow)
+        : null
+    if (!details) return false
+
+    const qualityVersion = String(details.quality_version || '').trim()
+    const calibrationVersion = String(details.calibration_version || '').trim()
+    if (qualityVersion && qualityVersion !== COMMERCIAL_QUALITY_VERSION) {
+      return false
+    }
+    if (
+      calibrationVersion &&
+      calibrationVersion !== COMMERCIAL_CALIBRATION_VERSION
+    ) {
+      return false
+    }
+    return true
+  })
+
+  return compatible || rows[0]
 }
 
 export function evaluateCommercialSnapshotGate(snapshot: AnyRow | null): {

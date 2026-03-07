@@ -33,6 +33,7 @@ Available commercial quality job types:
 - `check_commercial_data_quality`
 - `check_launch_readiness_gate`
 - `collect_land_daily`
+- `land_coverage_backfill`
 - `collect_land_locations`
 - `check_land_collection_status`
 
@@ -113,8 +114,9 @@ The ML API scheduler can run the full sequence automatically on server cron:
 4. `collect_commercial`
 5. `build_commercial_quality_snapshot`
 6. `check_commercial_data_quality`
-7. `check_land_collection_status`
-8. `check_launch_readiness_gate` (calls:
+7. `land_coverage_backfill` (recommended for ongoing land coverage expansion)
+8. `check_land_collection_status`
+9. `check_launch_readiness_gate` (calls:
    `/api/admin/commercial/quality/latest`,
    `/api/admin/data-quality/launch-readiness`)
 
@@ -122,6 +124,8 @@ Required env for step 6:
 
 - `APP_BASE_URL` (e.g. `https://chamgab.vercel.app`)
 - `ML_ADMIN_TOKEN` (same secret shared by ML API + web admin routes)
+- `LAND_COLLECTION_GATE_MODE=quota|full`
+- `LAND_COLLECTION_GATE_PROFILE=default|land-ops-v1`
 
 Automatic retry (recommended):
 
@@ -152,6 +156,19 @@ Watchdog behavior:
 1. If no job is running and a critical stage has no success record (or failed), it queues the earliest missing stage.
 2. It enforces cooldown and max-requeue guardrails to avoid hot-loop requeueing.
 3. It persists stage status in `ml-api/logs/scheduler_watchdog_state_latest.json`.
+
+Land coverage repeat automation (recommended):
+
+- `LAND_COVERAGE_BACKFILL_CRON_ENABLED=true`
+- `LAND_COVERAGE_BACKFILL_INTERVAL_MINUTES=240`
+- `LAND_COVERAGE_BACKFILL_START_DELAY_MINUTES=45`
+- `LAND_COVERAGE_BACKFILL_PARCELS_FULL_SCAN=true`
+- `LAND_COVERAGE_BACKFILL_LINK_MAX_ROWS=5000`
+- `LAND_COVERAGE_BACKFILL_LOCATION_LIMIT=1000`
+- `LAND_COVERAGE_BACKFILL_PRICE_LIMIT=1000`
+- `LAND_COVERAGE_BACKFILL_CHARACTERISTICS_LIMIT=1000`
+- `LAND_COVERAGE_BACKFILL_RUN_STATUS_CHECK=true`
+- `LAND_COVERAGE_BACKFILL_STATUS_STRICT=false` (recommended while coverage is ramping)
 
 ### Manual step-by-step (fallback)
 
@@ -210,6 +227,9 @@ To avoid contention with the critical pipeline window (`00:00~03:30`), keep land
 - `LAND_LOCATION_CRON_MINUTE=10`
 - `LAND_QUALITY_CHECK_CRON_HOUR=7`
 - `LAND_QUALITY_CHECK_CRON_MINUTE=30`
+- `LAND_COVERAGE_BACKFILL_CRON_ENABLED=true`
+- `LAND_COVERAGE_BACKFILL_INTERVAL_MINUTES=240`
+- `LAND_COVERAGE_BACKFILL_START_DELAY_MINUTES=45`
 
 Chunk/resume options:
 
@@ -220,6 +240,12 @@ Chunk/resume options:
 - `LAND_PRICE_SLEEP_MS=120`
 - `LAND_CHARACTERISTICS_SLEEP_MS=120`
 - `LAND_LOCATION_SLEEP_MS=180`
+- `LAND_LOCATIONS_INCLUDE_IN_DAILY=true` (recommended)
+- `LAND_COVERAGE_BACKFILL_LINK_MAX_ROWS=5000`
+- `LAND_COVERAGE_BACKFILL_LOCATION_LIMIT=1000`
+- `LAND_COVERAGE_BACKFILL_PRICE_LIMIT=1000`
+- `LAND_COVERAGE_BACKFILL_CHARACTERISTICS_LIMIT=1000`
+- `LAND_COVERAGE_BACKFILL_STATUS_STRICT=false` (recommended)
 
 Optional regional chunk targeting:
 

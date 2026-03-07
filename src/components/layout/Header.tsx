@@ -33,6 +33,9 @@ interface NavCategory {
   comingSoon?: boolean
 }
 
+type DomainKey = 'apartment' | 'commercial' | 'school' | 'land'
+type DomainLocks = Record<DomainKey, boolean>
+
 const NAV_APARTMENT: NavCategory = {
   id: 'apartment',
   label: '아파트',
@@ -49,7 +52,7 @@ const NAV_BUSINESS: NavCategory = {
 
 const NAV_LAND: NavCategory = {
   id: 'land',
-  label: '토지분석',
+  label: '토지분석 (BETA)',
   icon: MapPin,
   links: [{ href: '/land', label: '토지 분석' }],
 }
@@ -57,9 +60,11 @@ const NAV_LAND: NavCategory = {
 function NavDropdown({
   category,
   isActive,
+  locked = false,
 }: {
   category: NavCategory
   isActive: boolean
+  locked?: boolean
 }) {
   const [isOpen, setIsOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -86,15 +91,16 @@ function NavDropdown({
     setIsOpen(false)
   }
 
-  if (category.comingSoon) {
+  if (category.comingSoon || locked) {
     return (
       <button
-        onClick={handleComingSoon}
-        className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-[#8B95A1] transition-colors hover:text-[#4E5968]"
+        onClick={locked ? undefined : handleComingSoon}
+        className="flex cursor-not-allowed items-center gap-1.5 px-4 py-2 text-sm font-medium text-[#8B95A1]"
+        aria-disabled
       >
         {category.label}
         <span className="rounded bg-[#F2F4F6] px-1.5 py-0.5 text-[10px] font-semibold text-[#8B95A1]">
-          Soon
+          {locked ? '점검중' : 'Soon'}
         </span>
       </button>
     )
@@ -102,6 +108,7 @@ function NavDropdown({
 
   if (
     singleLink &&
+    !locked &&
     !singleLink.comingSoon &&
     (!singleLink.requiresAuth || isAuthenticated)
   ) {
@@ -189,11 +196,57 @@ export function Header() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isSearchExpanded, setIsSearchExpanded] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [domainLocks, setDomainLocks] = useState<DomainLocks>({
+    apartment: false,
+    commercial: false,
+    school: false,
+    land: false,
+  })
   const { isAuthenticated } = useAuth()
   const pathname = usePathname()
   const router = useRouter()
 
   const desktopCategories = [NAV_APARTMENT, NAV_BUSINESS, NAV_LAND]
+  const categoryToDomain: Record<string, DomainKey> = {
+    apartment: 'apartment',
+    business: 'commercial',
+    land: 'land',
+  }
+
+  useEffect(() => {
+    let active = true
+
+    const loadDomainLocks = async () => {
+      try {
+        const res = await fetch('/api/domain-gates', { cache: 'no-store' })
+        if (!res.ok) throw new Error(`http_${res.status}`)
+        const payload = (await res.json()) as {
+          locked?: Partial<DomainLocks>
+        }
+        if (!active) return
+        setDomainLocks({
+          apartment: payload.locked?.apartment ?? false,
+          commercial: payload.locked?.commercial ?? false,
+          school: payload.locked?.school ?? false,
+          land: payload.locked?.land ?? false,
+        })
+      } catch {
+        if (!active) return
+        setDomainLocks({
+          apartment: false,
+          commercial: false,
+          school: false,
+          land: false,
+        })
+      }
+    }
+
+    void loadDomainLocks()
+
+    return () => {
+      active = false
+    }
+  }, [])
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
@@ -242,24 +295,39 @@ export function Header() {
             <NavDropdown
               category={NAV_APARTMENT}
               isActive={isCategoryActive(pathname, 'apartment')}
+              locked={domainLocks.apartment}
             />
             <NavDropdown
               category={NAV_BUSINESS}
               isActive={isCategoryActive(pathname, 'business')}
+              locked={domainLocks.commercial}
             />
-            <Link
-              href={'/school-analysis' as never}
-              className={`px-4 py-2 text-sm font-medium transition-colors ${
-                pathname.startsWith('/school-analysis')
-                  ? 'text-[#191F28]'
-                  : 'text-[#4E5968] hover:text-[#191F28]'
-              }`}
-            >
-              학군분석
-            </Link>
+            {domainLocks.school ? (
+              <button
+                className="flex cursor-not-allowed items-center gap-1.5 px-4 py-2 text-sm font-medium text-[#8B95A1]"
+                aria-disabled
+              >
+                학군분석
+                <span className="rounded bg-[#F2F4F6] px-1.5 py-0.5 text-[10px] font-semibold text-[#8B95A1]">
+                  점검중
+                </span>
+              </button>
+            ) : (
+              <Link
+                href={'/school-analysis' as never}
+                className={`px-4 py-2 text-sm font-medium transition-colors ${
+                  pathname.startsWith('/school-analysis')
+                    ? 'text-[#191F28]'
+                    : 'text-[#4E5968] hover:text-[#191F28]'
+                }`}
+              >
+                학군분석
+              </Link>
+            )}
             <NavDropdown
               category={NAV_LAND}
               isActive={isCategoryActive(pathname, 'land')}
+              locked={domainLocks.land}
             />
           </nav>
 
@@ -342,6 +410,8 @@ export function Header() {
 
               {desktopCategories.map((category) => {
                 const Icon = category.icon
+                const domain = categoryToDomain[category.id]
+                const categoryLocked = domainLocks[domain]
                 return (
                   <div
                     key={category.id}
@@ -360,6 +430,17 @@ export function Header() {
                     </div>
                     <div className="space-y-1">
                       {category.links.map((link) => {
+                        if (categoryLocked) {
+                          return (
+                            <button
+                              key={link.href}
+                              className="block w-full cursor-not-allowed px-4 py-2 text-left text-[#8B95A1]"
+                              aria-disabled
+                            >
+                              {link.label} (점검중)
+                            </button>
+                          )
+                        }
                         if (link.requiresAuth && !isAuthenticated) return null
                         if (link.comingSoon) {
                           return (
@@ -392,14 +473,24 @@ export function Header() {
               })}
 
               <div className="border-t border-[#E5E8EB] pt-4">
-                <Link
-                  href={'/school-analysis' as never}
-                  className="flex items-center gap-2 px-4 py-2 text-[#4E5968] transition-colors hover:bg-[#F9FAFB] hover:text-[#191F28]"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                >
-                  <GraduationCap className="h-4 w-4 text-[#8B95A1]" />
-                  학군분석
-                </Link>
+                {domainLocks.school ? (
+                  <button
+                    className="flex w-full cursor-not-allowed items-center gap-2 px-4 py-2 text-left text-[#8B95A1]"
+                    aria-disabled
+                  >
+                    <GraduationCap className="h-4 w-4 text-[#8B95A1]" />
+                    학군분석 (점검중)
+                  </button>
+                ) : (
+                  <Link
+                    href={'/school-analysis' as never}
+                    className="flex items-center gap-2 px-4 py-2 text-[#4E5968] transition-colors hover:bg-[#F9FAFB] hover:text-[#191F28]"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                  >
+                    <GraduationCap className="h-4 w-4 text-[#8B95A1]" />
+                    학군분석
+                  </Link>
+                )}
               </div>
 
               {isAuthenticated ? (

@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 import requests
 from dotenv import load_dotenv
@@ -61,18 +62,42 @@ def get_env(name: str) -> str:
     return value
 
 
-def resolve_data_go_key() -> str:
-    for name in ("DATA_GO_KR_API_KEY", "PUBLIC_DATA_API_KEY", "MOLIT_API_KEY"):
+def resolve_land_characteristics_api_key() -> str:
+    for name in (
+        "LAND_CHARACTERISTICS_API_KEY",
+        "NSDI_API_KEY",
+        "DATA_GO_KR_API_KEY",
+        "PUBLIC_DATA_API_KEY",
+        "MOLIT_API_KEY",
+        "VWORLD_API_KEY",
+        "LAND_PRICE_API_KEY",
+    ):
         value = os.environ.get(name, "").strip()
         if value:
             return value
     raise RuntimeError(
-        "Missing required env: DATA_GO_KR_API_KEY (or PUBLIC_DATA_API_KEY / MOLIT_API_KEY)"
+        "Missing required env: LAND_CHARACTERISTICS_API_KEY (or NSDI_API_KEY / DATA_GO_KR_API_KEY / VWORLD_API_KEY)"
     )
 
 
 def is_valid_pnu(pnu: str) -> bool:
     return bool(PNU_RE.match((pnu or "").strip()))
+
+
+def resolve_vworld_domain() -> str:
+    domain = os.environ.get("VWORLD_DOMAIN", "").strip()
+    if domain:
+        return domain
+
+    app_base_url = os.environ.get("APP_BASE_URL", "").strip()
+    if not app_base_url:
+        return ""
+
+    parsed = urlparse(app_base_url)
+    if parsed.hostname:
+        return parsed.hostname
+
+    return app_base_url
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -85,6 +110,10 @@ def _env_bool(name: str, default: bool) -> bool:
     if normalized in {"0", "false", "no", "off"}:
         return False
     return default
+
+
+def default_reference_year() -> int:
+    return max(2000, datetime.now().year - 1)
 
 
 @dataclass
@@ -268,6 +297,16 @@ def parse_xml_row(xml_text: str) -> Dict[str, Any]:
 
 
 def parse_json_row(payload: Dict[str, Any]) -> Dict[str, Any]:
+    # VWorld NED shape:
+    # {"landCharacteristicss":{"field":[{...}]}}
+    land_characteristics = payload.get("landCharacteristicss", {})
+    if isinstance(land_characteristics, dict):
+        field = land_characteristics.get("field", {})
+        if isinstance(field, list):
+            return field[0] if field else {}
+        if isinstance(field, dict):
+            return field
+
     # Common shapes from data.go.kr APIs.
     response = payload.get("response", {})
     body = response.get("body", {}) if isinstance(response, dict) else {}
@@ -281,11 +320,21 @@ def parse_json_row(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def map_characteristics_row(raw: Dict[str, Any]) -> Dict[str, Any]:
+    price_year = pick(raw, "stdrYear")
+    official_price = parse_number(
+        pick(raw, "pblntfPclnd", "pblntfPc", "officialLandPrice", "official_price")
+    )
     return {
-        "land_use": pick(raw, "landUse", "lndcgrCodeNm", "landUseSttusNm"),
-        "elevation_type": pick(raw, "elevationType", "tpgrphFrmNm"),
-        "terrain_shape": pick(raw, "terrainShape", "tpgrphHgNm"),
-        "road_access": pick(raw, "roadSide", "roadSideNm", "roadAccess"),
+        "land_use": pick(raw, "landUse", "ladUseSittnNm", "landUseSttusNm"),
+        "elevation_type": pick(raw, "elevationType", "tpgrphHgNm", "tpgrphHgCodeNm"),
+        "terrain_shape": pick(raw, "terrainShape", "tpgrphFrmNm", "tpgrphFrmCodeNm"),
+        "road_access": pick(
+            raw,
+            "roadSide",
+            "roadSideNm",
+            "roadSideCodeNm",
+            "roadAccess",
+        ),
         "road_distance": pick(raw, "roadDistance", "roadDistanceNm"),
         "zoning_detail": pick(raw, "zoning", "spclLandNm", "zoningDetail", "prposArea1Nm"),
         "building_coverage": parse_number(
@@ -297,6 +346,8 @@ def map_characteristics_row(raw: Dict[str, Any]) -> Dict[str, Any]:
         # Optional for land_parcels patching.
         "land_category_raw": pick(raw, "landCategory", "lndcgrCodeNm"),
         "zoning_raw": pick(raw, "zoning", "prposArea1Nm"),
+        "official_price_per_m2": int(round(official_price)) if official_price else None,
+        "price_year": int(price_year) if price_year and str(price_year).isdigit() else None,
     }
 
 
@@ -304,19 +355,38 @@ def fetch_land_characteristics(
     *,
     pnu: str,
     api_key: str,
+    year: Optional[int] = None,
     timeout_sec: int = 12,
 ) -> Dict[str, Any]:
     url = os.environ.get(
         "LAND_CHARACTERISTICS_API_URL",
-        "http://apis.data.go.kr/1611000/nsdi/LandCharacteristicsService/getLandCharacteristics",
+        "https://api.vworld.kr/ned/data/getLandCharacteristics",
     )
-    params = {
-        "serviceKey": api_key,
-        "pnu": pnu,
-        "numOfRows": "1",
-        "pageNo": "1",
-        "resultType": "json",
-    }
+    lower_url = url.lower()
+    if "vworld.kr" in lower_url:
+        params = {
+            "key": api_key,
+            "apiKey": api_key,
+            "pnu": pnu,
+            "format": "json",
+            "numOfRows": os.environ.get("VWORLD_NUM_OF_ROWS", "10"),
+            "pageNo": os.environ.get("VWORLD_PAGE_NO", "1"),
+        }
+        if year is not None:
+            params["stdrYear"] = str(year)
+        domain = resolve_vworld_domain()
+        if domain:
+            params["domain"] = domain
+    else:
+        params = {
+            "serviceKey": api_key,
+            "pnu": pnu,
+            "numOfRows": "1",
+            "pageNo": "1",
+            "resultType": "json",
+        }
+        if year is not None:
+            params["stdrYear"] = str(year)
 
     response = requests.get(url, params=params, timeout=timeout_sec)
     response.raise_for_status()
@@ -341,6 +411,7 @@ def upsert_characteristics(
     supabase,
     parcel_id: str,
     mapped: Dict[str, Any],
+    fallback_price_year: int,
     dry_run: bool,
 ) -> None:
     if dry_run:
@@ -371,9 +442,30 @@ def upsert_characteristics(
     if len(parcel_update) > 1:
         supabase.table("land_parcels").update(parcel_update).eq("id", parcel_id).execute()
 
+    official_price_per_m2 = mapped.get("official_price_per_m2")
+    if official_price_per_m2:
+        price_year = int(mapped.get("price_year") or fallback_price_year)
+        supabase.table("land_prices").upsert(
+            {
+                "parcel_id": parcel_id,
+                "price_year": price_year,
+                "official_price_per_m2": int(official_price_per_m2),
+            },
+            on_conflict="parcel_id,price_year",
+        ).execute()
+
+        supabase.table("land_parcels").update(
+            {
+                "latest_official_price_per_m2": int(official_price_per_m2),
+                "latest_official_price_year": price_year,
+                "updated_at": datetime.now().isoformat(),
+            }
+        ).eq("id", parcel_id).execute()
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Collect land characteristics")
+    parser.add_argument("--year", type=int, default=default_reference_year())
     parser.add_argument("--sigungu", type=str, default=None)
     parser.add_argument("--limit", type=int, default=0, help="0 means no limit")
     parser.add_argument("--dry-run", action="store_true")
@@ -400,12 +492,13 @@ def main() -> None:
 
     supabase_url = get_env("SUPABASE_URL")
     supabase_key = get_env("SUPABASE_SERVICE_KEY")
-    data_go_key = resolve_data_go_key()
+    source_api_key = resolve_land_characteristics_api_key()
 
     supabase = create_client(supabase_url, supabase_key)
 
     LOG.info(
-        "Starting collect_land_characteristics sigungu=%s limit=%s dry_run=%s resume=%s",
+        "Starting collect_land_characteristics year=%s sigungu=%s limit=%s dry_run=%s resume=%s",
+        args.year,
         args.sigungu or "-",
         args.limit,
         args.dry_run,
@@ -436,7 +529,11 @@ def main() -> None:
     for parcel in parcels:
         total += 1
         try:
-            mapped = fetch_land_characteristics(pnu=parcel.pnu, api_key=data_go_key)
+            mapped = fetch_land_characteristics(
+                pnu=parcel.pnu,
+                api_key=source_api_key,
+                year=args.year,
+            )
             if not mapped:
                 missing += 1
             else:
@@ -444,6 +541,7 @@ def main() -> None:
                     supabase=supabase,
                     parcel_id=parcel.parcel_id,
                     mapped=mapped,
+                    fallback_price_year=args.year,
                     dry_run=args.dry_run,
                 )
                 success += 1

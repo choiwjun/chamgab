@@ -7,6 +7,7 @@ import argparse
 import json
 import logging
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Sequence, Tuple
@@ -19,6 +20,26 @@ logger = logging.getLogger("check_land_collection_status")
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPORTS_DIR = PROJECT_ROOT / "reports"
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+PNU_RE = re.compile(r"^\d{19}$")
+SIDO_PREFIX_GROUPS: tuple[tuple[str, ...], ...] = (
+    ("11",),  # 서울
+    ("26",),  # 부산
+    ("27",),  # 대구
+    ("28",),  # 인천
+    ("29",),  # 광주
+    ("30",),  # 대전
+    ("31",),  # 울산
+    ("36",),  # 세종
+    ("41",),  # 경기
+    ("42", "51"),  # 강원 (구/신 코드 동시 허용)
+    ("43",),  # 충북
+    ("44",),  # 충남
+    ("45", "52"),  # 전북 (구/신 코드 동시 허용)
+    ("46",),  # 전남
+    ("47",),  # 경북
+    ("48",),  # 경남
+    ("50",),  # 제주
+)
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -97,6 +118,8 @@ def _count_exact(
             q = q.is_(col, "null")
         elif op == "gte":
             q = q.gte(col, value)
+        elif op == "like":
+            q = q.like(col, value)
         else:
             raise ValueError(f"Unsupported filter op: {op}")
     result = q.execute()
@@ -138,6 +161,29 @@ def _distinct_count(
     return len(seen)
 
 
+def _land_sido_coverage_count(client: Any) -> int:
+    """Count covered sido buckets using region_code prefixes.
+
+    Uses both legacy and current prefixes for provinces that changed code (강원/전북).
+    """
+    covered = 0
+    for prefixes in SIDO_PREFIX_GROUPS:
+        has_data = False
+        for prefix in prefixes:
+            count = _count_exact(
+                client,
+                "land_transactions",
+                "id",
+                filters=[("like", "region_code", f"{prefix}%")],
+            )
+            if count > 0:
+                has_data = True
+                break
+        if has_data:
+            covered += 1
+    return covered
+
+
 def _latest_timestamp(client: Any, table: str, fields: Sequence[str]) -> datetime | None:
     latest: datetime | None = None
     for field in fields:
@@ -159,6 +205,90 @@ def _latest_timestamp(client: Any, table: str, fields: Sequence[str]) -> datetim
         if ts and (latest is None or ts > latest):
             latest = ts
     return latest
+
+
+def _count_missing_text_field(
+    client: Any,
+    *,
+    table: str,
+    column: str,
+    base_filters: Sequence[Tuple[str, str, Any]],
+) -> int:
+    try:
+        missing_null = _count_exact(
+            client,
+            table,
+            "id",
+            filters=[*base_filters, ("isnull", column, None)],
+        )
+        missing_empty = _count_exact(
+            client,
+            table,
+            "id",
+            filters=[*base_filters, ("eq", column, "")],
+        )
+        return missing_null + missing_empty
+    except Exception as exc:
+        logger.warning("missing text field count failed for %s.%s: %s", table, column, exc)
+        return 0
+
+
+def _scan_land_parcel_pnu_contract(
+    client: Any,
+    *,
+    page_size: int = 1000,
+    max_rows: int = 300_000,
+) -> Tuple[int, int]:
+    offset = 0
+    scanned = 0
+    invalid = 0
+
+    while offset < max_rows:
+        result = (
+            client.table("land_parcels")
+            .select("pnu")
+            .order("id")
+            .range(offset, offset + page_size - 1)
+            .execute()
+        )
+        rows = result.data or []
+        if not rows:
+            break
+
+        scanned += len(rows)
+        for row in rows:
+            pnu = str((row or {}).get("pnu") or "").strip()
+            if not PNU_RE.match(pnu):
+                invalid += 1
+
+        if len(rows) < page_size:
+            break
+        offset += page_size
+
+    return scanned, invalid
+
+
+def build_contract_checks(
+    *,
+    scanned_parcels: int,
+    invalid_pnu_count: int,
+    missing_region_code_count: int,
+    missing_eupmyeondong_count: int,
+    missing_jibun_count: int,
+) -> Dict[str, Any]:
+    eligible_pool = max(0, scanned_parcels - invalid_pnu_count)
+    invalid_pnu_rate = _pct(invalid_pnu_count, scanned_parcels)
+    return {
+        "invalid_pnu_rate": None if invalid_pnu_rate is None else round(float(invalid_pnu_rate), 2),
+        "invalid_pnu_count": int(max(0, invalid_pnu_count)),
+        "total_parcels": int(max(0, scanned_parcels)),
+        "missing_pnu_source_fields": {
+            "region_code": int(max(0, missing_region_code_count)),
+            "eupmyeondong": int(max(0, missing_eupmyeondong_count)),
+            "jibun": int(max(0, missing_jibun_count)),
+        },
+        "eligible_parcel_pool_size": int(eligible_pool),
+    }
 
 
 def _build_check(
@@ -190,6 +320,9 @@ def run_checks(args: argparse.Namespace) -> tuple[bool, Dict[str, Any]]:
     gate_mode = str(getattr(args, "gate_mode", "quota")).strip().lower()
     if gate_mode not in {"full", "quota"}:
         gate_mode = "quota"
+    gate_profile = str(getattr(args, "gate_profile", "default")).strip().lower()
+    if gate_profile not in {"default", "land-ops-v1"}:
+        gate_profile = "default"
 
     total_land_transactions = _count_exact(client, "land_transactions", "id")
     linked_land_transactions = _count_exact(
@@ -211,7 +344,7 @@ def run_checks(args: argparse.Namespace) -> tuple[bool, Dict[str, Any]]:
         "id",
         filters=[("notnull", "location", None)],
     )
-    land_sido_coverage = _distinct_count(client, "land_transactions", "sido")
+    land_sido_coverage = _land_sido_coverage_count(client)
     land_prices_parcels = _distinct_count(client, "land_prices", "parcel_id")
     land_characteristics_parcels = _distinct_count(client, "land_characteristics", "parcel_id")
 
@@ -252,7 +385,42 @@ def run_checks(args: argparse.Namespace) -> tuple[bool, Dict[str, Any]]:
     )
     recent_run_error_rate_pct = _pct(recent_run_error, recent_run_total)
 
-    thresholds = {
+    try:
+        scanned_parcels, invalid_pnu_count = _scan_land_parcel_pnu_contract(client)
+    except Exception as exc:
+        logger.warning("parcel contract scan failed: %s", exc)
+        scanned_parcels, invalid_pnu_count = total_land_parcels, 0
+    active_tx_filters: list[Tuple[str, str, Any]] = [
+        ("eq", "is_cancelled", False),
+        ("eq", "is_partial_sale", False),
+    ]
+    missing_region_code_count = _count_missing_text_field(
+        client,
+        table="land_transactions",
+        column="region_code",
+        base_filters=active_tx_filters,
+    )
+    missing_eupmyeondong_count = _count_missing_text_field(
+        client,
+        table="land_transactions",
+        column="eupmyeondong",
+        base_filters=active_tx_filters,
+    )
+    missing_jibun_count = _count_missing_text_field(
+        client,
+        table="land_transactions",
+        column="jibun",
+        base_filters=active_tx_filters,
+    )
+    contract_checks = build_contract_checks(
+        scanned_parcels=scanned_parcels,
+        invalid_pnu_count=invalid_pnu_count,
+        missing_region_code_count=missing_region_code_count,
+        missing_eupmyeondong_count=missing_eupmyeondong_count,
+        missing_jibun_count=missing_jibun_count,
+    )
+
+    full_thresholds = {
         "min_sido_coverage": args.min_sido_coverage,
         "min_parcel_link_rate_pct": args.min_parcel_link_rate_pct,
         "min_parcel_location_fill_rate_pct": args.min_parcel_location_fill_rate_pct,
@@ -261,16 +429,22 @@ def run_checks(args: argparse.Namespace) -> tuple[bool, Dict[str, Any]]:
         "max_collection_freshness_hours": args.max_collection_freshness_hours,
         "max_recent_run_error_rate_pct": args.max_recent_run_error_rate_pct,
     }
-    if gate_mode == "quota":
-        thresholds = {
-            "min_sido_coverage": args.quota_min_sido_coverage,
-            "min_parcel_link_rate_pct": args.quota_min_parcel_link_rate_pct,
-            "min_parcel_location_fill_rate_pct": args.quota_min_parcel_location_fill_rate_pct,
-            "min_land_prices_coverage_pct": args.quota_min_land_prices_coverage_pct,
-            "min_land_characteristics_coverage_pct": args.quota_min_land_characteristics_coverage_pct,
-            "max_collection_freshness_hours": args.quota_max_collection_freshness_hours,
-            "max_recent_run_error_rate_pct": args.quota_max_recent_run_error_rate_pct,
-        }
+    quota_thresholds = {
+        "min_sido_coverage": args.quota_min_sido_coverage,
+        "min_parcel_link_rate_pct": args.quota_min_parcel_link_rate_pct,
+        "min_parcel_location_fill_rate_pct": args.quota_min_parcel_location_fill_rate_pct,
+        "min_land_prices_coverage_pct": args.quota_min_land_prices_coverage_pct,
+        "min_land_characteristics_coverage_pct": args.quota_min_land_characteristics_coverage_pct,
+        "max_collection_freshness_hours": args.quota_max_collection_freshness_hours,
+        "max_recent_run_error_rate_pct": args.quota_max_recent_run_error_rate_pct,
+    }
+    # land-ops-v1 keeps full-grade visibility while applying quota-grade hard-fail criteria.
+    if gate_profile == "land-ops-v1":
+        thresholds = full_thresholds
+    elif gate_mode == "quota":
+        thresholds = quota_thresholds
+    else:
+        thresholds = full_thresholds
 
     checks = {
         "land_sido_coverage": _build_check(
@@ -322,7 +496,13 @@ def run_checks(args: argparse.Namespace) -> tuple[bool, Dict[str, Any]]:
         ),
     }
 
-    if gate_mode == "quota":
+    if gate_profile == "land-ops-v1":
+        hard_fail_keys = [
+            "land_sido_coverage",
+            "collection_freshness_sla",
+            "recent_run_error_rate",
+        ]
+    elif gate_mode == "quota":
         hard_fail_keys = [
             "land_sido_coverage",
             "collection_freshness_sla",
@@ -344,6 +524,7 @@ def run_checks(args: argparse.Namespace) -> tuple[bool, Dict[str, Any]]:
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "summary": {
             "gate_mode": gate_mode,
+            "gate_profile": gate_profile,
             "hard_fail": hard_fail,
             "hard_fail_keys": hard_fail_keys,
             "warn_only_keys": warn_only_keys,
@@ -356,8 +537,12 @@ def run_checks(args: argparse.Namespace) -> tuple[bool, Dict[str, Any]]:
             "land_characteristics_distinct_parcels": land_characteristics_parcels,
             "recent_run_total_7d": recent_run_total,
             "recent_run_error_7d": recent_run_error,
+            "invalid_pnu_count": invalid_pnu_count,
+            "invalid_pnu_rate_pct": contract_checks.get("invalid_pnu_rate"),
+            "eligible_parcel_pool_size": contract_checks.get("eligible_parcel_pool_size"),
         },
         "checks": checks,
+        "contract_checks": contract_checks,
     }
 
     return (not hard_fail), report
@@ -371,6 +556,13 @@ def parse_args() -> argparse.Namespace:
         choices=["full", "quota"],
         default=_env_str("LAND_COLLECTION_GATE_MODE", "quota"),
         help="full=coverage strict gate, quota=daily-quota aware gate (default: quota)",
+    )
+    parser.add_argument(
+        "--gate-profile",
+        type=str,
+        choices=["default", "land-ops-v1"],
+        default=_env_str("LAND_COLLECTION_GATE_PROFILE", "default"),
+        help="default=gate-mode dependent, land-ops-v1=quota hard-fail + full-threshold visibility",
     )
     parser.add_argument("--min-sido-coverage", type=int, default=17)
     parser.add_argument("--min-parcel-link-rate-pct", type=float, default=95.0)

@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 import requests
 from dotenv import load_dotenv
@@ -73,6 +74,22 @@ def is_valid_pnu(pnu: str) -> bool:
     return bool(PNU_RE.match((pnu or "").strip()))
 
 
+def resolve_vworld_domain() -> str:
+    domain = os.environ.get("VWORLD_DOMAIN", "").strip()
+    if domain:
+        return domain
+
+    app_base_url = os.environ.get("APP_BASE_URL", "").strip()
+    if not app_base_url:
+        return ""
+
+    parsed = urlparse(app_base_url)
+    if parsed.hostname:
+        return parsed.hostname
+
+    return app_base_url
+
+
 def _env_bool(name: str, default: bool) -> bool:
     raw = os.getenv(name)
     if raw is None or raw.strip() == "":
@@ -83,6 +100,10 @@ def _env_bool(name: str, default: bool) -> bool:
     if normalized in {"0", "false", "no", "off"}:
         return False
     return default
+
+
+def default_reference_year() -> int:
+    return max(2000, datetime.now().year - 1)
 
 
 @dataclass
@@ -252,8 +273,24 @@ def parse_price_payload(payload: Dict[str, Any]) -> Optional[int]:
             elif isinstance(item, dict):
                 candidates.append(item)
 
+    # VWorld NED land characteristics shape:
+    # {"landCharacteristicss":{"field":[{...,"pblntfPclnd":"5320000"}], ...}}
+    land_characteristics = (
+        payload.get("landCharacteristicss") if isinstance(payload, dict) else None
+    )
+    if isinstance(land_characteristics, dict):
+        candidates.append(land_characteristics)
+        fields = land_characteristics.get("field")
+        if isinstance(fields, list):
+            for field in fields:
+                if isinstance(field, dict):
+                    candidates.append(field)
+        elif isinstance(fields, dict):
+            candidates.append(fields)
+
     keys = [
         "pblntfPc",
+        "pblntfPclnd",
         "officialLandPrice",
         "official_price",
         "official_price_per_m2",
@@ -284,11 +321,13 @@ def fetch_official_price(
         "pnu": pnu,
         "stdrYear": str(year),
         "format": "json",
+        "numOfRows": os.environ.get("VWORLD_NUM_OF_ROWS", "10"),
+        "pageNo": os.environ.get("VWORLD_PAGE_NO", "1"),
         # VWorld deployments differ on key param naming; send both.
         "key": api_key,
         "apiKey": api_key,
     }
-    domain = os.environ.get("VWORLD_DOMAIN", "").strip()
+    domain = resolve_vworld_domain()
     if domain:
         params["domain"] = domain
 
@@ -368,7 +407,7 @@ def upsert_price(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Collect official land prices from VWorld")
-    parser.add_argument("--year", type=int, default=datetime.now().year)
+    parser.add_argument("--year", type=int, default=default_reference_year())
     parser.add_argument("--sigungu", type=str, default=None)
     parser.add_argument("--limit", type=int, default=0, help="0 means no limit")
     parser.add_argument("--dry-run", action="store_true")

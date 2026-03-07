@@ -9,6 +9,7 @@ ML 모델 예측 서비스 (v2 - 고도화)
 - 스마트 결측치 전략 (fill_values)
 """
 import pickle
+import os
 from pathlib import Path
 from typing import Any, Optional, Tuple, Dict
 from uuid import UUID
@@ -101,6 +102,14 @@ class ModelService:
             prediction = xgb_pred
 
         prediction = max(0, int(prediction))
+        prediction = self._apply_prediction_guardrail(
+            prediction,
+            {
+                "price_lag_1m": features.iloc[0].get("price_lag_1m"),
+                "price_lag_3m": features.iloc[0].get("price_lag_3m"),
+                "price_rolling_6m_mean": features.iloc[0].get("price_rolling_6m_mean"),
+            },
+        )
 
         # 4. 잔차 기반 신뢰 구간
         min_price, max_price = self._calculate_confidence_interval(prediction)
@@ -108,6 +117,10 @@ class ModelService:
         # 5. 신뢰도 계산 (모델 불확실성 기반)
         confidence = self._calculate_confidence(property_data, prediction, min_price, max_price)
         confidence_level = self._get_confidence_level(confidence)
+        tx_year = property_data.get("transaction_year") or datetime.now().year
+        tx_month = property_data.get("transaction_month") or datetime.now().month
+        sigungu = property_data.get("prop_sigungu") or "강남구"
+        market_features = self._get_market_features(tx_year, tx_month, sigungu)
 
         return {
             "chamgab_price": prediction,
@@ -115,6 +128,14 @@ class ModelService:
             "max_price": max_price,
             "confidence": confidence,
             "confidence_level": confidence_level,
+            "market_indicators": {
+                "reb_price_index": float(market_features.get("reb_price_index", 0)),
+                "reb_rent_index": float(market_features.get("reb_rent_index", 0)),
+                "base_rate": float(market_features.get("base_rate", 0)),
+                "mortgage_rate": float(market_features.get("mortgage_rate", 0)),
+                "buying_power_index": float(market_features.get("buying_power_index", 0)),
+                "jeonse_ratio": float(market_features.get("jeonse_ratio", 0)),
+            },
         }
 
     @staticmethod
@@ -171,6 +192,50 @@ class ModelService:
             "북향": "north",
         }
         return aliases.get(s)
+
+    @staticmethod
+    def _env_float(name: str, default: float) -> float:
+        raw = os.getenv(name, "").strip()
+        if not raw:
+            return default
+        try:
+            return float(raw)
+        except ValueError:
+            return default
+
+    def _apply_prediction_guardrail(
+        self,
+        prediction: int,
+        temporal_features: Dict[str, Any],
+    ) -> int:
+        enabled = os.getenv("CHAMGAB_PREDICTION_GUARDRAIL_ENABLED", "1").strip().lower()
+        if enabled in {"0", "false", "off", "no"}:
+            return prediction
+
+        refs: list[float] = []
+        for key in ("price_lag_1m", "price_lag_3m", "price_rolling_6m_mean"):
+            val = self._coerce_positive_float(temporal_features.get(key))
+            if val is not None:
+                refs.append(val)
+
+        if not refs:
+            return prediction
+
+        ref_price = float(np.median(refs))
+        if ref_price < 100_000_000:
+            cap_ratio = self._env_float("CHAMGAB_GUARDRAIL_CAP_LT100M", 1.20)
+        elif ref_price < 300_000_000:
+            cap_ratio = self._env_float("CHAMGAB_GUARDRAIL_CAP_LT300M", 1.25)
+        elif ref_price < 700_000_000:
+            cap_ratio = self._env_float("CHAMGAB_GUARDRAIL_CAP_LT700M", 1.30)
+        else:
+            cap_ratio = self._env_float("CHAMGAB_GUARDRAIL_CAP_GTE700M", 1.40)
+
+        cap_ratio = max(1.0, cap_ratio)
+        cap_price = int(ref_price * cap_ratio)
+        if cap_price > 0 and prediction > cap_price:
+            return cap_price
+        return prediction
 
     def _apply_feature_overrides(
         self,

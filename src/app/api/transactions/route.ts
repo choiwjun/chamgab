@@ -12,6 +12,30 @@ function getSupabase() {
   )
 }
 
+function parseArea(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return Number(value.toFixed(2))
+  }
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return Number(parsed.toFixed(2))
+    }
+  }
+  return null
+}
+
+function uniqueSortedAreas(values: unknown[]): number[] {
+  const deduped = new Set<number>()
+  for (const value of values) {
+    const area = parseArea(value)
+    if (area !== null) {
+      deduped.add(area)
+    }
+  }
+  return Array.from(deduped).sort((a, b) => a - b)
+}
+
 /**
  * GET /api/transactions
  * 거래 목록 조회
@@ -33,14 +57,52 @@ export async function GET(request: NextRequest) {
         .not('area_exclusive', 'is', null)
         .order('area_exclusive', { ascending: true })
 
+      if (!error) {
+        const areas = uniqueSortedAreas(
+          (data || []).map((row) => row.area_exclusive)
+        )
+        if (areas.length > 0) {
+          return NextResponse.json({ areas, source: 'transactions' })
+        }
+      }
+
+      const { data: candidateData, error: candidateError } = await supabase
+        .from('complex_area_candidates')
+        .select('area_exclusive')
+        .eq('complex_id', complex_id)
+        .order('area_exclusive', { ascending: true })
+
+      if (!candidateError) {
+        const areas = uniqueSortedAreas(
+          (candidateData || []).map((row) => row.area_exclusive)
+        )
+        if (areas.length > 0) {
+          return NextResponse.json({ areas, source: 'complex_area_candidates' })
+        }
+      }
+
+      const { data: propertyAreas, error: propertyError } = await supabase
+        .from('properties')
+        .select('area_exclusive')
+        .eq('property_type', 'apt')
+        .eq('complex_id', complex_id)
+        .not('area_exclusive', 'is', null)
+        .order('area_exclusive', { ascending: true })
+
+      if (!propertyError) {
+        const areas = uniqueSortedAreas(
+          (propertyAreas || []).map((row) => row.area_exclusive)
+        )
+        if (areas.length > 0) {
+          return NextResponse.json({ areas, source: 'properties' })
+        }
+      }
+
       if (error) {
         return NextResponse.json({ areas: [] }, { status: 503 })
       }
 
-      const unique = Array.from(
-        new Set((data || []).map((r) => r.area_exclusive as number))
-      )
-      return NextResponse.json({ areas: unique })
+      return NextResponse.json({ areas: [], source: 'none' })
     }
 
     const page = parseInt(searchParams.get('page') || '1')

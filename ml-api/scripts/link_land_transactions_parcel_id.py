@@ -59,8 +59,27 @@ def _normalize_text(value: Any) -> str:
 
 
 def _normalize_jibun(value: Any) -> str:
-    normalized = _normalize_text(value)
-    return normalized.replace(" ", "")
+    # Canonicalize masked/variant jibun strings so keys align with create_land_parcels PNU parsing.
+    normalized = _normalize_text(value).replace("번지", "").replace(" ", "")
+    if not normalized:
+        return ""
+
+    mountain = False
+    if normalized.startswith(("산", "山", "Лъ", "лъ")):
+        mountain = True
+        normalized = normalized[1:]
+
+    sanitized = re.sub(r"[^0-9-]", "", normalized)
+    if not sanitized:
+        return ""
+
+    parts = [part for part in sanitized.split("-") if part]
+    if not parts:
+        return ""
+
+    bun = parts[0].zfill(4)
+    ji = (parts[1] if len(parts) > 1 else "0").zfill(4)
+    return f"{'M' if mountain else 'N'}{bun}{ji}"
 
 
 def _exact_key(sido: Any, sigungu: Any, eupmyeondong: Any, jibun: Any) -> Tuple[str, str, str, str]:
@@ -75,6 +94,13 @@ def _exact_key(sido: Any, sigungu: Any, eupmyeondong: Any, jibun: Any) -> Tuple[
 def _weak_key(sido: Any, sigungu: Any, jibun: Any) -> Tuple[str, str, str]:
     return (
         _normalize_text(sido),
+        _normalize_text(sigungu),
+        _normalize_jibun(jibun),
+    )
+
+
+def _sigungu_jibun_key(sigungu: Any, jibun: Any) -> Tuple[str, str]:
+    return (
         _normalize_text(sigungu),
         _normalize_jibun(jibun),
     )
@@ -115,6 +141,7 @@ def build_parcel_indexes(
 ) -> Dict[str, Any]:
     exact_candidates: Dict[Tuple[str, str, str, str], List[str]] = defaultdict(list)
     weak_candidates: Dict[Tuple[str, str, str], List[str]] = defaultdict(list)
+    sigungu_jibun_candidates: Dict[Tuple[str, str], List[str]] = defaultdict(list)
     scanned = 0
 
     for rows in _iter_parcel_pages(sb, sigungu=sigungu, page_size=page_size):
@@ -134,20 +161,29 @@ def build_parcel_indexes(
                 row.get("sigungu"),
                 row.get("jibun"),
             )
+            sigungu_jibun_key = _sigungu_jibun_key(
+                row.get("sigungu"),
+                row.get("jibun"),
+            )
             if exact_key[0] and exact_key[1] and exact_key[3]:
                 exact_candidates[exact_key].append(parcel_id)
             if weak_key[0] and weak_key[1] and weak_key[2]:
                 weak_candidates[weak_key].append(parcel_id)
+            if sigungu_jibun_key[0] and sigungu_jibun_key[1]:
+                sigungu_jibun_candidates[sigungu_jibun_key].append(parcel_id)
 
     exact_unique = {k: v[0] for k, v in exact_candidates.items() if len(v) == 1}
     weak_unique = {k: v[0] for k, v in weak_candidates.items() if len(v) == 1}
+    sigungu_jibun_unique = {k: v[0] for k, v in sigungu_jibun_candidates.items() if len(v) == 1}
 
     return {
         "exact_unique": exact_unique,
         "weak_unique": weak_unique,
+        "sigungu_jibun_unique": sigungu_jibun_unique,
         "scanned_parcels": scanned,
         "exact_collision_keys": sum(1 for v in exact_candidates.values() if len(v) > 1),
         "weak_collision_keys": sum(1 for v in weak_candidates.values() if len(v) > 1),
+        "sigungu_jibun_collision_keys": sum(1 for v in sigungu_jibun_candidates.values() if len(v) > 1),
     }
 
 
@@ -313,6 +349,7 @@ def main() -> int:
     )
     exact_unique = indexes["exact_unique"]
     weak_unique = indexes["weak_unique"]
+    sigungu_jibun_unique = indexes["sigungu_jibun_unique"]
 
     scanned_tx = 0
     matched_exact = 0
@@ -343,6 +380,10 @@ def main() -> int:
                 row.get("sigungu"),
                 row.get("jibun"),
             )
+            key_sigungu_jibun = _sigungu_jibun_key(
+                row.get("sigungu"),
+                row.get("jibun"),
+            )
             parcel_id = exact_unique.get(key_exact)
             if parcel_id:
                 matched_exact += 1
@@ -350,6 +391,10 @@ def main() -> int:
                 parcel_id = weak_unique.get(key_weak)
                 if parcel_id:
                     matched_weak += 1
+                else:
+                    parcel_id = sigungu_jibun_unique.get(key_sigungu_jibun)
+                    if parcel_id:
+                        matched_weak += 1
             if parcel_id:
                 updates_by_parcel[parcel_id].append(tx_id)
             else:

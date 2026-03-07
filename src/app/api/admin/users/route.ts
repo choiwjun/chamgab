@@ -14,8 +14,10 @@ type UserProfileRow = {
   daily_analysis_limit: number
   daily_credit_used?: number
   daily_credit_limit?: number
+  daily_credit_reset_at?: string | null
   monthly_credit_used?: number
   monthly_credit_limit?: number
+  monthly_credit_reset_at?: string | null
   bonus_credits?: number
   force_logout_at?: string | null
   is_suspended?: boolean
@@ -40,7 +42,7 @@ export async function GET(req: NextRequest) {
     let query = admin
       .from('user_profiles')
       .select(
-        'id,email,name,tier,daily_analysis_count,daily_analysis_limit,daily_credit_used,daily_credit_limit,monthly_credit_used,monthly_credit_limit,bonus_credits,force_logout_at,is_suspended,suspended_until,suspended_reason,created_at,updated_at'
+        'id,email,name,tier,daily_analysis_count,daily_analysis_limit,daily_credit_used,daily_credit_limit,daily_credit_reset_at,monthly_credit_used,monthly_credit_limit,monthly_credit_reset_at,bonus_credits,force_logout_at,is_suspended,suspended_until,suspended_reason,created_at,updated_at'
       )
       .order('created_at', { ascending: false })
       .limit(limit)
@@ -55,7 +57,29 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    return NextResponse.json({ users: (data || []) as UserProfileRow[] })
+    const todayKst = new Intl.DateTimeFormat('sv-SE', {
+      timeZone: 'Asia/Seoul',
+    }).format(new Date())
+    const monthStartKst = `${todayKst.slice(0, 7)}-01`
+
+    const users = ((data || []) as UserProfileRow[]).map((row) => {
+      const next = { ...row }
+      if (
+        !next.daily_credit_reset_at ||
+        String(next.daily_credit_reset_at) < todayKst
+      ) {
+        next.daily_credit_used = 0
+      }
+      if (
+        !next.monthly_credit_reset_at ||
+        String(next.monthly_credit_reset_at) < monthStartKst
+      ) {
+        next.monthly_credit_used = 0
+      }
+      return next
+    })
+
+    return NextResponse.json({ users })
   } catch {
     return NextResponse.json(
       { error: 'Internal server error' },
@@ -112,7 +136,7 @@ export async function PATCH(req: NextRequest) {
       .update({ ...patch, updated_at: new Date().toISOString() })
       .eq('id', userId)
       .select(
-        'id,email,name,tier,daily_analysis_count,daily_analysis_limit,daily_credit_used,daily_credit_limit,monthly_credit_used,monthly_credit_limit,bonus_credits,force_logout_at,is_suspended,suspended_until,suspended_reason,created_at,updated_at'
+        'id,email,name,tier,daily_analysis_count,daily_analysis_limit,daily_credit_used,daily_credit_limit,daily_credit_reset_at,monthly_credit_used,monthly_credit_limit,monthly_credit_reset_at,bonus_credits,force_logout_at,is_suspended,suspended_until,suspended_reason,created_at,updated_at'
       )
       .single()
 

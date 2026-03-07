@@ -95,7 +95,7 @@ export function BottomSheet({
     <AnimatePresence>
       {isOpen && (
         <div
-          className="fixed inset-0 z-[100] md:hidden"
+          className="fixed inset-0 z-[100]"
           role="dialog"
           aria-modal="true"
           aria-labelledby={title ? 'bottomsheet-title' : undefined}

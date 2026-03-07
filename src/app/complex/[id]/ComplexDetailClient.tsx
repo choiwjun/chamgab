@@ -9,6 +9,8 @@ import {
   Calendar,
   Car,
   ChevronRight,
+  Share2,
+  Download,
   TrendingUp,
   TrendingDown,
   Home,
@@ -117,6 +119,67 @@ function buildAreaTypes(areas: number[]): AreaType[] {
         pyeong,
       }
     })
+}
+
+function toFiniteNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return null
+}
+
+function pickIndicator(...values: unknown[]): number {
+  for (const value of values) {
+    const parsed = toFiniteNumber(value)
+    if (parsed !== null) return parsed
+  }
+  return Number.NaN
+}
+
+function extractMarketIndicators(
+  analysis: Record<string, unknown> | null | undefined
+): AnalysisResult['marketIndicators'] {
+  const root = analysis ?? {}
+  const camel =
+    typeof root.marketIndicators === 'object' && root.marketIndicators !== null
+      ? (root.marketIndicators as Record<string, unknown>)
+      : {}
+  const snake =
+    typeof root.market_indicators === 'object' &&
+    root.market_indicators !== null
+      ? (root.market_indicators as Record<string, unknown>)
+      : {}
+
+  return {
+    rebPriceIndex: pickIndicator(
+      camel.rebPriceIndex,
+      snake.reb_price_index,
+      root.reb_price_index
+    ),
+    rebRentIndex: pickIndicator(
+      camel.rebRentIndex,
+      snake.reb_rent_index,
+      root.reb_rent_index
+    ),
+    baseRate: pickIndicator(camel.baseRate, snake.base_rate, root.base_rate),
+    mortgageRate: pickIndicator(
+      camel.mortgageRate,
+      snake.mortgage_rate,
+      root.mortgage_rate
+    ),
+    buyingPowerIndex: pickIndicator(
+      camel.buyingPowerIndex,
+      snake.buying_power_index,
+      root.buying_power_index
+    ),
+    jeonseRatio: pickIndicator(
+      camel.jeonseRatio,
+      snake.jeonse_ratio,
+      root.jeonse_ratio
+    ),
+  }
 }
 
 // 투자 분석 결과 타입
@@ -841,6 +904,7 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]) // 투자분석용 전체 거래
   const [analysisError, setAnalysisError] = useState<string | null>(null)
   const [investmentError, setInvestmentError] = useState<string | null>(null)
+  const [isSharing, setIsSharing] = useState(false)
 
   // 매물 정보 입력 state
   const [propertyInput, setPropertyInput] = useState<PropertyInput>({
@@ -943,20 +1007,30 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
       const analysis = result.analysis
 
       // API 응답을 AnalysisResult 형식으로 변환
-      const price = analysis.chamgab_price || analysis.predicted_price || 0
+      const analysisRecord =
+        analysis && typeof analysis === 'object'
+          ? (analysis as Record<string, unknown>)
+          : null
+      const price = pickIndicator(
+        analysisRecord?.chamgab_price,
+        analysisRecord?.predicted_price,
+        0
+      )
       const areaInfo = areaTypes.find((a) => a.value === propertyInput.areaType)
       const pyeong =
         areaInfo?.pyeong ||
         Math.round(parseFloat(propertyInput.areaType) / 3.3058) ||
         25
       const pricePerPyeong = Math.round(price / pyeong / 10000)
-      const confidence = analysis.confidence
-        ? Math.round(
-            (analysis.confidence > 1
-              ? analysis.confidence
-              : analysis.confidence * 100) as number
-          )
-        : 50
+      const rawConfidence = toFiniteNumber(analysisRecord?.confidence)
+      const confidence =
+        rawConfidence !== null
+          ? Math.round(
+              (rawConfidence > 1
+                ? rawConfidence
+                : rawConfidence * 100) as number
+            )
+          : 50
 
       // SHAP 카테고리 생성: 실거래 데이터 기반 요인 분석
       const shapCategories = generateSHAPCategories(
@@ -973,16 +1047,15 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
         market_comparison: confidence >= 80 ? 'fair' : 'undervalued',
         propertyInput: { ...propertyInput },
         shapCategories,
-        marketIndicators: {
-          rebPriceIndex: 100.0,
-          rebRentIndex: 100.0,
-          baseRate: 3.0,
-          mortgageRate: 3.5,
-          buyingPowerIndex: 50,
-          jeonseRatio: 60,
-        },
-        analysisDate: new Date().toISOString(),
-        modelVersion: 'v1.0',
+        marketIndicators: extractMarketIndicators(analysisRecord),
+        analysisDate:
+          typeof analysisRecord?.analyzed_at === 'string'
+            ? analysisRecord.analyzed_at
+            : new Date().toISOString(),
+        modelVersion:
+          typeof analysisRecord?.model_version === 'string'
+            ? analysisRecord.model_version
+            : 'v1.0',
       })
     } catch (error) {
       console.error('Analysis request failed:', error)
@@ -1081,6 +1154,36 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
 
     loadAreaTypes()
   }, [complex.id])
+
+  const handleShare = async () => {
+    if (isSharing || typeof window === 'undefined') return
+    setIsSharing(true)
+
+    const shareUrl = window.location.href
+    const shareTitle = `${complex.name} 아파트 분석 결과`
+
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: shareTitle, url: shareUrl })
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(shareUrl)
+        window.alert('공유 링크가 복사되었습니다.')
+      } else {
+        window.prompt('아래 링크를 복사하세요.', shareUrl)
+      }
+    } catch (err) {
+      if (!(err instanceof DOMException && err.name === 'AbortError')) {
+        window.alert('공유에 실패했습니다. 잠시 후 다시 시도해주세요.')
+      }
+    } finally {
+      setIsSharing(false)
+    }
+  }
+
+  const handleSavePdf = () => {
+    if (typeof window === 'undefined') return
+    window.print()
+  }
 
   return (
     <div className="min-h-screen bg-white pb-24">
@@ -1197,6 +1300,23 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
           {analysisResult ? (
             // 분석 결과 표시
             <div className="space-y-6">
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={handleShare}
+                  disabled={isSharing}
+                  className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Share2 className="h-4 w-4" />
+                  <span>공유하기</span>
+                </button>
+                <button
+                  onClick={handleSavePdf}
+                  className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm transition-colors hover:bg-gray-50"
+                >
+                  <Download className="h-4 w-4" />
+                  <span>PDF 저장</span>
+                </button>
+              </div>
               {/* 분석 대상 정보 */}
               <div className="border-l-2 border-blue-500 bg-blue-50 px-4 py-3">
                 <p className="mb-1 text-xs uppercase tracking-widest text-gray-500">
@@ -1262,7 +1382,9 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
                       기준금리
                     </p>
                     <p className="text-lg font-bold text-[#191F28]">
-                      {analysisResult.marketIndicators.baseRate}%
+                      {Number.isFinite(analysisResult.marketIndicators.baseRate)
+                        ? `${analysisResult.marketIndicators.baseRate}%`
+                        : '-'}
                     </p>
                   </div>
                   <div className="border border-gray-200 p-3 text-center">
@@ -1270,7 +1392,11 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
                       매수우위
                     </p>
                     <p className="text-lg font-bold text-[#191F28]">
-                      {analysisResult.marketIndicators.buyingPowerIndex}
+                      {Number.isFinite(
+                        analysisResult.marketIndicators.buyingPowerIndex
+                      )
+                        ? analysisResult.marketIndicators.buyingPowerIndex
+                        : '-'}
                     </p>
                   </div>
                   <div className="border border-gray-200 p-3 text-center">
@@ -1278,7 +1404,11 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
                       가격지수
                     </p>
                     <p className="text-lg font-bold text-blue-600">
-                      {analysisResult.marketIndicators.rebPriceIndex}
+                      {Number.isFinite(
+                        analysisResult.marketIndicators.rebPriceIndex
+                      )
+                        ? analysisResult.marketIndicators.rebPriceIndex
+                        : '-'}
                     </p>
                   </div>
                 </div>
@@ -1291,12 +1421,9 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
               <div className="space-y-6">
                 {/* 섹션 헤더 */}
                 <div className="border-b border-[#191F28]/10 pb-4">
-                  <h3 className="mb-2 text-lg font-bold text-[#191F28]">
-                    Price Impact Analysis
+                  <h3 className="text-lg font-bold text-[#191F28]">
+                    가격 영향 요인 분석
                   </h3>
-                  <p className="text-xs tracking-wide text-gray-500">
-                    {analysisResult.modelVersion} · SHAP Explainability
-                  </p>
                 </div>
 
                 {/* 카테고리 아코디언 */}
@@ -1402,7 +1529,7 @@ export function ComplexDetailClient({ complex }: ComplexDetailClientProps) {
               </div>
 
               {/* 분석 메타데이터 */}
-              <div className="flex items-center justify-between border-t border-[#191F28]/10 py-4">
+              <div className="hidden">
                 <div className="space-y-0.5">
                   <p className="text-[10px] uppercase tracking-wider text-gray-400">
                     Analysis Date

@@ -2,10 +2,9 @@ export const dynamic = 'force-dynamic'
 
 import { createClient } from '@supabase/supabase-js'
 import { LandHeroSection } from '@/components/land/LandHeroSection'
-import { LandRegionTrends } from '@/components/land/LandRegionTrends'
 import { LandRecentTransactions } from '@/components/land/LandRecentTransactions'
 import { buildSearchTerms, normalizeSearchQuery } from '@/lib/sanitize'
-import type { LandRegionStats, LandTransaction } from '@/types/land'
+import type { LandTransaction } from '@/types/land'
 
 const TRANSACTION_SELECT_COLUMNS = `
   id,
@@ -56,75 +55,12 @@ function transactionSearchText(tx: LandTransaction): string {
     .toLowerCase()
 }
 
-async function fetchRegionalStats(limit = 6): Promise<LandRegionStats[]> {
-  try {
-    const supabase = getSupabase()
-
-    const { data, error } = await supabase.rpc('get_land_regional_stats', {
-      limit_count: limit,
-    })
-
-    if (error) {
-      console.error('[LandPage] regional stats error:', error.message)
-      return []
-    }
-
-    const stats = (data || []) as LandRegionStats[]
-    if (stats.length === 0) return []
-
-    const sigungus = Array.from(
-      new Set(stats.map((stat) => stat.sigungu).filter(Boolean))
-    )
-    if (sigungus.length === 0) return stats
-
-    const representativeBySigungu = new Map<string, string>()
-
-    await Promise.all(
-      sigungus.map(async (sigungu) => {
-        const { data: parcelRows, error: parcelError } = await supabase
-          .from('land_parcels')
-          .select('pnu')
-          .eq('sigungu', sigungu)
-          .not('pnu', 'is', null)
-          .order('latest_transaction_date', {
-            ascending: false,
-            nullsFirst: false,
-          })
-          .limit(1)
-
-        if (parcelError) {
-          console.error(
-            '[LandPage] representative pnu lookup error:',
-            sigungu,
-            parcelError.message
-          )
-          return
-        }
-
-        const pnu = parcelRows?.[0]?.pnu
-        if (typeof pnu === 'string' && pnu.length > 0) {
-          representativeBySigungu.set(sigungu, pnu)
-        }
-      })
-    )
-
-    return stats.map((stat) => ({
-      ...stat,
-      sample_pnu: representativeBySigungu.get(stat.sigungu) || null,
-    }))
-  } catch (error) {
-    console.error('[LandPage] regional stats fetch exception:', error)
-    return []
-  }
-}
-
 async function fetchRecentTransactions(
-  limit = 10,
+  limit = 80,
   sigungu?: string
 ): Promise<LandTransaction[]> {
   try {
     const supabase = getSupabase()
-
     let query = supabase
       .from('land_transactions')
       .select(TRANSACTION_SELECT_COLUMNS)
@@ -136,7 +72,10 @@ async function fetchRecentTransactions(
 
     const { data, error } = await query
     if (error) {
-      console.error('[LandPage] recent transactions error:', error.message)
+      console.error(
+        '[LandSearchPage] recent transactions error:',
+        error.message
+      )
       return []
     }
 
@@ -146,14 +85,17 @@ async function fetchRecentTransactions(
       >
     )
   } catch (error) {
-    console.error('[LandPage] recent transactions fetch exception:', error)
+    console.error(
+      '[LandSearchPage] recent transactions fetch exception:',
+      error
+    )
     return []
   }
 }
 
 async function fetchSearchTransactions(
   rawQuery: string,
-  limit = 40
+  limit = 80
 ): Promise<LandTransaction[]> {
   const normalized = normalizeSearchQuery(rawQuery)
   if (!normalized) return []
@@ -172,10 +114,13 @@ async function fetchSearchTransactions(
       .eq('is_cancelled', false)
       .or(filter)
       .order('transaction_date', { ascending: false })
-      .limit(200)
+      .limit(300)
 
     if (error) {
-      console.error('[LandPage] search transactions error:', error.message)
+      console.error(
+        '[LandSearchPage] search transactions error:',
+        error.message
+      )
       return []
     }
 
@@ -191,58 +136,59 @@ async function fetchSearchTransactions(
     const normalizedTerms = terms.map((term) =>
       term.replace(/\s+/g, '').toLowerCase()
     )
-
     const filtered = mapped.filter((tx) => {
       const haystack = transactionSearchText(tx)
       return normalizedTerms.every((term) => haystack.includes(term))
     })
 
-    if (filtered.length > 0) {
-      return filtered.slice(0, limit)
-    }
-
+    if (filtered.length > 0) return filtered.slice(0, limit)
     return mapped.slice(0, limit)
   } catch (error) {
-    console.error('[LandPage] search transactions exception:', error)
+    console.error('[LandSearchPage] search transactions exception:', error)
     return []
   }
 }
 
-export default async function LandPage({
+export default async function LandSearchPage({
   searchParams,
 }: {
-  searchParams?: { sigungu?: string | string[]; q?: string | string[] }
+  searchParams?: { q?: string | string[]; sigungu?: string | string[] }
 }) {
-  const sigungu = pickFirst(searchParams?.sigungu)?.trim()
   const q = pickFirst(searchParams?.q)?.trim()
-  const isSearchMode = Boolean(q)
+  const sigungu = pickFirst(searchParams?.sigungu)?.trim()
+  const isQuerySearch = Boolean(q)
 
-  const [regionalStats, transactions] = await Promise.all([
-    isSearchMode
-      ? Promise.resolve([] as LandRegionStats[])
-      : fetchRegionalStats(6),
-    isSearchMode
-      ? fetchSearchTransactions(q as string, 40)
-      : fetchRecentTransactions(10, sigungu),
-  ])
+  const transactions = isQuerySearch
+    ? await fetchSearchTransactions(q as string, 80)
+    : await fetchRecentTransactions(80, sigungu)
+
+  const title = isQuerySearch
+    ? `"${q}" 검색 결과`
+    : sigungu
+      ? `${sigungu} 토지 거래 리스트`
+      : '전체 토지 거래 리스트'
+
+  const subtitle = isQuerySearch
+    ? `총 ${transactions.length}건의 거래를 찾았습니다.`
+    : sigungu
+      ? `${sigungu}의 최근 거래 ${transactions.length}건입니다.`
+      : `최근 토지 거래 ${transactions.length}건입니다.`
+
+  const emptyMessage = isQuerySearch
+    ? `"${q}" 조건에 맞는 거래를 찾지 못했습니다.`
+    : sigungu
+      ? `${sigungu} 조건에 맞는 거래 이력이 없습니다.`
+      : '조건에 맞는 거래 이력이 없습니다.'
 
   return (
     <main className="min-h-screen">
       <LandHeroSection initialQuery={q || ''} />
-
-      {isSearchMode ? (
-        <LandRecentTransactions
-          transactions={transactions}
-          title={`"${q}" 검색 결과`}
-          subtitle={`총 ${transactions.length}건의 거래를 찾았습니다.`}
-          emptyMessage={`"${q}" 조건에 맞는 거래를 찾지 못했습니다.`}
-        />
-      ) : (
-        <>
-          <LandRegionTrends stats={regionalStats} />
-          <LandRecentTransactions transactions={transactions} />
-        </>
-      )}
+      <LandRecentTransactions
+        transactions={transactions}
+        title={title}
+        subtitle={subtitle}
+        emptyMessage={emptyMessage}
+      />
     </main>
   )
 }

@@ -1,14 +1,31 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { Search, MapPin } from 'lucide-react'
 
-export function LandHeroSection() {
+interface LandHeroSectionProps {
+  initialQuery?: string
+}
+
+export function LandHeroSection({ initialQuery = '' }: LandHeroSectionProps) {
   const router = useRouter()
   const [query, setQuery] = useState('')
   const [isSearching, setIsSearching] = useState(false)
+
+  const isSpecificLandQuery = (input: string) => {
+    const q = input.trim()
+    if (!q) return false
+    if (/^(PNU-|tx-)/i.test(q)) return true
+    // Parcel/jibun-like query usually contains numbers (e.g. 123-4)
+    if (/\d/.test(q)) return true
+    return false
+  }
+
+  useEffect(() => {
+    setQuery(initialQuery)
+  }, [initialQuery])
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -17,10 +34,16 @@ export function LandHeroSection() {
 
     setIsSearching(true)
     try {
+      // Broad regional keywords (e.g. 강남구, 역삼동) should open results list.
+      if (!isSpecificLandQuery(q)) {
+        router.push(`/land?q=${encodeURIComponent(q)}` as never)
+        return
+      }
+
       const params = new URLSearchParams({
         quick: '1',
         q,
-        limit: '1',
+        limit: '5',
       })
       const response = await fetch(`/api/land/search?${params.toString()}`, {
         method: 'GET',
