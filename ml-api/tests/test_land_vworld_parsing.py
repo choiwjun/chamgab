@@ -10,11 +10,13 @@ from scripts.collect_land_characteristics import (
     map_characteristics_row,
     parse_json_row,
     resolve_resume_state as resolve_characteristics_resume_state,
+    should_stop_for_transient_storm as should_stop_characteristics_transient_storm,
 )
 from scripts.collect_land_prices import (
     fetch_official_price,
     parse_price_payload,
     resolve_resume_state as resolve_prices_resume_state,
+    should_stop_for_transient_storm as should_stop_prices_transient_storm,
 )
 
 
@@ -153,3 +155,53 @@ def test_collect_land_characteristics_resume_state_resets_cursor_on_cycle_end() 
     assert state["cursor"] is None
     assert state["completed_cycles"] == 4
     assert state["note"] == "reached_end_reset_cursor"
+
+
+def test_collect_land_prices_transient_storm_guard() -> None:
+    assert (
+        should_stop_prices_transient_storm(
+            total=100,
+            success=0,
+            missing_transient=100,
+            min_samples=100,
+            min_transient_rate_pct=95.0,
+            max_success_count=0,
+        )
+        is True
+    )
+    assert (
+        should_stop_prices_transient_storm(
+            total=100,
+            success=2,
+            missing_transient=98,
+            min_samples=100,
+            min_transient_rate_pct=95.0,
+            max_success_count=0,
+        )
+        is False
+    )
+
+
+def test_collect_land_characteristics_transient_storm_guard() -> None:
+    assert (
+        should_stop_characteristics_transient_storm(
+            total=120,
+            success=0,
+            missing_transient=118,
+            min_samples=100,
+            min_transient_rate_pct=95.0,
+            max_success_count=0,
+        )
+        is True
+    )
+    assert (
+        should_stop_characteristics_transient_storm(
+            total=80,
+            success=0,
+            missing_transient=80,
+            min_samples=100,
+            min_transient_rate_pct=95.0,
+            max_success_count=0,
+        )
+        is False
+    )

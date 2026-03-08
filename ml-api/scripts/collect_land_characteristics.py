@@ -225,6 +225,23 @@ def resolve_resume_state(
     }
 
 
+def should_stop_for_transient_storm(
+    *,
+    total: int,
+    success: int,
+    missing_transient: int,
+    min_samples: int,
+    min_transient_rate_pct: float,
+    max_success_count: int,
+) -> bool:
+    if min_samples <= 0 or total < min_samples or total <= 0:
+        return False
+    if success > max_success_count:
+        return False
+    transient_rate_pct = (missing_transient / total) * 100.0
+    return transient_rate_pct >= max(0.0, min_transient_rate_pct)
+
+
 def collect_target_parcels(
     supabase,
     sigungu: Optional[str],
@@ -584,6 +601,27 @@ def main() -> None:
     parser.add_argument("--max-failed-count", type=int, default=50)
     parser.add_argument("--max-failed-rate-pct", type=float, default=5.0)
     parser.add_argument(
+        "--transient-storm-min-samples",
+        type=int,
+        default=int(
+            os.getenv("LAND_CHARACTERISTICS_TRANSIENT_STORM_MIN_SAMPLES", "100") or 100
+        ),
+    )
+    parser.add_argument(
+        "--transient-storm-rate-pct",
+        type=float,
+        default=float(
+            os.getenv("LAND_CHARACTERISTICS_TRANSIENT_STORM_RATE_PCT", "95") or 95.0
+        ),
+    )
+    parser.add_argument(
+        "--transient-storm-max-success-count",
+        type=int,
+        default=int(
+            os.getenv("LAND_CHARACTERISTICS_TRANSIENT_STORM_MAX_SUCCESS_COUNT", "0") or 0
+        ),
+    )
+    parser.add_argument(
         "--soft-fail",
         action="store_true",
         help="Exit 0 even when failures exceed threshold.",
@@ -640,6 +678,7 @@ def main() -> None:
     started_monotonic = time.monotonic()
     processed_cursor: Optional[str] = None
     stopped_due_to_time_budget = False
+    stopped_due_to_transient_storm = False
 
     for parcel in parcels:
         if (
@@ -688,6 +727,28 @@ def main() -> None:
 
         processed_cursor = parcel.row_id
 
+        if should_stop_for_transient_storm(
+            total=total,
+            success=success,
+            missing_transient=missing_transient,
+            min_samples=max(0, int(args.transient_storm_min_samples)),
+            min_transient_rate_pct=max(0.0, float(args.transient_storm_rate_pct)),
+            max_success_count=max(0, int(args.transient_storm_max_success_count)),
+        ):
+            stopped_due_to_transient_storm = True
+            LOG.info(
+                "Stopping collect_land_characteristics early due to transient storm: "
+                "processed=%d success=%d transient_missing=%d transient_rate_pct=%.2f "
+                "threshold_pct=%.2f max_success_count=%d",
+                total,
+                success,
+                missing_transient,
+                (missing_transient / total * 100.0) if total else 0.0,
+                max(0.0, float(args.transient_storm_rate_pct)),
+                max(0, int(args.transient_storm_max_success_count)),
+            )
+            break
+
         if total % 100 == 0:
             LOG.info(
                 "Progress total=%d success=%d missing=%d (no_data=%d transient=%d) failed=%d",
@@ -706,7 +767,9 @@ def main() -> None:
             next_cursor=next_cursor,
             reached_end=reached_end,
             processed_cursor=processed_cursor,
-            stopped_due_to_time_budget=stopped_due_to_time_budget,
+            stopped_due_to_time_budget=(
+                stopped_due_to_time_budget or stopped_due_to_transient_storm
+            ),
         )
         _save_state(STATE_PATH, state)
 
@@ -714,6 +777,7 @@ def main() -> None:
         "generated_at": datetime.now().isoformat(),
         "elapsed_sec": round(time.monotonic() - started_monotonic, 2),
         "stopped_due_to_time_budget": stopped_due_to_time_budget,
+        "stopped_due_to_transient_storm": stopped_due_to_transient_storm,
         "scope": {
             "year": args.year,
             "sigungu": args.sigungu or None,
@@ -721,6 +785,9 @@ def main() -> None:
             "dry_run": bool(args.dry_run),
             "resume": bool(args.resume),
             "max_elapsed_sec": args.max_elapsed_sec,
+            "transient_storm_min_samples": args.transient_storm_min_samples,
+            "transient_storm_rate_pct": args.transient_storm_rate_pct,
+            "transient_storm_max_success_count": args.transient_storm_max_success_count,
         },
         "selection": {
             "selected": len(parcels),
