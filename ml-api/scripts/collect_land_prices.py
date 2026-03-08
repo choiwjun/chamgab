@@ -183,6 +183,38 @@ def _save_latest_summary(summary: Dict[str, Any]) -> None:
     LATEST_SUMMARY_PATH.write_text(payload, encoding="utf-8")
 
 
+def resolve_resume_state(
+    *,
+    scope_state: Dict[str, Any],
+    resume_cursor: Optional[str],
+    next_cursor: Optional[str],
+    reached_end: bool,
+    processed_cursor: Optional[str],
+    stopped_due_to_time_budget: bool,
+) -> Dict[str, Any]:
+    completed_cycles = int(scope_state.get("completed_cycles") or 0)
+    if reached_end and not stopped_due_to_time_budget:
+        completed_cycles += 1
+        return {
+            "cursor": None,
+            "completed_cycles": completed_cycles,
+            "updated_at": datetime.now().isoformat(),
+            "note": "reached_end_reset_cursor",
+        }
+
+    cursor = (
+        processed_cursor
+        if stopped_due_to_time_budget
+        else next_cursor or processed_cursor or resume_cursor or None
+    )
+    return {
+        "cursor": cursor,
+        "completed_cycles": completed_cycles,
+        "updated_at": datetime.now().isoformat(),
+        "note": "time_budget_reached" if stopped_due_to_time_budget else "cursor_advanced",
+    }
+
+
 def _parse_int(value: Any) -> Optional[int]:
     if value is None:
         return None
@@ -449,6 +481,12 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--sleep-ms", type=int, default=120)
+    parser.add_argument(
+        "--max-elapsed-sec",
+        type=int,
+        default=0,
+        help="Gracefully stop before scheduler timeout. 0 disables time budget.",
+    )
     parser.add_argument("--max-failed-count", type=int, default=50)
     parser.add_argument("--max-failed-rate-pct", type=float, default=5.0)
     parser.add_argument(
@@ -506,8 +544,26 @@ def main() -> None:
     missing_no_data = 0
     missing_transient = 0
     failed = 0
+    started_monotonic = time.monotonic()
+    processed_cursor: Optional[str] = None
+    stopped_due_to_time_budget = False
 
     for parcel in parcels:
+        if (
+            args.max_elapsed_sec > 0
+            and total > 0
+            and (time.monotonic() - started_monotonic) >= args.max_elapsed_sec
+        ):
+            stopped_due_to_time_budget = True
+            LOG.info(
+                "Stopping collect_land_prices early to preserve resume state: "
+                "elapsed_sec=%.1f max_elapsed_sec=%d processed=%d",
+                time.monotonic() - started_monotonic,
+                args.max_elapsed_sec,
+                total,
+            )
+            break
+
         total += 1
         try:
             result = fetch_official_price(
@@ -537,6 +593,8 @@ def main() -> None:
         if args.sleep_ms > 0:
             time.sleep(args.sleep_ms / 1000)
 
+        processed_cursor = parcel.row_id
+
         if total % 100 == 0:
             LOG.info(
                 "Progress total=%d success=%d missing=%d (no_data=%d transient=%d) failed=%d",
@@ -549,35 +607,32 @@ def main() -> None:
             )
 
     if args.resume and not args.dry_run:
-        completed_cycles = int(scope_state.get("completed_cycles") or 0)
-        if reached_end:
-            completed_cycles += 1
-            state[scope_key] = {
-                "cursor": None,
-                "completed_cycles": completed_cycles,
-                "updated_at": datetime.now().isoformat(),
-                "note": "reached_end_reset_cursor",
-            }
-        else:
-            state[scope_key] = {
-                "cursor": next_cursor,
-                "completed_cycles": completed_cycles,
-                "updated_at": datetime.now().isoformat(),
-                "note": "cursor_advanced",
-            }
+        state[scope_key] = resolve_resume_state(
+            scope_state=scope_state,
+            resume_cursor=resume_cursor,
+            next_cursor=next_cursor,
+            reached_end=reached_end,
+            processed_cursor=processed_cursor,
+            stopped_due_to_time_budget=stopped_due_to_time_budget,
+        )
         _save_state(STATE_PATH, state)
 
     summary = {
         "generated_at": datetime.now().isoformat(),
+        "elapsed_sec": round(time.monotonic() - started_monotonic, 2),
+        "stopped_due_to_time_budget": stopped_due_to_time_budget,
         "scope": {
             "year": args.year,
             "sigungu": args.sigungu or None,
             "limit": args.limit,
             "dry_run": bool(args.dry_run),
             "resume": bool(args.resume),
+            "max_elapsed_sec": args.max_elapsed_sec,
         },
         "selection": {
             "selected": len(parcels),
+            "resume_cursor": resume_cursor,
+            "processed_cursor": processed_cursor,
             "next_cursor": next_cursor,
             "reached_end": reached_end,
         },

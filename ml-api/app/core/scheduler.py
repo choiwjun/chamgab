@@ -1190,6 +1190,8 @@ class DataScheduler:
                 "--resume",
                 "--sleep-ms",
                 str(land_price_sleep_ms),
+                "--max-elapsed-sec",
+                str(max(300, 7200 - 300)),
             ]
             if land_price_sigungu:
                 price_args.extend(["--sigungu", land_price_sigungu])
@@ -1212,6 +1214,8 @@ class DataScheduler:
                 "--resume",
                 "--sleep-ms",
                 str(land_characteristics_sleep_ms),
+                "--max-elapsed-sec",
+                str(max(300, 7200 - 300)),
             ]
             if land_characteristics_sigungu:
                 characteristics_args.extend(["--sigungu", land_characteristics_sigungu])
@@ -1508,6 +1512,11 @@ class DataScheduler:
                     price_timeout = self._env_int(
                         "LAND_COVERAGE_BACKFILL_PRICE_TIMEOUT_SEC", 7200, min_value=300
                     )
+                    price_max_elapsed = self._env_int(
+                        "LAND_COVERAGE_BACKFILL_PRICE_MAX_ELAPSED_SEC",
+                        max(300, price_timeout - 300),
+                        min_value=300,
+                    )
                     price_sigungu = (
                         sigungu or (os.getenv("LAND_PRICE_SIGUNGU") or "").strip()
                     )
@@ -1519,6 +1528,8 @@ class DataScheduler:
                         "--resume",
                         "--sleep-ms",
                         str(price_sleep_ms),
+                        "--max-elapsed-sec",
+                        str(price_max_elapsed),
                         "--soft-fail",
                     ]
                     if price_sigungu:
@@ -1562,6 +1573,11 @@ class DataScheduler:
                         7200,
                         min_value=300,
                     )
+                    characteristics_max_elapsed = self._env_int(
+                        "LAND_COVERAGE_BACKFILL_CHARACTERISTICS_MAX_ELAPSED_SEC",
+                        max(300, characteristics_timeout - 300),
+                        min_value=300,
+                    )
                     characteristics_sigungu = (
                         sigungu or (os.getenv("LAND_CHARACTERISTICS_SIGUNGU") or "").strip()
                     )
@@ -1573,6 +1589,8 @@ class DataScheduler:
                         "--resume",
                         "--sleep-ms",
                         str(characteristics_sleep_ms),
+                        "--max-elapsed-sec",
+                        str(characteristics_max_elapsed),
                         "--soft-fail",
                     ]
                     if characteristics_sigungu:

@@ -9,8 +9,13 @@ from scripts.collect_land_characteristics import (
     fetch_land_characteristics,
     map_characteristics_row,
     parse_json_row,
+    resolve_resume_state as resolve_characteristics_resume_state,
 )
-from scripts.collect_land_prices import fetch_official_price, parse_price_payload
+from scripts.collect_land_prices import (
+    fetch_official_price,
+    parse_price_payload,
+    resolve_resume_state as resolve_prices_resume_state,
+)
 
 
 def test_parse_price_payload_vworld_land_characteristics_shape() -> None:
@@ -118,3 +123,33 @@ def test_fetch_land_characteristics_treats_http_502_as_missing(monkeypatch) -> N
 
     assert result.mapped == {}
     assert result.missing_reason == "transient"
+
+
+def test_collect_land_prices_resume_state_preserves_processed_cursor_on_time_budget() -> None:
+    state = resolve_prices_resume_state(
+        scope_state={"completed_cycles": 2},
+        resume_cursor="cursor-start",
+        next_cursor="cursor-end",
+        reached_end=False,
+        processed_cursor="cursor-processed",
+        stopped_due_to_time_budget=True,
+    )
+
+    assert state["cursor"] == "cursor-processed"
+    assert state["completed_cycles"] == 2
+    assert state["note"] == "time_budget_reached"
+
+
+def test_collect_land_characteristics_resume_state_resets_cursor_on_cycle_end() -> None:
+    state = resolve_characteristics_resume_state(
+        scope_state={"completed_cycles": 3},
+        resume_cursor="cursor-start",
+        next_cursor="cursor-end",
+        reached_end=True,
+        processed_cursor="cursor-processed",
+        stopped_due_to_time_budget=False,
+    )
+
+    assert state["cursor"] is None
+    assert state["completed_cycles"] == 4
+    assert state["note"] == "reached_end_reset_cursor"
