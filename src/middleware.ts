@@ -29,6 +29,7 @@ const DOMAIN_GATE_FAIL_CLOSED =
 const DOMAIN_GATE_FALLBACK_LOCKS = DOMAIN_GATE_FAIL_CLOSED
   ? DEFAULT_FAIL_CLOSED_LOCKS
   : DEFAULT_FAIL_OPEN_LOCKS
+const LAND_PUBLIC_ENABLED = process.env.NEXT_PUBLIC_ENABLE_LAND === 'true'
 
 async function withTimeout<T>(
   operation: Promise<T>,
@@ -151,6 +152,17 @@ async function fetchDomainLocks(request: NextRequest): Promise<DomainLocks> {
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname
 
+  if (
+    !LAND_PUBLIC_ENABLED &&
+    (pathname === '/land' || pathname.startsWith('/land/'))
+  ) {
+    if (pathname !== '/land') {
+      const redirectUrl = new URL('/land', request.url)
+      redirectUrl.searchParams.set('status', 'preparing')
+      return NextResponse.redirect(redirectUrl)
+    }
+  }
+
   // OAuth code가 루트에 떨어진 경우 /auth/callback으로 전달
   const code = request.nextUrl.searchParams.get('code')
   if (code && pathname === '/') {
@@ -175,7 +187,10 @@ export async function middleware(request: NextRequest) {
   const targetDomain = getDomainByPathname(pathname)
   if (targetDomain) {
     const locks = await fetchDomainLocks(request)
-    if (locks[targetDomain]) {
+    if (
+      !(targetDomain === 'land' && !LAND_PUBLIC_ENABLED) &&
+      locks[targetDomain]
+    ) {
       const redirectUrl = new URL('/', request.url)
       redirectUrl.searchParams.set('domain_locked', targetDomain)
       return NextResponse.redirect(redirectUrl)
@@ -233,7 +248,8 @@ export async function middleware(request: NextRequest) {
   const isAuthRoute = AUTH_ROUTES.some((route) => isRouteMatch(pathname, route))
   const isPublicRoute =
     PUBLIC_EXACT_ROUTES.some((route) => isExactRouteMatch(pathname, route)) ||
-    PUBLIC_PREFIX_ROUTES.some((route) => isPrefixRouteMatch(pathname, route))
+    PUBLIC_PREFIX_ROUTES.some((route) => isPrefixRouteMatch(pathname, route)) ||
+    (!LAND_PUBLIC_ENABLED && pathname === '/land')
   const requiresAuth = !isAuthRoute && !isPublicRoute
 
   if (requiresAuth && !user) {

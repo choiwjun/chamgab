@@ -1,9 +1,11 @@
 export const dynamic = 'force-dynamic'
 
+import Link from 'next/link'
 import { createClient } from '@supabase/supabase-js'
 import { LandHeroSection } from '@/components/land/LandHeroSection'
 import { LandRegionTrends } from '@/components/land/LandRegionTrends'
 import { LandRecentTransactions } from '@/components/land/LandRecentTransactions'
+import { ENABLE_LAND } from '@/lib/features'
 import { buildSearchTerms, normalizeSearchQuery } from '@/lib/sanitize'
 import type { LandRegionStats, LandTransaction } from '@/types/land'
 
@@ -213,6 +215,52 @@ export default async function LandPage({
 }: {
   searchParams?: { sigungu?: string | string[]; q?: string | string[] }
 }) {
+  if (!ENABLE_LAND) {
+    return (
+      <main className="min-h-[calc(100vh-64px)] bg-[#F8FAFC]">
+        <section className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-20 text-center">
+          <div className="mx-auto inline-flex rounded-full border border-[#D1D9E0] bg-white px-4 py-1 text-sm font-semibold text-[#4E5968]">
+            토지분석 준비중
+          </div>
+          <div className="space-y-3">
+            <h1 className="text-3xl font-bold tracking-tight text-[#191F28]">
+              토지분석은 내부 점검 모드로 전환됐습니다.
+            </h1>
+            <p className="text-base leading-7 text-[#4E5968]">
+              공시지가와 토지특성 수집 소스를 재정비하는 동안 공개 제공을 잠시
+              중단합니다. 현재는 아파트, 상권, 학군 분석만 운영 대상으로
+              유지합니다.
+            </p>
+          </div>
+          <div className="rounded-2xl border border-[#E5E8EB] bg-white p-6 text-left">
+            <div className="text-sm font-semibold text-[#191F28]">
+              현재 상태
+            </div>
+            <ul className="mt-3 space-y-2 text-sm text-[#4E5968]">
+              <li>토지 공개 페이지: 준비중</li>
+              <li>내부 수집/검증: 최소 유지 모드</li>
+              <li>재오픈 기준: 데이터 소스 안정화 후 재검토</li>
+            </ul>
+          </div>
+          <div className="flex items-center justify-center gap-3">
+            <Link
+              href="/"
+              className="rounded-xl bg-[#191F28] px-5 py-3 text-sm font-semibold text-white"
+            >
+              홈으로 이동
+            </Link>
+            <Link
+              href="/search"
+              className="rounded-xl border border-[#D1D9E0] bg-white px-5 py-3 text-sm font-semibold text-[#191F28]"
+            >
+              아파트 분석 보기
+            </Link>
+          </div>
+        </section>
+      </main>
+    )
+  }
+
   const sigungu = pickFirst(searchParams?.sigungu)?.trim()
   const q = pickFirst(searchParams?.q)?.trim()
   const isSearchMode = Boolean(q)

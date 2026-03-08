@@ -575,6 +575,9 @@ class DataScheduler:
     def _should_enforce_land_daily_once(self) -> bool:
         return self._env_bool("LAND_COLLECTION_ENFORCE_DAILY_ONCE", True)
 
+    def _land_internal_mode_enabled(self) -> bool:
+        return self._env_bool("LAND_INTERNAL_MODE", False)
+
     def _has_any_env(self, *keys: str) -> bool:
         for key in keys:
             value = (os.getenv(key) or "").strip()
@@ -2868,7 +2871,10 @@ class DataScheduler:
         )
         land_collection_hour = self._env_hour("LAND_COLLECTION_CRON_HOUR", 1)
         land_collection_minute = self._env_minute("LAND_COLLECTION_CRON_MINUTE", 0)
-        if self._should_register_job("collect_land_daily"):
+        if (
+            not self._land_internal_mode_enabled()
+            and self._should_register_job("collect_land_daily")
+        ):
             self.scheduler.add_job(
                 self.run_now,
                 CronTrigger(hour=land_collection_hour, minute=land_collection_minute),
@@ -2881,7 +2887,8 @@ class DataScheduler:
                 args=["collect_land_daily"],
             )
         if (
-            self._env_bool("LAND_COVERAGE_BACKFILL_CRON_ENABLED", False)
+            not self._land_internal_mode_enabled()
+            and self._env_bool("LAND_COVERAGE_BACKFILL_CRON_ENABLED", False)
             and self._should_register_job("land_coverage_backfill")
         ):
             land_coverage_interval_minutes = self._env_int(
@@ -2905,7 +2912,10 @@ class DataScheduler:
                 misfire_grace_time=3600,
                 args=["land_coverage_backfill"],
             )
-        if self._env_bool("LAND_LOCATION_CRON_ENABLED", True):
+        if (
+            not self._land_internal_mode_enabled()
+            and self._env_bool("LAND_LOCATION_CRON_ENABLED", True)
+        ):
             land_location_hour = self._env_hour("LAND_LOCATION_CRON_HOUR", 2)
             land_location_minute = self._env_minute("LAND_LOCATION_CRON_MINUTE", 0)
             if self._should_register_job("collect_land_locations"):

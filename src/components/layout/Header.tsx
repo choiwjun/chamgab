@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
@@ -17,6 +17,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
+import { ENABLE_LAND } from '@/lib/features'
 
 interface NavLink {
   href: string
@@ -31,6 +32,7 @@ interface NavCategory {
   icon: LucideIcon
   links: NavLink[]
   comingSoon?: boolean
+  badgeText?: string
 }
 
 type DomainKey = 'apartment' | 'commercial' | 'school' | 'land'
@@ -52,9 +54,10 @@ const NAV_BUSINESS: NavCategory = {
 
 const NAV_LAND: NavCategory = {
   id: 'land',
-  label: '토지분석 (BETA)',
+  label: '토지분석',
   icon: MapPin,
   links: [{ href: '/land', label: '토지 분석' }],
+  badgeText: ENABLE_LAND ? 'BETA' : '준비중',
 }
 
 function NavDropdown({
@@ -98,7 +101,12 @@ function NavDropdown({
         className="flex cursor-not-allowed items-center gap-1.5 px-4 py-2 text-sm font-medium text-[#8B95A1]"
         aria-disabled
       >
-        {category.label}
+        <span>{category.label}</span>
+        {category.badgeText ? (
+          <span className="rounded bg-[#F2F4F6] px-1.5 py-0.5 text-[10px] font-semibold text-[#8B95A1]">
+            {category.badgeText}
+          </span>
+        ) : null}
         <span className="rounded bg-[#F2F4F6] px-1.5 py-0.5 text-[10px] font-semibold text-[#8B95A1]">
           {locked ? '점검중' : 'Soon'}
         </span>
@@ -115,11 +123,16 @@ function NavDropdown({
     return (
       <Link
         href={singleLink.href as never}
-        className={`px-4 py-2 text-sm font-medium transition-colors ${
+        className={`inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium transition-colors ${
           isActive ? 'text-[#191F28]' : 'text-[#4E5968] hover:text-[#191F28]'
         }`}
       >
-        {category.label}
+        <span>{category.label}</span>
+        {category.badgeText ? (
+          <span className="rounded bg-[#F2F4F6] px-1.5 py-0.5 text-[10px] font-semibold text-[#8B95A1]">
+            {category.badgeText}
+          </span>
+        ) : null}
       </Link>
     )
   }
@@ -137,7 +150,12 @@ function NavDropdown({
           isActive ? 'text-[#191F28]' : 'text-[#4E5968] hover:text-[#191F28]'
         }`}
       >
-        {category.label}
+        <span>{category.label}</span>
+        {category.badgeText ? (
+          <span className="rounded bg-[#F2F4F6] px-1.5 py-0.5 text-[10px] font-semibold text-[#8B95A1]">
+            {category.badgeText}
+          </span>
+        ) : null}
         <ChevronDown
           className={`h-3.5 w-3.5 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
         />
@@ -327,7 +345,7 @@ export function Header() {
             <NavDropdown
               category={NAV_LAND}
               isActive={isCategoryActive(pathname, 'land')}
-              locked={domainLocks.land}
+              locked={ENABLE_LAND ? domainLocks.land : false}
             />
           </nav>
 
@@ -411,7 +429,10 @@ export function Header() {
               {desktopCategories.map((category) => {
                 const Icon = category.icon
                 const domain = categoryToDomain[category.id]
-                const categoryLocked = domainLocks[domain]
+                const categoryLocked =
+                  category.id === 'land' && !ENABLE_LAND
+                    ? false
+                    : domainLocks[domain]
                 return (
                   <div
                     key={category.id}
@@ -419,8 +440,13 @@ export function Header() {
                   >
                     <div className="mb-2 flex items-center gap-2 px-4">
                       <Icon className="h-4 w-4 text-[#8B95A1]" />
-                      <span className="text-xs font-semibold uppercase tracking-wider text-[#8B95A1]">
-                        {category.label}
+                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-[#8B95A1]">
+                        <span>{category.label}</span>
+                        {category.badgeText ? (
+                          <span className="rounded bg-[#F2F4F6] px-1.5 py-0.5 text-[10px] font-semibold text-[#8B95A1]">
+                            {category.badgeText}
+                          </span>
+                        ) : null}
                       </span>
                       {category.comingSoon && (
                         <span className="rounded bg-[#F2F4F6] px-1.5 py-0.5 text-[10px] font-semibold text-[#8B95A1]">
