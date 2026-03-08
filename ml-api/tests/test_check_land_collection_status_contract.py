@@ -3,7 +3,10 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from scripts.check_land_collection_status import build_contract_checks
+from scripts.check_land_collection_status import (
+    build_collector_diagnostics,
+    build_contract_checks,
+)
 
 
 def test_build_contract_checks_basic() -> None:
@@ -37,3 +40,32 @@ def test_build_contract_checks_zero_denominator() -> None:
 
     assert checks["invalid_pnu_rate"] is None
     assert checks["eligible_parcel_pool_size"] == 0
+
+
+def test_build_collector_diagnostics_splits_missing_reason() -> None:
+    diagnostics = build_collector_diagnostics(
+        {
+            "generated_at": "2026-03-08T03:00:00Z",
+            "scope": {"year": 2025, "limit": 500},
+            "selection": {"selected": 500},
+            "result": {
+                "total": 500,
+                "success": 10,
+                "missing": 480,
+                "missing_no_data": 80,
+                "missing_transient": 400,
+                "failed": 10,
+                "success_rate_pct": 2.0,
+                "missing_rate_pct": 96.0,
+                "failed_rate_pct": 2.0,
+                "stopped_due_to_time_budget": True,
+            },
+        }
+    )
+
+    assert diagnostics["total"] == 500
+    assert diagnostics["missing_no_data"] == 80
+    assert diagnostics["missing_transient"] == 400
+    assert diagnostics["missing_no_data_rate_pct"] == 16.0
+    assert diagnostics["missing_transient_rate_pct"] == 80.0
+    assert diagnostics["stopped_due_to_time_budget"] is True

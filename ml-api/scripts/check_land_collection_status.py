@@ -98,6 +98,54 @@ def _pct(numerator: int | None, denominator: int | None) -> float | None:
     return (numerator / denominator) * 100.0
 
 
+def _to_int(value: Any) -> int | None:
+    try:
+        if value is None:
+            return None
+        return int(value)
+    except Exception:
+        return None
+
+
+def build_collector_diagnostics(run_payload: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(run_payload, dict):
+        return {}
+
+    result = run_payload.get("result")
+    scope = run_payload.get("scope")
+    selection = run_payload.get("selection")
+    if not isinstance(result, dict):
+        return {}
+
+    total = _to_int(result.get("total"))
+    success = _to_int(result.get("success"))
+    missing = _to_int(result.get("missing"))
+    failed = _to_int(result.get("failed"))
+    missing_no_data = _to_int(result.get("missing_no_data"))
+    missing_transient = _to_int(result.get("missing_transient"))
+
+    diagnostics = {
+        "generated_at": run_payload.get("generated_at"),
+        "scope": scope if isinstance(scope, dict) else {},
+        "selection": selection if isinstance(selection, dict) else {},
+        "total": total,
+        "success": success,
+        "missing": missing,
+        "failed": failed,
+        "missing_no_data": missing_no_data,
+        "missing_transient": missing_transient,
+        "success_rate_pct": _to_float(result.get("success_rate_pct")),
+        "missing_rate_pct": _to_float(result.get("missing_rate_pct")),
+        "failed_rate_pct": _to_float(result.get("failed_rate_pct")),
+        "missing_no_data_rate_pct": _pct(missing_no_data, total),
+        "missing_transient_rate_pct": _pct(missing_transient, total),
+        "stopped_due_to_time_budget": bool(result.get("stopped_due_to_time_budget"))
+        if "stopped_due_to_time_budget" in result
+        else None,
+    }
+    return diagnostics
+
+
 def _parse_iso(ts: str | None) -> datetime | None:
     if not ts:
         return None
@@ -435,6 +483,10 @@ def run_checks(args: argparse.Namespace) -> tuple[bool, Dict[str, Any]]:
     latest_characteristics_run = _load_summary_json(
         LOGS_DIR / "collect_land_characteristics_latest.json"
     )
+    latest_prices_diagnostics = build_collector_diagnostics(latest_prices_run)
+    latest_characteristics_diagnostics = build_collector_diagnostics(
+        latest_characteristics_run
+    )
 
     full_thresholds = {
         "min_sido_coverage": args.min_sido_coverage,
@@ -556,9 +608,53 @@ def run_checks(args: argparse.Namespace) -> tuple[bool, Dict[str, Any]]:
             "invalid_pnu_count": invalid_pnu_count,
             "invalid_pnu_rate_pct": contract_checks.get("invalid_pnu_rate"),
             "eligible_parcel_pool_size": contract_checks.get("eligible_parcel_pool_size"),
+            "land_prices_last_run_total": latest_prices_diagnostics.get("total"),
+            "land_prices_last_run_success": latest_prices_diagnostics.get("success"),
+            "land_prices_last_run_missing": latest_prices_diagnostics.get("missing"),
+            "land_prices_last_run_missing_no_data": latest_prices_diagnostics.get(
+                "missing_no_data"
+            ),
+            "land_prices_last_run_missing_transient": latest_prices_diagnostics.get(
+                "missing_transient"
+            ),
+            "land_prices_last_run_failed": latest_prices_diagnostics.get("failed"),
+            "land_prices_last_run_missing_no_data_rate_pct": latest_prices_diagnostics.get(
+                "missing_no_data_rate_pct"
+            ),
+            "land_prices_last_run_missing_transient_rate_pct": latest_prices_diagnostics.get(
+                "missing_transient_rate_pct"
+            ),
+            "land_characteristics_last_run_total": latest_characteristics_diagnostics.get(
+                "total"
+            ),
+            "land_characteristics_last_run_success": latest_characteristics_diagnostics.get(
+                "success"
+            ),
+            "land_characteristics_last_run_missing": latest_characteristics_diagnostics.get(
+                "missing"
+            ),
+            "land_characteristics_last_run_missing_no_data": latest_characteristics_diagnostics.get(
+                "missing_no_data"
+            ),
+            "land_characteristics_last_run_missing_transient": latest_characteristics_diagnostics.get(
+                "missing_transient"
+            ),
+            "land_characteristics_last_run_failed": latest_characteristics_diagnostics.get(
+                "failed"
+            ),
+            "land_characteristics_last_run_missing_no_data_rate_pct": latest_characteristics_diagnostics.get(
+                "missing_no_data_rate_pct"
+            ),
+            "land_characteristics_last_run_missing_transient_rate_pct": latest_characteristics_diagnostics.get(
+                "missing_transient_rate_pct"
+            ),
         },
         "checks": checks,
         "contract_checks": contract_checks,
+        "collector_diagnostics": {
+            "land_prices": latest_prices_diagnostics,
+            "land_characteristics": latest_characteristics_diagnostics,
+        },
         "collector_runs": {
             "land_prices": latest_prices_run,
             "land_characteristics": latest_characteristics_run,

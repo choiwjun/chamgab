@@ -634,6 +634,18 @@ function buildSnapshotLaunchReadiness(params: {
     (landQuality?.checks as Record<string, unknown> | undefined) || {}
   const landSummary =
     (landQuality?.summary as Record<string, unknown> | undefined) || {}
+  const landCollectorDiagnostics =
+    (landQuality?.collector_diagnostics as
+      | Record<string, unknown>
+      | undefined) || {}
+  const landPricesRunDiagnostics =
+    (landCollectorDiagnostics.land_prices as
+      | Record<string, unknown>
+      | undefined) || {}
+  const landCharacteristicsRunDiagnostics =
+    (landCollectorDiagnostics.land_characteristics as
+      | Record<string, unknown>
+      | undefined) || {}
 
   const landSidoCoverageMetric = checkValue(
     landChecksData,
@@ -864,6 +876,56 @@ function buildSnapshotLaunchReadiness(params: {
         parcel_location_fill_rate_pct: landParcelLocationFillRatePct,
         land_prices_coverage_pct: landPricesCoveragePct,
         land_characteristics_coverage_pct: landCharacteristicsCoveragePct,
+        land_prices_last_run_generated_at:
+          (landPricesRunDiagnostics.generated_at as string | undefined) || null,
+        land_prices_last_run_total: toNumber(landPricesRunDiagnostics.total),
+        land_prices_last_run_success: toNumber(
+          landPricesRunDiagnostics.success
+        ),
+        land_prices_last_run_missing: toNumber(
+          landPricesRunDiagnostics.missing
+        ),
+        land_prices_last_run_missing_no_data: toNumber(
+          landPricesRunDiagnostics.missing_no_data
+        ),
+        land_prices_last_run_missing_transient: toNumber(
+          landPricesRunDiagnostics.missing_transient
+        ),
+        land_prices_last_run_failed: toNumber(landPricesRunDiagnostics.failed),
+        land_prices_last_run_missing_no_data_rate_pct: toNumber(
+          landPricesRunDiagnostics.missing_no_data_rate_pct
+        ),
+        land_prices_last_run_missing_transient_rate_pct: toNumber(
+          landPricesRunDiagnostics.missing_transient_rate_pct
+        ),
+        land_characteristics_last_run_generated_at:
+          (landCharacteristicsRunDiagnostics.generated_at as
+            | string
+            | undefined) || null,
+        land_characteristics_last_run_total: toNumber(
+          landCharacteristicsRunDiagnostics.total
+        ),
+        land_characteristics_last_run_success: toNumber(
+          landCharacteristicsRunDiagnostics.success
+        ),
+        land_characteristics_last_run_missing: toNumber(
+          landCharacteristicsRunDiagnostics.missing
+        ),
+        land_characteristics_last_run_missing_no_data: toNumber(
+          landCharacteristicsRunDiagnostics.missing_no_data
+        ),
+        land_characteristics_last_run_missing_transient: toNumber(
+          landCharacteristicsRunDiagnostics.missing_transient
+        ),
+        land_characteristics_last_run_failed: toNumber(
+          landCharacteristicsRunDiagnostics.failed
+        ),
+        land_characteristics_last_run_missing_no_data_rate_pct: toNumber(
+          landCharacteristicsRunDiagnostics.missing_no_data_rate_pct
+        ),
+        land_characteristics_last_run_missing_transient_rate_pct: toNumber(
+          landCharacteristicsRunDiagnostics.missing_transient_rate_pct
+        ),
         cancelled_exclusion_rate_pct: cancelledExclusionRatePct,
         quality_report_generated_at:
           (landQuality?.generated_at as string | undefined) || null,
