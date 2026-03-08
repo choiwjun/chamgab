@@ -21,6 +21,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
+from app.core.database import get_supabase_client
 from app.core.model_artifacts import (
     download_apartment_model_artifacts,
     upload_apartment_model_artifacts,
@@ -101,6 +102,21 @@ class DataScheduler:
     def __init__(self) -> None:
         self.scheduler = AsyncIOScheduler(timezone="Asia/Seoul")
         self.is_running = False
+        scheduler_state_db_enabled = (
+            os.getenv("SCHEDULER_STATE_DB_ENABLED") or "true"
+        ).strip().lower()
+        self._scheduler_state_db_enabled = scheduler_state_db_enabled not in {
+            "0",
+            "false",
+            "no",
+            "off",
+        }
+        self._scheduler_state_table = (
+            os.getenv("SCHEDULER_STATE_TABLE") or "scheduler_state_snapshots"
+        ).strip() or "scheduler_state_snapshots"
+        self._scheduler_state_service_name = (
+            os.getenv("SCHEDULER_STATE_SERVICE_NAME") or "chamgab-ml-api"
+        ).strip() or "chamgab-ml-api"
 
         self.last_collection_job: Optional[str] = None
         self.last_land_collection_job: Optional[str] = None
@@ -188,10 +204,161 @@ class DataScheduler:
         except Exception:
             return None
 
-    def _load_scheduler_state(self) -> None:
-        payload = self._load_summary_json(self._watchdog_state_path)
-        if not isinstance(payload, dict):
+    def _scheduler_state_payload(self) -> Dict[str, Any]:
+        return {
+            "generated_at": datetime.now().isoformat(),
+            "service_name": self._scheduler_state_service_name,
+            "last_collection_job": self.last_collection_job,
+            "last_land_collection_job": self.last_land_collection_job,
+            "last_land_collection_ok": self.last_land_collection_ok,
+            "last_land_collection_error": self.last_land_collection_error,
+            "last_land_collection_finished_at": self.last_land_collection_finished_at,
+            "last_analysis_job": self.last_analysis_job,
+            "last_training_job": self.last_training_job,
+            "current_job_running": self.current_job_running,
+            "current_job_type": self.current_job_type,
+            "current_job_started_at": self.current_job_started_at,
+            "current_job_finished_at": self.current_job_finished_at,
+            "current_job_ok": self.current_job_ok,
+            "current_job_error": self.current_job_error,
+            "current_job_result": self.current_job_result,
+            "last_chamgab_audit_summary": self.last_chamgab_audit_summary,
+            "last_chamgab_reanalyze_summary": self.last_chamgab_reanalyze_summary,
+            "last_tx_property_backfill_summary": self.last_tx_property_backfill_summary,
+            "last_sync_complexes_properties_summary": self.last_sync_complexes_properties_summary,
+            "last_chamgab_factor_backfill_summary": self.last_chamgab_factor_backfill_summary,
+            "last_chamgab_autofix_summary": self.last_chamgab_autofix_summary,
+            "last_chamgab_gap_recovery_summary": self.last_chamgab_gap_recovery_summary,
+            "last_launch_readiness_gate_summary": self.last_launch_readiness_gate_summary,
+            "last_job_status_by_type": self.last_job_status_by_type,
+            "watchdog_requeue_attempts": self._watchdog_requeue_attempts,
+            "last_watchdog_run_at": self.last_watchdog_run_at,
+            "last_watchdog_action": self.last_watchdog_action,
+            "quality_gate_streaks": self._quality_gate_streaks,
+            "disabled_jobs": self.disabled_jobs,
+            "last_preflight_check_at": self.last_preflight_check_at,
+        }
+
+    def _load_scheduler_state_from_db(self) -> Optional[Dict[str, Any]]:
+        if not self._scheduler_state_db_enabled:
+            return None
+        try:
+            client = get_supabase_client()
+            result = (
+                client.table(self._scheduler_state_table)
+                .select("state, updated_at")
+                .eq("service_name", self._scheduler_state_service_name)
+                .limit(1)
+                .execute()
+            )
+        except Exception as exc:
+            print(f"[scheduler] failed to load scheduler state from db: {exc}")
+            return None
+
+        if not result.data:
+            return None
+        row = result.data[0] or {}
+        state = row.get("state")
+        if not isinstance(state, dict):
+            return None
+        payload = dict(state)
+        if not isinstance(payload.get("generated_at"), str):
+            updated_at = row.get("updated_at")
+            if isinstance(updated_at, str):
+                payload["generated_at"] = updated_at
+        return payload
+
+    def _persist_scheduler_state_to_db(self, payload: Dict[str, Any]) -> None:
+        if not self._scheduler_state_db_enabled:
             return
+        try:
+            client = get_supabase_client()
+            client.table(self._scheduler_state_table).upsert(
+                {
+                    "service_name": self._scheduler_state_service_name,
+                    "state": payload,
+                    "updated_at": payload.get("generated_at") or datetime.now().isoformat(),
+                },
+                on_conflict="service_name",
+            ).execute()
+        except Exception as exc:
+            print(f"[scheduler] failed to persist scheduler state to db: {exc}")
+
+    def _choose_latest_scheduler_state_payload(
+        self, *payloads: Optional[Dict[str, Any]]
+    ) -> Optional[Dict[str, Any]]:
+        latest_payload: Optional[Dict[str, Any]] = None
+        latest_at: Optional[datetime] = None
+        for payload in payloads:
+            if not isinstance(payload, dict):
+                continue
+            generated_at = self._parse_iso_datetime(payload.get("generated_at"))
+            if latest_payload is None:
+                latest_payload = payload
+                latest_at = generated_at
+                continue
+            if latest_at is None and generated_at is not None:
+                latest_payload = payload
+                latest_at = generated_at
+                continue
+            if generated_at is not None and latest_at is not None and generated_at > latest_at:
+                latest_payload = payload
+                latest_at = generated_at
+        return latest_payload
+
+    def _apply_scheduler_state_payload(self, payload: Dict[str, Any]) -> None:
+        string_fields = (
+            "last_collection_job",
+            "last_land_collection_job",
+            "last_land_collection_error",
+            "last_land_collection_finished_at",
+            "last_analysis_job",
+            "last_training_job",
+            "current_job_type",
+            "current_job_started_at",
+            "current_job_finished_at",
+            "current_job_error",
+            "last_watchdog_run_at",
+            "last_preflight_check_at",
+        )
+        for field in string_fields:
+            if field not in payload:
+                continue
+            value = payload.get(field)
+            if isinstance(value, str) or value is None:
+                setattr(self, field, value)
+
+        bool_fields = (
+            "last_land_collection_ok",
+            "current_job_running",
+            "current_job_ok",
+        )
+        for field in bool_fields:
+            if field not in payload:
+                continue
+            value = payload.get(field)
+            if isinstance(value, bool) or value is None:
+                setattr(self, field, value)
+
+        dict_fields = (
+            "current_job_result",
+            "last_chamgab_audit_summary",
+            "last_chamgab_reanalyze_summary",
+            "last_tx_property_backfill_summary",
+            "last_sync_complexes_properties_summary",
+            "last_chamgab_factor_backfill_summary",
+            "last_chamgab_autofix_summary",
+            "last_chamgab_gap_recovery_summary",
+            "last_launch_readiness_gate_summary",
+            "last_watchdog_action",
+            "disabled_jobs",
+        )
+        for field in dict_fields:
+            if field not in payload:
+                continue
+            value = payload.get(field)
+            if isinstance(value, dict) or value is None:
+                setattr(self, field, value)
 
         last_job_status_by_type = payload.get("last_job_status_by_type")
         if isinstance(last_job_status_by_type, dict):
@@ -209,35 +376,36 @@ class DataScheduler:
                     continue
             self._watchdog_requeue_attempts = parsed_attempts
 
-        last_watchdog_run_at = payload.get("last_watchdog_run_at")
-        if isinstance(last_watchdog_run_at, str):
-            self.last_watchdog_run_at = last_watchdog_run_at
-
-        last_watchdog_action = payload.get("last_watchdog_action")
-        if isinstance(last_watchdog_action, dict):
-            self.last_watchdog_action = last_watchdog_action
-
         quality_gate_streaks = payload.get("quality_gate_streaks")
         if isinstance(quality_gate_streaks, dict):
-            parsed: Dict[str, Dict[str, Any]] = {}
-            for key, value in quality_gate_streaks.items():
-                if isinstance(value, dict):
-                    parsed[str(key)] = value
-            self._quality_gate_streaks = parsed
+            self._quality_gate_streaks = {
+                str(k): v for k, v in quality_gate_streaks.items() if isinstance(v, dict)
+            }
+
+        if self.current_job_running:
+            self.current_job_running = False
+            if not self.current_job_finished_at:
+                self.current_job_finished_at = datetime.now().isoformat()
+            if self.current_job_ok is None:
+                self.current_job_ok = False
+            if not self.current_job_error:
+                self.current_job_error = "scheduler restarted while job was running"
+
+    def _load_scheduler_state(self) -> None:
+        file_payload = self._load_summary_json(self._watchdog_state_path)
+        db_payload = self._load_scheduler_state_from_db()
+        payload = self._choose_latest_scheduler_state_payload(db_payload, file_payload)
+        if not isinstance(payload, dict):
+            return
+        self._apply_scheduler_state_payload(payload)
 
     def _persist_scheduler_state(self) -> None:
-        payload: Dict[str, Any] = {
-            "generated_at": datetime.now().isoformat(),
-            "last_job_status_by_type": self.last_job_status_by_type,
-            "watchdog_requeue_attempts": self._watchdog_requeue_attempts,
-            "last_watchdog_run_at": self.last_watchdog_run_at,
-            "last_watchdog_action": self.last_watchdog_action,
-            "quality_gate_streaks": self._quality_gate_streaks,
-        }
+        payload = self._scheduler_state_payload()
         try:
             self._write_summary_json(self._watchdog_state_path, payload)
         except Exception as exc:
             print(f"[scheduler] failed to persist scheduler state: {exc}")
+        self._persist_scheduler_state_to_db(payload)
 
     def _watchdog_job_order(self) -> list[str]:
         raw = (os.getenv("SCHEDULER_WATCHDOG_JOB_ORDER") or "").strip()
@@ -287,6 +455,7 @@ class DataScheduler:
             self._reconcile_preflight_jobs()
         except Exception as exc:
             print(f"[scheduler] failed to reconcile preflight jobs: {exc}")
+        self._persist_scheduler_state()
 
     def _reconcile_preflight_jobs(self) -> None:
         if not self.is_running:
@@ -3135,6 +3304,7 @@ class DataScheduler:
             self.current_job_ok = None
             self.current_job_error = None
             self.current_job_result = None
+            self._persist_scheduler_state()
 
             auto_retry_enabled = self._env_bool("SCHEDULER_AUTO_RETRY_ENABLED", True)
             retryable_job_types = self._retry_job_types()
@@ -3266,6 +3436,7 @@ class DataScheduler:
                     self.current_job_result = {
                         "_domain_metrics": domain_metrics.get("domains"),
                     }
+                self._persist_scheduler_state()
                 if self.current_job_ok is False:
                     await self._emit_job_failure_alert(
                         job_type=job_type,
