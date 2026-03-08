@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import {
   evaluateCommercialSnapshotGate,
   getLatestCommercialQualitySnapshot,
+  toCommercialGateStatus,
 } from '@/app/api/admin/commercial/quality/_snapshot'
 
 type GateStatus = 'PASS' | 'WARN' | 'FAIL'
@@ -53,7 +54,7 @@ async function applyLocalOverrides(
       merged.commercial = merged.commercial ?? 'WARN'
       return merged
     }
-    merged.commercial = commercialGate.pass ? 'PASS' : 'FAIL'
+    merged.commercial = toCommercialGateStatus(commercialGate.checks, 'FAIL')
   } catch {
     // Keep upstream status on local override errors.
   }

@@ -9,6 +9,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import {
   evaluateCommercialSnapshotGate,
   getLatestCommercialQualitySnapshot,
+  toCommercialGateStatus,
 } from '@/app/api/admin/commercial/quality/_snapshot'
 
 const APARTMENT_THRESHOLDS = {
@@ -753,13 +754,18 @@ function buildSnapshotLaunchReadiness(params: {
     apartmentDomain,
     'apartment'
   )
-  const commercialGateStatus = commercialGate.pass
-    ? 'PASS'
-    : statusFromDomainHardFail(
-        commercialDomain.hard_fail,
-        commercialDomain,
-        'commercial'
-      )
+  const commercialFallbackStatus =
+    statusFromDomainHardFail(
+      commercialDomain.hard_fail,
+      commercialDomain,
+      'commercial'
+    ) === 'WARN'
+      ? 'WARN'
+      : 'FAIL'
+  const commercialGateStatus = toCommercialGateStatus(
+    commercialGate.checks,
+    commercialFallbackStatus
+  )
   const schoolGateStatus = statusFromDomainHardFail(
     schoolDomain.hard_fail,
     schoolDomain,
@@ -879,9 +885,7 @@ function buildFastFallbackLaunchReadiness(params: {
   const commercialStatus: 'PASS' | 'WARN' | 'FAIL' =
     params.latestCommercialSnapshot == null
       ? 'WARN'
-      : commercialGate.pass
-        ? 'PASS'
-        : 'FAIL'
+      : toCommercialGateStatus(commercialGate.checks, 'FAIL')
 
   return {
     as_of: new Date().toISOString(),
@@ -1424,7 +1428,10 @@ export async function GET(req: NextRequest) {
     }
 
     const apartmentGateStatus = toDomainGateStatus(apartmentChecks)
-    const commercialGateStatus = toDomainGateStatus(commercialChecks)
+    const commercialGateStatus = toCommercialGateStatus(
+      commercialGate.checks,
+      toDomainGateStatus(commercialChecks) === 'WARN' ? 'WARN' : 'FAIL'
+    )
     const schoolGateStatus = toDomainGateStatus(schoolChecks)
     const landGateStatus = toDomainGateStatus(landChecks)
     const allDomainsPass =

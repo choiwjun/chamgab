@@ -57,6 +57,8 @@ export type CommercialGateCheck = {
   source: string
 }
 
+export type CommercialGateStatus = 'PASS' | 'WARN' | 'FAIL'
+
 function toNumber(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value
   if (typeof value === 'string') {
@@ -808,4 +810,22 @@ export function evaluateCommercialSnapshotGate(snapshot: AnyRow | null): {
       thresholds: COMMERCIAL_THRESHOLDS,
     },
   }
+}
+
+export function toCommercialGateStatus(
+  checks: CommercialGateCheck[],
+  fallbackFailureStatus: Exclude<CommercialGateStatus, 'PASS'> = 'FAIL'
+): CommercialGateStatus {
+  if (checks.length === 0) return 'WARN'
+  if (checks.every((check) => check.pass)) return 'PASS'
+
+  const unavailable = checks.some((check) => !check.available)
+  if (unavailable) return 'WARN'
+
+  const failed = checks.filter((check) => !check.pass)
+  if (failed.length === 1 && failed[0]?.key === 'snapshot_age_hours') {
+    return 'WARN'
+  }
+
+  return fallbackFailureStatus
 }
