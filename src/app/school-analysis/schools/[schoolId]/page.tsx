@@ -7,10 +7,15 @@ import { Loader2 } from 'lucide-react'
 import { APIError, getSchoolDetail } from '@/lib/api/school-analysis'
 import type {
   MetricValue,
+  MetricProvenance,
   SchoolDataStatus,
   SchoolDetail,
   SchoolLevel,
 } from '@/types/school-analysis'
+
+function provenanceLabel(provenance: MetricProvenance): string {
+  return provenance === 'official' ? '공식' : '추정'
+}
 
 function MetricRow({ label, metric }: { label: string; metric: MetricValue }) {
   const displayValue =
@@ -26,7 +31,7 @@ function MetricRow({ label, metric }: { label: string; metric: MetricValue }) {
       <span className="font-medium text-[#191F28]">
         {displayValue}
         <span className="ml-2 rounded bg-[#F2F4F6] px-1.5 py-0.5 text-[10px] uppercase text-[#8B95A1]">
-          {metric.provenance}
+          {provenanceLabel(metric.provenance)}
         </span>
       </span>
     </div>
@@ -35,10 +40,10 @@ function MetricRow({ label, metric }: { label: string; metric: MetricValue }) {
 
 function levelLabel(level: SchoolLevel): string {
   const map: Record<SchoolLevel, string> = {
-    elementary: 'Elementary',
-    middle: 'Middle',
-    high: 'High',
-    other: 'Other',
+    elementary: '초등학교',
+    middle: '중학교',
+    high: '고등학교',
+    other: '기타',
   }
   return map[level] ?? level
 }
@@ -49,11 +54,9 @@ function ProgressionSection({ school }: { school: SchoolDetail }) {
   if (school_level === 'high') {
     return (
       <section className="rounded-2xl border border-[#E5E8EB] bg-white p-4">
-        <h2 className="mb-2 text-sm font-semibold text-[#191F28]">
-          Progression
-        </h2>
+        <h2 className="mb-2 text-sm font-semibold text-[#191F28]">진학 지표</h2>
         <MetricRow
-          label="College progression"
+          label="대학 진학률"
           metric={progression.college_progression_rate}
         />
       </section>
@@ -64,10 +67,10 @@ function ProgressionSection({ school }: { school: SchoolDetail }) {
     return (
       <section className="rounded-2xl border border-[#E5E8EB] bg-white p-4">
         <h2 className="mb-2 text-sm font-semibold text-[#191F28]">
-          High school destination
+          고등학교 진학
         </h2>
         <MetricRow
-          label="General high school"
+          label="일반고 진학률"
           metric={progression.general_highschool_rate}
         />
       </section>
@@ -86,19 +89,19 @@ const STATUS_BANNER: Record<
     bg: 'bg-[#E8FAF0]',
     border: 'border-[#00C471]/20',
     text: 'text-[#059669]',
-    label: 'Official schoolinfo data linked',
+    label: '학교알리미 공식 데이터 연동',
   },
   name_mismatch: {
     bg: 'bg-[#FEF3C7]',
     border: 'border-[#F59E0B]/20',
     text: 'text-[#B45309]',
-    label: 'Name mismatch: estimated data in use',
+    label: '학교명 불일치로 추정 데이터 사용',
   },
   inactive: {
     bg: 'bg-[#F2F4F6]',
     border: 'border-[#8B95A1]/20',
     text: 'text-[#8B95A1]',
-    label: 'Inactive school: historical data only',
+    label: '비활성 학교: 과거 데이터만 제공',
   },
 }
 
@@ -117,13 +120,13 @@ function DataStatusBanner({
   const label =
     status === 'official'
       ? officialReferenceYear
-        ? `Official schoolinfo data linked (${officialReferenceYear})`
-        : 'Official schoolinfo data linked (latest)'
+        ? `학교알리미 공식 데이터 확인됨 (${officialReferenceYear}년 기준)`
+        : '학교알리미 공식 데이터 확인됨 (최신)'
       : cfg.label
 
   const note =
     status === 'official' && hasInferredCollegeProgression
-      ? ' (college progression is inferred)'
+      ? ' · 대학 진학률은 추정치'
       : ''
 
   return (
@@ -157,7 +160,7 @@ export default function SchoolDetailPage() {
         const message =
           err instanceof APIError
             ? err.message
-            : 'Failed to load school detail.'
+            : '학교 상세 데이터를 불러오지 못했습니다.'
         setError(message)
       } finally {
         setIsLoading(false)
@@ -179,12 +182,14 @@ export default function SchoolDetailPage() {
     return (
       <div className="mx-auto max-w-3xl px-4 py-12">
         <div className="rounded-xl border border-[#FECACA] bg-[#FEF2F2] p-5">
-          <p className="text-sm text-[#B91C1C]">{error || 'Unknown error'}</p>
+          <p className="text-sm text-[#B91C1C]">
+            {error || '알 수 없는 오류가 발생했습니다.'}
+          </p>
           <Link
             href={'/school-analysis' as never}
             className="mt-3 inline-block text-sm font-medium text-[#3182F6]"
           >
-            Back to school preview
+            학군 목록으로 돌아가기
           </Link>
         </div>
       </div>
@@ -198,7 +203,7 @@ export default function SchoolDetailPage() {
           href={'/school-analysis' as never}
           className="text-sm font-medium text-[#3182F6]"
         >
-          Back to school analysis
+          학군분석으로 돌아가기
         </Link>
 
         <header className="mt-3 rounded-2xl border border-[#E5E8EB] bg-white p-5">
@@ -210,8 +215,7 @@ export default function SchoolDetailPage() {
             {school.address}
           </p>
           <p className="mt-2 text-xs text-[#8B95A1]">
-            data freshness{' '}
-            {new Date(school.data_freshness).toLocaleDateString()}
+            데이터 기준일 {new Date(school.data_freshness).toLocaleDateString()}
           </p>
           <DataStatusBanner
             status={school.data_status}
@@ -227,25 +231,19 @@ export default function SchoolDetailPage() {
         <div className="mt-4 grid gap-4 md:grid-cols-2 md:items-start">
           <section className="rounded-2xl border border-[#E5E8EB] bg-white p-4">
             <h2 className="mb-2 text-sm font-semibold text-[#191F28]">
-              School quality
+              학교 품질
             </h2>
-            <MetricRow label="Overall" metric={school.quality.overall} />
+            <MetricRow label="종합" metric={school.quality.overall} />
+            <MetricRow label="학업/성취" metric={school.quality.achievement} />
             <MetricRow
-              label="Achievement"
-              metric={school.quality.achievement}
-            />
-            <MetricRow
-              label="Progression outcome"
+              label="진학 성과"
               metric={school.quality.progression_outcome}
             />
             <MetricRow
-              label="Education environment"
+              label="교육환경"
               metric={school.quality.education_environment}
             />
-            <MetricRow
-              label="Safety / life"
-              metric={school.quality.safety_life}
-            />
+            <MetricRow label="안전/생활" metric={school.quality.safety_life} />
           </section>
 
           <ProgressionSection school={school} />
