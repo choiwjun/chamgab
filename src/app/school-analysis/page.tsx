@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import {
   ArrowRight,
   BarChart3,
-  BookOpen,
   Building2,
   ChevronLeft,
   ChevronRight,
@@ -88,13 +87,6 @@ function collegeRateLabel(item: SchoolDistrictSummary): string {
   return item.insights.college_progression_estimated
     ? '대학 진학률(추정)'
     : '대학 진학률'
-}
-
-function specialAutonomyRate(item: SchoolDistrictSummary): number | null {
-  const special = item.insights.special_purpose_highschool_rate
-  const autonomy = item.insights.autonomy_highschool_rate
-  if (special === null && autonomy === null) return null
-  return Number(((special ?? 0) + (autonomy ?? 0)).toFixed(1))
 }
 
 async function getDailyCreditRemaining(): Promise<number | null> {
@@ -331,15 +323,6 @@ export default function SchoolAnalysisPreviewPage() {
                           {formatPercent(
                             item.insights.college_progression_rate
                           )}
-                        </dd>
-                      </div>
-                      <div className="flex items-center justify-between gap-2">
-                        <dt className="inline-flex items-center gap-1.5 text-[#6B7684]">
-                          <BookOpen className="h-3.5 w-3.5 text-[#7C3AED]" />
-                          특목·자사 진학률
-                        </dt>
-                        <dd className="font-semibold text-[#191F28]">
-                          {formatPercent(specialAutonomyRate(item))}
                         </dd>
                       </div>
                       <div className="flex items-center justify-between gap-2">

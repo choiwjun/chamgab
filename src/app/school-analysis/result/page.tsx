@@ -10,7 +10,6 @@ import {
   Share2,
   ShieldCheck,
   Sparkles,
-  TrendingUp,
 } from 'lucide-react'
 import {
   Bar,
@@ -232,15 +231,6 @@ function SchoolAnalysisResultContent() {
         value: toNumber(report.progression.general_highschool_rate) ?? 0,
       },
       {
-        label: '특목고',
-        value:
-          toNumber(report.progression.special_purpose_highschool_rate) ?? 0,
-      },
-      {
-        label: '자사고',
-        value: toNumber(report.progression.autonomy_highschool_rate) ?? 0,
-      },
-      {
         label: '대학진학',
         value: toNumber(report.progression.college_progression_rate) ?? 0,
       },
@@ -309,19 +299,18 @@ function SchoolAnalysisResultContent() {
   const insightTexts = useMemo(() => {
     if (!report) return []
     const college = toNumber(report.progression.college_progression_rate) ?? 0
-    const special =
-      (toNumber(report.progression.special_purpose_highschool_rate) ?? 0) +
-      (toNumber(report.progression.autonomy_highschool_rate) ?? 0)
     const academy = toNumber(report.academy_ecosystem.overall) ?? 0
     const safety = toNumber(report.commute_safety) ?? 0
+    const schoolCount =
+      report.data_quality?.total_schools ?? report.schools.length ?? 0
 
     return [
       college >= 65
         ? '대학 진학 성과가 우수한 편입니다.'
         : '대학 진학 성과는 보완 여지가 있습니다.',
-      special >= 15
-        ? '특목/자사 계열 진학 트랙이 상대적으로 강합니다.'
-        : '특목/자사 계열 진학 비중은 낮은 편입니다.',
+      schoolCount >= 40
+        ? '학교 수가 많아 학군 선택 폭이 넓은 편입니다.'
+        : '학교 수가 적어 개별 학교 비교가 더 중요합니다.',
       academy >= 70
         ? '학원 생태계 접근성이 좋아 보조 학습 인프라가 충분합니다.'
         : '학원 생태계는 지역 내 편차를 확인할 필요가 있습니다.',
@@ -479,15 +468,9 @@ function SchoolAnalysisResultContent() {
                 </p>
               </article>
               <article className="rounded-xl border border-[#E5E7EB] bg-white p-4">
-                <p className="text-xs text-[#6B7280]">특목·자사 진학률</p>
+                <p className="text-xs text-[#6B7280]">통학·안전 점수</p>
                 <p className="mt-1 text-2xl font-bold text-[#111827]">
-                  {(
-                    (toNumber(
-                      report.progression.special_purpose_highschool_rate
-                    ) ?? 0) +
-                    (toNumber(report.progression.autonomy_highschool_rate) ?? 0)
-                  ).toFixed(1)}
-                  %
+                  {formatMetric(report.commute_safety)}
                 </p>
               </article>
               <article className="rounded-xl border border-[#E5E7EB] bg-white p-4">
@@ -659,10 +642,10 @@ function SchoolAnalysisResultContent() {
             icon={<GraduationCap className="h-4 w-4 text-[#2563EB]" />}
           />
           <InsightCard
-            title="상위 트랙 인사이트"
+            title="학교 구성"
             body={insightTexts[1] || '-'}
             toneClass="border-[#EDE9FE] bg-[#F5F3FF]"
-            icon={<TrendingUp className="h-4 w-4 text-[#7C3AED]" />}
+            icon={<GraduationCap className="h-4 w-4 text-[#7C3AED]" />}
           />
           <InsightCard
             title="보조 학습 인프라"

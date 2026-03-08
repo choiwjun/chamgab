@@ -70,14 +70,6 @@ function ProgressionSection({ school }: { school: SchoolDetail }) {
           label="General high school"
           metric={progression.general_highschool_rate}
         />
-        <MetricRow
-          label="Special-purpose / autonomous"
-          metric={progression.special_purpose_highschool_rate}
-        />
-        <MetricRow
-          label="Autonomous high school"
-          metric={progression.autonomy_highschool_rate}
-        />
       </section>
     )
   }
