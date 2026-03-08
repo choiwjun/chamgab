@@ -54,7 +54,12 @@ def missing_metrics_payload(school_level: str) -> Dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Collect school official metrics from NEIS")
-    parser.add_argument("--year", type=int, default=datetime.now().year)
+    parser.add_argument(
+        "--year",
+        type=int,
+        default=datetime.now().year - 1,
+        help="Metric year (default: previous year)",
+    )
     parser.add_argument("--term", type=str, default="annual")
     parser.add_argument("--batch-size", type=int, default=500)
     args = parser.parse_args()

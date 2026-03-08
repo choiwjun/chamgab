@@ -89,6 +89,23 @@ def run_checks(
     academies = _load_rows("academies", "academy_id,source_updated_at,updated_at")
     academy_fees = _load_rows("academy_fees", "academy_id,source_updated_at,updated_at")
     try:
+        latest_quality_rows = _load_rows(
+            "vw_school_quality_latest",
+            (
+                "school_id,has_official_metric,"
+                "achievement_score,progression_outcome_score,"
+                "education_environment_score,safety_life_score"
+            ),
+        )
+    except Exception:
+        latest_quality_rows = _load_rows(
+            "vw_school_quality_latest",
+            (
+                "school_id,achievement_score,progression_outcome_score,"
+                "education_environment_score,safety_life_score"
+            ),
+        )
+    try:
         preview_rows = _load_rows(
             "vw_school_analysis_preview",
             "district_code,official_coverage_pct,official_confidence,inferred_ratio_pct,inferred_confidence",
@@ -128,19 +145,23 @@ def run_checks(
     }
 
     official_metric_school_ids = set()
-    for row in real_metrics:
+    for row in latest_quality_rows:
         school_id = row.get("school_id")
-        metrics_obj = row.get("metrics") or {}
-        if not school_id or not isinstance(metrics_obj, dict):
+        if not school_id:
             continue
-        has_official = any(
-            metrics_obj.get(key) is not None
-            for key in (
-                "achievement_score",
-                "progression_outcome_score",
-                "education_environment_score",
+
+        has_official = row.get("has_official_metric")
+        if has_official is None:
+            has_official = any(
+                row.get(key) is not None
+                for key in (
+                    "achievement_score",
+                    "progression_outcome_score",
+                    "education_environment_score",
+                    "safety_life_score",
+                )
             )
-        )
+
         if has_official:
             official_metric_school_ids.add(str(school_id))
 

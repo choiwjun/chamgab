@@ -4,11 +4,15 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ArrowRight,
+  BarChart3,
+  BookOpen,
+  Building2,
   ChevronLeft,
   ChevronRight,
   GraduationCap,
   Loader2,
   RefreshCw,
+  School,
   Search,
 } from 'lucide-react'
 import { APIError, getSchoolPreview } from '@/lib/api/school-analysis'
@@ -19,14 +23,14 @@ const PER_PAGE = 24
 const SIDO_OPTIONS: { code: string; label: string }[] = [
   { code: '', label: '전체' },
   { code: '11', label: '서울' },
+  { code: '41', label: '경기' },
+  { code: '28', label: '인천' },
   { code: '26', label: '부산' },
   { code: '27', label: '대구' },
-  { code: '28', label: '인천' },
   { code: '29', label: '광주' },
   { code: '30', label: '대전' },
   { code: '31', label: '울산' },
   { code: '36', label: '세종' },
-  { code: '41', label: '경기' },
   { code: '51', label: '강원' },
   { code: '43', label: '충북' },
   { code: '44', label: '충남' },
@@ -37,6 +41,91 @@ const SIDO_OPTIONS: { code: string; label: string }[] = [
   { code: '50', label: '제주' },
 ]
 
+const SIDO_PRIORITY = new Map(
+  SIDO_OPTIONS.filter((opt) => opt.code).map(
+    (opt, idx) => [opt.code, idx] as const
+  )
+)
+
+function formatPercent(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return '-'
+  return `${value.toFixed(1)}%`
+}
+
+function formatScore(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return '-'
+  return `${value.toFixed(1)}점`
+}
+
+function formatMonthlyFee(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return '-'
+  const inManwon = value / 10000
+  return `${inManwon.toFixed(1)}만원/월`
+}
+
+function scoreBarWidth(value: number | null): number {
+  if (value === null || !Number.isFinite(value)) return 0
+  return Math.max(0, Math.min(100, value))
+}
+
+function formatSchoolComposition(item: SchoolDistrictSummary): string {
+  const levels = item.insights.school_level_breakdown
+  const known = levels.elementary + levels.middle + levels.high + levels.other
+  if (item.school_count > 0 && known === 0) {
+    return `${item.school_count}개 (구성 집계중)`
+  }
+  return `${item.school_count}개 (초${levels.elementary} · 중${levels.middle} · 고${levels.high})`
+}
+
+function formatAcademyFee(item: SchoolDistrictSummary): string {
+  if (item.insights.academy_fee_reliability === 'low') {
+    return '월비용 표본 부족'
+  }
+  return formatMonthlyFee(item.insights.academy_avg_monthly_fee)
+}
+
+function collegeRateLabel(item: SchoolDistrictSummary): string {
+  return item.insights.college_progression_estimated
+    ? '대학 진학률(추정)'
+    : '대학 진학률'
+}
+
+function specialAutonomyRate(item: SchoolDistrictSummary): number | null {
+  const special = item.insights.special_purpose_highschool_rate
+  const autonomy = item.insights.autonomy_highschool_rate
+  if (special === null && autonomy === null) return null
+  return Number(((special ?? 0) + (autonomy ?? 0)).toFixed(1))
+}
+
+async function getDailyCreditRemaining(): Promise<number | null> {
+  try {
+    const response = await fetch('/api/me/credits', { cache: 'no-store' })
+    if (!response.ok) return null
+    const data = (await response.json()) as {
+      profile?: {
+        daily_credit_used?: number | null
+        daily_credit_limit?: number | null
+        daily_credit_reset_at?: string | null
+      } | null
+    }
+
+    const profile = data.profile
+    if (!profile) return null
+
+    const today = new Intl.DateTimeFormat('sv-SE', {
+      timeZone: 'Asia/Seoul',
+    }).format(new Date())
+    const used =
+      !profile.daily_credit_reset_at || profile.daily_credit_reset_at < today
+        ? 0
+        : Number(profile.daily_credit_used ?? 0)
+    const limit = Number(profile.daily_credit_limit ?? 0)
+    return Math.max(0, limit - used)
+  } catch {
+    return null
+  }
+}
+
 export default function SchoolAnalysisPreviewPage() {
   const router = useRouter()
   const [allItems, setAllItems] = useState<SchoolDistrictSummary[]>([])
@@ -45,6 +134,9 @@ export default function SchoolAnalysisPreviewPage() {
   const [selectedSido, setSelectedSido] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [page, setPage] = useState(1)
+  const [checkingAccessDistrict, setCheckingAccessDistrict] = useState<
+    string | null
+  >(null)
 
   const loadPreview = async () => {
     try {
@@ -84,11 +176,38 @@ export default function SchoolAnalysisPreviewPage() {
           d.district_code.includes(q)
       )
     }
-    return result
+    return [...result].sort((a, b) => {
+      const aSido = a.district_code.slice(0, 2)
+      const bSido = b.district_code.slice(0, 2)
+      const aPriority = SIDO_PRIORITY.get(aSido) ?? Number.MAX_SAFE_INTEGER
+      const bPriority = SIDO_PRIORITY.get(bSido) ?? Number.MAX_SAFE_INTEGER
+      if (aPriority !== bPriority) return aPriority - bPriority
+
+      const byName = a.district_name.localeCompare(b.district_name, 'ko-KR')
+      if (byName !== 0) return byName
+      return a.district_code.localeCompare(b.district_code)
+    })
   }, [allItems, selectedSido, searchQuery])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE))
   const paged = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE)
+
+  const handleViewDetail = async (districtCode: string) => {
+    if (checkingAccessDistrict) return
+    setCheckingAccessDistrict(districtCode)
+    try {
+      const dailyRemaining = await getDailyCreditRemaining()
+      if (dailyRemaining !== null && dailyRemaining <= 0) {
+        window.alert(
+          '일일 크레딧이 모두 소진되었습니다. 내일 초기화 후 다시 이용해 주세요.'
+        )
+        return
+      }
+      router.push(`/school-analysis/result?district=${districtCode}` as never)
+    } finally {
+      setCheckingAccessDistrict(null)
+    }
+  }
 
   return (
     <div className="min-h-screen bg-[#F8FAFC]">
@@ -179,43 +298,92 @@ export default function SchoolAnalysisPreviewPage() {
                     key={item.district_code}
                     className="rounded-2xl border border-[#E5E8EB] bg-white p-5 transition-colors hover:border-[#3182F6]/30"
                   >
-                    <h2 className="text-base font-semibold text-[#191F28]">
+                    <h2 className="truncate text-base font-semibold text-[#191F28]">
                       {item.district_name}
                     </h2>
-                    <p className="mt-1 text-xs text-[#8B95A1]">
-                      코드 {item.district_code}
-                    </p>
-                    <dl className="mt-4 space-y-2 text-sm">
-                      <div className="flex items-center justify-between">
-                        <dt className="text-[#8B95A1]">종합 점수</dt>
-                        <dd className="font-semibold text-[#3182F6]">
-                          {item.overall_score.value?.toFixed(1) ?? '-'}
+
+                    <div className="mt-4">
+                      <div className="flex items-end justify-between gap-2">
+                        <p className="text-xs font-medium text-[#6B7684]">
+                          종합 점수
+                        </p>
+                        <p className="text-base font-bold text-[#191F28]">
+                          {formatScore(item.overall_score.value)}
+                        </p>
+                      </div>
+                      <div className="mt-2 h-2 rounded-full bg-[#EEF2F7]">
+                        <div
+                          className="h-2 rounded-full bg-gradient-to-r from-[#2563EB] to-[#1D4ED8]"
+                          style={{
+                            width: `${scoreBarWidth(item.overall_score.value)}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <dl className="mt-4 space-y-2.5 text-sm">
+                      <div className="flex items-center justify-between gap-2">
+                        <dt className="inline-flex items-center gap-1.5 text-[#6B7684]">
+                          <BarChart3 className="h-3.5 w-3.5 text-[#3182F6]" />
+                          {collegeRateLabel(item)}
+                        </dt>
+                        <dd className="font-semibold text-[#191F28]">
+                          {formatPercent(
+                            item.insights.college_progression_rate
+                          )}
                         </dd>
                       </div>
-                      <div className="flex items-center justify-between">
-                        <dt className="text-[#8B95A1]">신뢰도</dt>
-                        <dd className="font-medium text-[#191F28]">
-                          {item.confidence_score.toFixed(1)}
+                      <div className="flex items-center justify-between gap-2">
+                        <dt className="inline-flex items-center gap-1.5 text-[#6B7684]">
+                          <BookOpen className="h-3.5 w-3.5 text-[#7C3AED]" />
+                          특목·자사 진학률
+                        </dt>
+                        <dd className="font-semibold text-[#191F28]">
+                          {formatPercent(specialAutonomyRate(item))}
                         </dd>
                       </div>
-                      <div className="flex items-center justify-between">
-                        <dt className="text-[#8B95A1]">학교 수</dt>
-                        <dd className="font-medium text-[#191F28]">
-                          {item.school_count}
+                      <div className="flex items-center justify-between gap-2">
+                        <dt className="inline-flex items-center gap-1.5 text-[#6B7684]">
+                          <School className="h-3.5 w-3.5 text-[#0EA5E9]" />
+                          학교 구성
+                        </dt>
+                        <dd className="text-right font-medium text-[#191F28]">
+                          {formatSchoolComposition(item)}
+                        </dd>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <dt className="inline-flex items-center gap-1.5 text-[#6B7684]">
+                          <Building2 className="h-3.5 w-3.5 text-[#0F766E]" />
+                          학원 생태계
+                        </dt>
+                        <dd className="text-right font-medium text-[#191F28]">
+                          {item.insights.academy_count ?? '-'}개 ·{' '}
+                          {formatAcademyFee(item)}
                         </dd>
                       </div>
                     </dl>
 
+                    <p className="mt-2 text-[11px] text-[#8B95A1]">
+                      * 진학률/월비용은 추정·표본 기반이며 지역별 오차가 있을 수
+                      있습니다.
+                    </p>
+
                     <button
-                      onClick={() =>
-                        router.push(
-                          `/school-analysis/result?district=${item.district_code}` as never
-                        )
-                      }
-                      className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-[#3182F6]"
+                      onClick={() => void handleViewDetail(item.district_code)}
+                      disabled={checkingAccessDistrict === item.district_code}
+                      className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-[#3182F6] disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      상세 분석 보기
-                      <ArrowRight className="h-4 w-4" />
+                      {checkingAccessDistrict === item.district_code ? (
+                        <>
+                          확인중...
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        </>
+                      ) : (
+                        <>
+                          상세 분석 보기
+                          <ArrowRight className="h-4 w-4" />
+                        </>
+                      )}
                     </button>
                   </article>
                 ))}

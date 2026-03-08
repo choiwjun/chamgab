@@ -11,6 +11,7 @@ from typing import Dict, Iterable, List, Sequence
 from app.core.database import get_supabase_client
 from scripts.school_analysis_sources import (
     chunked,
+    extract_sido_sigungu_from_address,
     fetch_neis_academy_tuition,
     fetch_sbiz_education_stores,
     infer_subject_category,
@@ -77,7 +78,7 @@ def is_likely_academy(text: str) -> bool:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Collect academy directory from source APIs")
     parser.add_argument("--sigungu-codes", nargs="*", default=[])
-    parser.add_argument("--max-sigungu", type=int, default=100)
+    parser.add_argument("--max-sigungu", type=int, default=0)
     parser.add_argument("--max-pages-per-sigungu", type=int, default=2)
     parser.add_argument("--sbiz-num-rows", type=int, default=200)
     parser.add_argument("--skip-neis", action="store_true")
@@ -158,6 +159,13 @@ def main() -> None:
             address_main = str(row.get("FA_RDNMA") or "").strip()
             address_detail = str(row.get("FA_RDNDA") or "").strip()
             address = " ".join(part for part in [address_main, address_detail] if part).strip() or None
+            if not sigungu_code:
+                addr_sido, addr_sigungu = extract_sido_sigungu_from_address(address or address_main)
+                sigungu_code = resolve_sigungu_code(
+                    lookup,
+                    sido_name=addr_sido,
+                    sigungu_name=addr_sigungu,
+                )
             source_dt = parse_yyyymmdd(row.get("LOAD_DTM"))
             source_updated_at = source_dt.isoformat() if source_dt else now
             reg_status = str(row.get("REG_STTUS_NM") or "").strip()

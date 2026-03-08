@@ -109,7 +109,12 @@ def upsert_university_rates(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Collect school progression stats")
-    parser.add_argument("--year", type=int, default=datetime.now().year)
+    parser.add_argument(
+        "--year",
+        type=int,
+        default=datetime.now().year - 1,
+        help="Base year (default: previous year)",
+    )
     parser.add_argument("--metric-term", type=str, default="annual")
     parser.add_argument("--batch-size", type=int, default=500)
     args = parser.parse_args()

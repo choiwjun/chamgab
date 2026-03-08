@@ -11,6 +11,7 @@ from typing import Dict, Iterable, List
 from app.core.database import get_supabase_client
 from scripts.school_analysis_sources import (
     chunked,
+    extract_sido_sigungu_from_address,
     fetch_neis_academy_tuition,
     infer_grade_band,
     infer_subject_category,
@@ -60,6 +61,13 @@ def build_academy_stub_rows(neis_rows: List[Dict], lookup: Dict[str, Dict], now:
         address_main = str(row.get("FA_RDNMA") or "").strip()
         address_detail = str(row.get("FA_RDNDA") or "").strip()
         address = " ".join(part for part in [address_main, address_detail] if part).strip() or None
+        if not sigungu_code:
+            addr_sido, addr_sigungu = extract_sido_sigungu_from_address(address or address_main)
+            sigungu_code = resolve_sigungu_code(
+                lookup,
+                sido_name=addr_sido,
+                sigungu_name=addr_sigungu,
+            )
         source_dt = parse_yyyymmdd(row.get("LOAD_DTM"))
         source_updated_at = source_dt.isoformat() if source_dt else now
         reg_status = str(row.get("REG_STTUS_NM") or "").strip()

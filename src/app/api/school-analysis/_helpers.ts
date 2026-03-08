@@ -131,7 +131,9 @@ export function buildMockPreview(params: {
   const baseCode = normalizeDistrictCode(params.districtCode)
 
   return Array.from({ length: Math.min(limit, 5) }, (_, index) => {
-    const code = params.districtCode ? baseCode : `${baseCode.slice(0, 4)}${80 + index}`
+    const code = params.districtCode
+      ? baseCode
+      : `${baseCode.slice(0, 4)}${80 + index}`
     const score = 74 - index * 1.5
     const coverage = Math.max(80, 96 - index * 3)
     return {
@@ -151,6 +153,24 @@ export function buildMockPreview(params: {
         official_coverage_pct: coverage,
         inferred_ratio_pct: Math.max(0, 100 - coverage),
         flags: coverage >= 95 ? [] : ['insufficient_official_data'],
+      },
+      insights: {
+        rank: index + 1,
+        grade: score >= 85 ? 'S' : score >= 75 ? 'A' : score >= 65 ? 'B' : 'C',
+        college_progression_rate: 70 - index * 1.2,
+        special_purpose_highschool_rate: 6 + index * 0.4,
+        autonomy_highschool_rate: 5 + index * 0.2,
+        school_level_breakdown: {
+          elementary: 3 + index,
+          middle: 2 + index,
+          high: 3 + index,
+          other: 0,
+        },
+        academy_count: 120 + index * 12,
+        academy_avg_monthly_fee: 280000 + index * 5000,
+        college_progression_estimated: true,
+        academy_fee_estimated: true,
+        academy_fee_reliability: 'ok',
       },
     }
   })
@@ -204,13 +224,15 @@ export function buildMockReport(params: {
     schools,
     data_quality: {
       total_schools: schools.length,
-      official_count: schools.filter((school) => school.data_status === 'official')
-        .length,
+      official_count: schools.filter(
+        (school) => school.data_status === 'official'
+      ).length,
       name_mismatch_count: schools.filter(
         (school) => school.data_status === 'name_mismatch'
       ).length,
-      inactive_count: schools.filter((school) => school.data_status === 'inactive')
-        .length,
+      inactive_count: schools.filter(
+        (school) => school.data_status === 'inactive'
+      ).length,
       coverage_rate: 88,
     },
   }
@@ -274,7 +296,9 @@ export function readPublicShareToken(
   if (expectedSignature !== encodedSignature) return null
 
   try {
-    const payload = JSON.parse(fromBase64Url(encodedPayload).toString('utf-8')) as {
+    const payload = JSON.parse(
+      fromBase64Url(encodedPayload).toString('utf-8')
+    ) as {
       district_code?: string
       exp?: string
     }

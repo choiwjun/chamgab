@@ -447,9 +447,29 @@ def resolve_sigungu_code(
     sigungu_name: str,
 ) -> Optional[str]:
     """Resolve 5-digit sigungu code from given sido/sigungu names."""
+    def canonicalize(code: str) -> str:
+        code5 = str(code or "")[:5]
+        if len(code5) != 5:
+            return code5
+
+        prefix_remap = {
+            # Gangwon-do -> Gangwon Special Self-Governing Province
+            "42": "51",
+            # Jeollabuk-do -> Jeonbuk Special Self-Governing Province
+            "45": "52",
+        }
+        mapped_prefix = prefix_remap.get(code5[:2])
+        if mapped_prefix:
+            return f"{mapped_prefix}{code5[2:]}"
+
+        display_name = lookup.get("display_name", {}) if isinstance(lookup, Mapping) else {}
+        if code5 in display_name:
+            return code5
+        return code5
+
     raw_sigungu = (sigungu_name or "").strip()
     if re.fullmatch(r"\d{5,10}", raw_sigungu):
-        return raw_sigungu[:5]
+        return canonicalize(raw_sigungu)
 
     by_pair = lookup.get("by_pair", {})
     by_sigungu = lookup.get("by_sigungu", {})
@@ -464,12 +484,12 @@ def resolve_sigungu_code(
         for ga in sigungu_aliases:
             code = by_pair.get((sa, ga))
             if code:
-                return str(code)[:5]
+                return canonicalize(str(code))
 
     for ga in sigungu_aliases:
         code = by_sigungu.get(ga)
         if code:
-            return str(code)[:5]
+            return canonicalize(str(code))
     return None
 
 

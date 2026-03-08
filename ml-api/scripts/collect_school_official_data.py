@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
-"""Collect official school data from 학교알리미 (schoolinfo.go.kr) OpenAPI.
+"""Collect official school data from schoolinfo.go.kr OpenAPI.
 
 Fetches available public disclosure data for each school district and merges
 official metrics (graduation rate, class sizes, student counts) into the
 school_metrics_official table.
 
-Available data (confirmed working with public API key):
-  CD=62  학교 현황         - class counts, avg class size, school type
-  CD=51  입학생 현황 (고)   - YEAR_GRAD_RATE (graduation rate %)
-  CD=51  입학생 현황 (중)   - graduation/transition counts
+Available data (confirmed with public API key):
+  CD=62  School overview      - class counts, avg class size, school type
+  CD=51  Enrollment stats     - YEAR_GRAD_RATE and student counts
 
-Unavailable data (CD=52 is protected or temporarily down):
-  CD=52  졸업생의 진로 현황 - university entry rates (not accessible)
+Unavailable data:
+  CD=52  Career-path endpoint - university entry rates not publicly accessible
 
 Usage:
     cd ml-api
@@ -50,7 +49,7 @@ logger = logging.getLogger("collect_school_official_data")
 
 SCHOOLINFO_BASE_URL = "https://www.schoolinfo.go.kr/openApi.do"
 
-# schulKndCode → school level label
+# schulKndCode -> school level label
 SCHUL_KND = {
     "01": "elementary",
     "02": "middle",
@@ -77,61 +76,112 @@ def chunked(rows: Iterable[Dict], size: int = 500) -> Iterator[List[Dict]]:
         yield bucket
 
 
-def normalize_school_name(name: str) -> str:
-    """Normalize a school name for fuzzy matching.
 
-    Strips whitespace/special chars, normalises unicode, lowercases,
-    and removes common level suffixes so that
-    "광명고등학교" matches "광명고" etc.
-    """
+
+# ---------------------------------------------------------------------------
+# School name matching helpers (v2)
+# ---------------------------------------------------------------------------
+
+
+def normalize_school_name_v2(name: str) -> str:
+    """Normalize school name for resilient matching."""
     if not name:
         return ""
-    # Unicode NFC
-    name = unicodedata.normalize("NFC", name)
-    # Remove whitespace and dots
-    name = re.sub(r"[\s·\.\-]+", "", name)
-    name = name.lower()
-    # Strip trailing level suffixes (longest first)
-    for suffix in ("고등학교", "중학교", "초등학교", "유치원", "고등", "중학", "초등"):
-        if name.endswith(suffix):
-            name = name[: -len(suffix)]
-            break
-    return name
+    normalized = unicodedata.normalize("NFC", name)
+    normalized = re.sub(r"[\s\.\-]+", "", normalized)
+    normalized = normalized.lower()
+    suffixes = (
+        "\ucd08\ub4f1\ud559\uad50",  # 초등학교
+        "\uc911\ud559\uad50",        # 중학교
+        "\uace0\ub4f1\ud559\uad50",  # 고등학교
+        "\uc720\uce58\uc6d0",        # 유치원
+        "\ucd08\ub4f1",              # 초등
+        "\uc911\ub4f1",              # 중등
+        "\uace0\ub4f1",              # 고등
+    )
+    for suffix in suffixes:
+        if normalized.endswith(suffix):
+            return normalized[: -len(suffix)]
+    return normalized
 
 
-def match_schools(
-    api_schools: List[Dict[str, str]],
+def canonical_school_level_v2(value: Any) -> str:
+    raw = str(value or "").strip().lower()
+    aliases = {
+        "01": "elementary",
+        "02": "middle",
+        "04": "high",
+        "elementary": "elementary",
+        "middle": "middle",
+        "high": "high",
+    }
+    return aliases.get(raw, "other")
+
+
+def match_schools_v2(
+    api_schools: List[Dict[str, Any]],
     db_schools: List[Dict[str, Any]],
 ) -> Dict[str, str]:
     """Return {schoolinfo_schul_code: db_school_id} mapping.
 
-    Matches on normalised school name within the same sigungu.
+    Uses normalized school name + level disambiguation.
+    Ambiguous candidates are skipped.
     """
-    # Build normalised lookup from API schools
-    api_lookup: Dict[str, str] = {}  # norm_name → SCHUL_CODE
-    for s in api_schools:
-        code = str(s.get("SCHUL_CODE") or "").strip()
-        name = str(s.get("SCHUL_NM") or "").strip()
-        if code and name:
-            api_lookup[normalize_school_name(name)] = code
-
-    result: Dict[str, str] = {}  # SCHUL_CODE → school_id
-    for db_s in db_schools:
-        sid = str(db_s.get("school_id") or "").strip()
-        sname = str(db_s.get("school_name") or "").strip()
-        if not sid or not sname:
+    api_lookup: Dict[str, List[Dict[str, str]]] = {}
+    for school in api_schools:
+        code = str(school.get("SCHUL_CODE") or "").strip()
+        name = str(school.get("SCHUL_NM") or "").strip()
+        level = canonical_school_level_v2(
+            school.get("school_knd") or school.get("SCHUL_KND")
+        )
+        if not code or not name:
             continue
-        norm = normalize_school_name(sname)
-        schul_code = api_lookup.get(norm)
-        if schul_code:
-            result[schul_code] = sid
+        key = normalize_school_name_v2(name)
+        api_lookup.setdefault(key, []).append({"code": code, "level": level})
+
+    result: Dict[str, str] = {}
+    used_codes: Set[str] = set()
+    used_school_ids: Set[str] = set()
+    ambiguous = 0
+
+    for db_school in db_schools:
+        school_id = str(db_school.get("school_id") or "").strip()
+        school_name = str(db_school.get("school_name") or "").strip()
+        if not school_id or not school_name:
+            continue
+
+        key = normalize_school_name_v2(school_name)
+        db_level = canonical_school_level_v2(db_school.get("school_level"))
+        candidates = [c for c in api_lookup.get(key, []) if c["code"] not in used_codes]
+        if not candidates:
+            continue
+
+        same_level = [c for c in candidates if c["level"] == db_level]
+        chosen: Optional[Dict[str, str]] = None
+
+        if len(same_level) == 1:
+            chosen = same_level[0]
+        elif len(same_level) > 1:
+            ambiguous += 1
+            continue
+        elif len(candidates) == 1:
+            chosen = candidates[0]
+        else:
+            ambiguous += 1
+            continue
+
+        chosen_code = chosen["code"]
+        if school_id in used_school_ids:
+            continue
+
+        result[chosen_code] = school_id
+        used_codes.add(chosen_code)
+        used_school_ids.add(school_id)
+
+    if ambiguous:
+        logger.debug("Skipped %d ambiguous school-name matches", ambiguous)
 
     return result
-
-
-# ---------------------------------------------------------------------------
-# SchoolInfo API client
-# ---------------------------------------------------------------------------
 
 
 class SchoolInfoClient:
@@ -173,12 +223,12 @@ class SchoolInfoClient:
             return None
 
     def fetch_school_list(self, sido_code: str, sgg_code: str, schul_knd: str, year: int) -> List[Dict]:
-        """CD=62: 학교 현황 — class counts, avg class size, school type."""
+        """CD=62: school overview (class counts, avg class size, school type)."""
         result = self._get(62, sido_code, sgg_code, schul_knd, year)
         return result or []
 
     def fetch_enrollment_stats(self, sido_code: str, sgg_code: str, schul_knd: str, year: int) -> List[Dict]:
-        """CD=51: 입학생 현황 — graduation rate, student counts."""
+        """CD=51: enrollment stats (graduation rate, student counts)."""
         result = self._get(51, sido_code, sgg_code, schul_knd, year)
         return result or []
 
@@ -296,7 +346,7 @@ def process_district(
     source_ts = datetime.now(timezone.utc).isoformat()
 
     # --- CD=62: school list (all levels) -------------------------------------------
-    # Maps SCHUL_CODE → {total_classes, avg_class_size, schul_knd}
+    # Maps SCHUL_CODE -> {total_classes, avg_class_size, school_knd}
     schul_info: Dict[str, Dict] = {}
 
     for knd, level in SCHUL_KND.items():
@@ -317,7 +367,7 @@ def process_district(
             }
 
     # --- CD=51: enrollment/grad stats per level ------------------------------------
-    # Maps SCHUL_CODE → {grad_rate, total_students}
+    # Maps SCHUL_CODE -> {grad_rate, total_students}
     enroll_info: Dict[str, Dict] = {}
 
     for knd, level in SCHUL_KND.items():
@@ -340,23 +390,21 @@ def process_district(
         logger.debug("sigungu=%s: no schools in DB", sigungu_code)
         return []
 
-    # --- Match API schools → DB schools by name -----------------------------------
+    # --- Match API schools -> DB schools by name ----------------------------------
     # Build combined API school list for name matching
     api_schools_list = [
-        {"SCHUL_CODE": code, "SCHUL_NM": info["school_name"]}
+        {
+            "SCHUL_CODE": code,
+            "SCHUL_NM": info["school_name"],
+            "school_knd": info.get("school_knd"),
+        }
         for code, info in schul_info.items()
     ]
-    code_to_db_id = match_schools(api_schools_list, db_schools)
+    code_to_db_id = match_schools_v2(api_schools_list, db_schools)
 
     if not code_to_db_id:
         logger.debug("sigungu=%s: no name matches found (api=%d db=%d)", sigungu_code, len(schul_info), len(db_schools))
         return []
-
-    # Build DB school_level lookup
-    db_level: Dict[str, str] = {
-        str(s.get("school_id") or ""): str(s.get("school_level") or "other")
-        for s in db_schools
-    }
 
     # --- Build metric updates -------------------------------------------------------
     updates: List[Dict] = []
@@ -383,13 +431,13 @@ def process_district(
         # --- Compute derived quality scores from official raw data -----------------
         # progression_outcome_score: anchored to graduation rate (official)
         if grad_rate is not None:
-            # grad_rate 99%→88, 95%→84, 90%→79, 85%→74, 80%→68
+            # grad_rate -> bounded progression score
             prog_score = round(max(40.0, min(95.0, 35.0 + (grad_rate / 100.0) * 55.0)), 2)
             new_fields["progression_outcome_score"] = prog_score
 
         # education_environment_score: anchored to average class size (official)
         if avg_cls is not None and avg_cls > 0:
-            # avg_class_size 20→90, 25→85, 30→80, 35→75, 40→70
+            # avg_class_size -> bounded environment score
             env_score = round(max(45.0, min(95.0, 110.0 - avg_cls * 1.0)), 2)
             new_fields["education_environment_score"] = env_score
 
@@ -451,10 +499,10 @@ def main() -> None:
             if updates:
                 n = upsert_metrics(updates, args.year, args.metric_term, args.dry_run)
                 total_updated += n
-                logger.info("  → matched/updated %d schools", n)
+                logger.info("  matched/updated %d schools", n)
             else:
                 total_skipped += 1
-                logger.debug("  → no matches")
+                logger.debug("  no matches")
 
             # Brief pause between districts
             time.sleep(0.2)

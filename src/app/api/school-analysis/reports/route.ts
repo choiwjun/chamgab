@@ -55,8 +55,62 @@ class SchoolApiException extends Error {
 }
 
 function asNumber(value: unknown): number | null {
+  if (value === null || value === undefined) return null
+  if (typeof value === 'string' && value.trim() === '') return null
   const n = Number(value)
   return Number.isFinite(n) ? n : null
+}
+
+type UserCreditProfile = {
+  daily_credit_used: number | null
+  daily_credit_limit: number | null
+  daily_credit_reset_at: string | null
+  monthly_credit_used: number | null
+  monthly_credit_limit: number | null
+  monthly_credit_reset_at: string | null
+  bonus_credits: number | null
+}
+
+function todayYmd(): string {
+  return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format(
+    new Date()
+  )
+}
+
+function monthStartYmd(): string {
+  const today = todayYmd()
+  return `${today.slice(0, 7)}-01`
+}
+
+function quotaFromProfile(profile: UserCreditProfile) {
+  const today = todayYmd()
+  const monthStart = monthStartYmd()
+
+  const dailyUsed =
+    !profile.daily_credit_reset_at || profile.daily_credit_reset_at < today
+      ? 0
+      : Math.max(0, Number(profile.daily_credit_used ?? 0))
+  const monthlyUsed =
+    !profile.monthly_credit_reset_at ||
+    profile.monthly_credit_reset_at < monthStart
+      ? 0
+      : Math.max(0, Number(profile.monthly_credit_used ?? 0))
+
+  const dailyLimit = Number(profile.daily_credit_limit ?? 0)
+  const monthlyLimit = Number(profile.monthly_credit_limit ?? 0)
+  const bonus = Math.max(0, Number(profile.bonus_credits ?? 0))
+
+  const dailyRemaining = Math.max(0, dailyLimit - dailyUsed)
+  const monthlyRemaining = Math.max(0, monthlyLimit - monthlyUsed)
+  const totalRemaining = Math.max(0, dailyRemaining + bonus)
+
+  return {
+    allowed: dailyRemaining > 0,
+    daily_remaining: dailyRemaining,
+    monthly_remaining: monthlyRemaining,
+    bonus_remaining: bonus,
+    total_remaining: totalRemaining,
+  }
 }
 
 function round(v: number, p = 1) {
@@ -86,6 +140,79 @@ function avg(rows: unknown[], field: string): number | null {
     .filter((v): v is number => v !== null)
   if (vals.length === 0) return null
   return round(vals.reduce((s, v) => s + v, 0) / vals.length, 1)
+}
+
+const SCHOOL_SCORE_FIELDS = [
+  'achievement_score',
+  'progression_outcome_score',
+  'education_environment_score',
+  'safety_life_score',
+  'program_score',
+] as const
+
+type SchoolScoreField = (typeof SCHOOL_SCORE_FIELDS)[number]
+
+type MetricRow = {
+  school_id: string
+  metric_year: number | null
+  updated_at: string | null
+  metrics: Record<string, unknown> | null
+}
+
+function hasOfficialMetric(metrics: Record<string, unknown> | null): boolean {
+  if (!metrics) return false
+  const numericFields = [
+    'achievement_score',
+    'progression_outcome_score',
+    'education_environment_score',
+    'safety_life_score',
+    'grad_rate',
+    'avg_class_size',
+    'total_students',
+  ] as const
+  return numericFields.some((field) => asNumber(metrics[field]) !== null)
+}
+
+function metricCompleteness(metrics: Record<string, unknown> | null): number {
+  if (!metrics) return 0
+  let count = 0
+  for (const field of SCHOOL_SCORE_FIELDS) {
+    if (asNumber(metrics[field]) !== null) count += 1
+  }
+  return count
+}
+
+function pickPreferredMetricRow(rows: MetricRow[]): MetricRow | null {
+  if (!rows.length) return null
+  const sorted = [...rows].sort((a, b) => {
+    const aOfficial = hasOfficialMetric(a.metrics) ? 1 : 0
+    const bOfficial = hasOfficialMetric(b.metrics) ? 1 : 0
+    if (aOfficial !== bOfficial) return bOfficial - aOfficial
+
+    const aComplete = metricCompleteness(a.metrics)
+    const bComplete = metricCompleteness(b.metrics)
+    if (aComplete !== bComplete) return bComplete - aComplete
+
+    const aYear = Number(a.metric_year || 0)
+    const bYear = Number(b.metric_year || 0)
+    if (aYear !== bYear) return bYear - aYear
+
+    const aTs = Date.parse(a.updated_at || '') || 0
+    const bTs = Date.parse(b.updated_at || '') || 0
+    return bTs - aTs
+  })
+  return sorted[0] || null
+}
+
+function resolveSchoolMetric(
+  schoolRow: Record<string, unknown>,
+  preferredMetrics: Record<string, unknown> | null | undefined,
+  field: SchoolScoreField
+): number | null {
+  const fromView = asNumber(schoolRow[field])
+  if (fromView !== null) return fromView
+  if (!preferredMetrics) return null
+  return asNumber(preferredMetrics[field])
 }
 
 function mv(
@@ -192,36 +319,35 @@ export async function POST(request: NextRequest) {
 
     if (!ENABLE_FREE_OPEN_MODE) {
       const userSupabase = await createClient()
-      try {
-        await consumeCredits({
-          supabase: userSupabase,
-          product: 'school',
-          cost: getCreditCost('school'),
-          meta: {
-            user_id: auth.userId,
-            district_code: districtCode,
-          },
-        })
-      } catch (error) {
-        if (
-          error instanceof CreditConsumeError &&
-          error.code === 'insufficient_credits'
-        ) {
-          return NextResponse.json(insufficientCreditsPayload(error.quota), {
-            status: error.status,
-          })
-        }
+      const { data: profileRow, error: profileError } = await userSupabase
+        .from('user_profiles')
+        .select(
+          'daily_credit_used,daily_credit_limit,daily_credit_reset_at,monthly_credit_used,monthly_credit_limit,monthly_credit_reset_at,bonus_credits'
+        )
+        .eq('id', auth.userId)
+        .maybeSingle()
+
+      if (profileError) {
         return NextResponse.json(
           { error: 'Credit check failed' },
           { status: 500 }
         )
+      }
+
+      if (profileRow) {
+        const quota = quotaFromProfile(profileRow as UserCreditProfile)
+        if (quota.daily_remaining <= 0) {
+          return NextResponse.json(insufficientCreditsPayload(quota), {
+            status: 429,
+          })
+        }
       }
     }
 
     const supabase = createAdminClient()
     const requestHash = createRequestHash({
       districtCode,
-      version: 'school_report_v2',
+      version: 'school_report_v6',
     })
 
     const { data: existingRow, error: existingError } = await supabase
@@ -252,6 +378,35 @@ export async function POST(request: NextRequest) {
         cached: true,
         ...deriveSchoolQualityMeta(existingReport),
       })
+    }
+
+    // Consume credits only for cache-miss report generation.
+    if (!ENABLE_FREE_OPEN_MODE) {
+      const userSupabase = await createClient()
+      try {
+        await consumeCredits({
+          supabase: userSupabase,
+          product: 'school',
+          cost: getCreditCost('school'),
+          meta: {
+            user_id: auth.userId,
+            district_code: districtCode,
+          },
+        })
+      } catch (error) {
+        if (
+          error instanceof CreditConsumeError &&
+          error.code === 'insufficient_credits'
+        ) {
+          return NextResponse.json(insufficientCreditsPayload(error.quota), {
+            status: error.status,
+          })
+        }
+        return NextResponse.json(
+          { error: 'Credit check failed' },
+          { status: 500 }
+        )
+      }
     }
 
     const { data: previewRows, error: previewError } = await supabase
@@ -339,22 +494,71 @@ export async function POST(request: NextRequest) {
       schoolIds.length > 0
         ? await supabase
             .from('school_metrics_official')
-            .select('school_id,metrics')
+            .select('school_id,metric_year,updated_at,metrics')
             .in('school_id', schoolIds.slice(0, 1000))
             .order('metric_year', { ascending: false })
+            .order('updated_at', { ascending: false })
         : { data: [] }
 
-    const officialSet = new Set<string>()
-    for (const r of metricsRows || []) {
-      const metrics = (r.metrics ?? {}) as Record<string, unknown>
-      const hasOfficial =
-        typeof metrics.schoolinfo_schul_code === 'string' ||
-        typeof metrics.achievement_score === 'number' ||
-        typeof metrics.progression_outcome_score === 'number'
-      if (hasOfficial) {
-        officialSet.add(String(r.school_id))
+    const metricRowsBySchool = new Map<string, MetricRow[]>()
+    for (const row of (metricsRows || []) as MetricRow[]) {
+      const schoolId = String(row.school_id || '')
+      if (!schoolId) continue
+      if (!metricRowsBySchool.has(schoolId))
+        metricRowsBySchool.set(schoolId, [])
+      metricRowsBySchool.get(schoolId)!.push(row)
+    }
+
+    const preferredMetricsBySchool = new Map<string, Record<string, unknown>>()
+    for (const schoolId of schoolIds) {
+      const preferred = pickPreferredMetricRow(
+        metricRowsBySchool.get(schoolId) || []
+      )
+      if (preferred?.metrics && Object.keys(preferred.metrics).length > 0) {
+        preferredMetricsBySchool.set(schoolId, preferred.metrics)
       }
     }
+
+    const officialSet = new Set<string>()
+    for (const schoolId of schoolIds) {
+      const preferredMetrics = preferredMetricsBySchool.get(schoolId) || null
+      if (hasOfficialMetric(preferredMetrics)) {
+        officialSet.add(schoolId)
+      }
+    }
+
+    const enrichedSchools = schools.map((s) => {
+      const schoolId = String(s.school_id || '')
+      const preferredMetrics = preferredMetricsBySchool.get(schoolId) || null
+      return {
+        ...s,
+        achievement_score: resolveSchoolMetric(
+          s,
+          preferredMetrics,
+          'achievement_score'
+        ),
+        progression_outcome_score: resolveSchoolMetric(
+          s,
+          preferredMetrics,
+          'progression_outcome_score'
+        ),
+        education_environment_score: resolveSchoolMetric(
+          s,
+          preferredMetrics,
+          'education_environment_score'
+        ),
+        safety_life_score: resolveSchoolMetric(
+          s,
+          preferredMetrics,
+          'safety_life_score'
+        ),
+        program_score: resolveSchoolMetric(
+          s,
+          preferredMetrics,
+          'program_score'
+        ),
+      } as Record<string, unknown>
+    })
 
     const getDataStatus = (schoolId: string): SchoolDataStatus => {
       const isActive = activeMap.get(schoolId) ?? true
@@ -383,11 +587,11 @@ export async function POST(request: NextRequest) {
 
     const hasLowDistrictCoverage = dataQuality.coverage_rate < 95
 
-    const avgAchievement = avg(schools, 'achievement_score')
-    const avgProgression = avg(schools, 'progression_outcome_score')
-    const avgEnvironment = avg(schools, 'education_environment_score')
-    const avgSafety = avg(schools, 'safety_life_score')
-    const avgPrograms = avg(schools, 'program_score')
+    const avgAchievement = avg(enrichedSchools, 'achievement_score')
+    const avgProgression = avg(enrichedSchools, 'progression_outcome_score')
+    const avgEnvironment = avg(enrichedSchools, 'education_environment_score')
+    const avgSafety = avg(enrichedSchools, 'safety_life_score')
+    const avgPrograms = avg(enrichedSchools, 'program_score')
 
     const qualityOverall = normalizedWeightedScore([
       { value: avgAchievement, weight: 0.3 },
@@ -410,12 +614,37 @@ export async function POST(request: NextRequest) {
     const avgSpecial = avg(schools, 'special_purpose_highschool_rate')
     const avgAutonomy = avg(schools, 'autonomy_highschool_rate')
     const avgCollege = avg(schools, 'college_progression_rate')
+    let officialCollegeRate: number | null = null
+
+    try {
+      const { data: advancementRows, error: advancementError } = await supabase
+        .from('sigungu_advancement_stats')
+        .select('year,advancement_rate')
+        .eq('sigungu_code', districtCode)
+        .not('advancement_rate', 'is', null)
+        .order('year', { ascending: false })
+        .limit(1)
+
+      if (
+        !advancementError &&
+        Array.isArray(advancementRows) &&
+        advancementRows.length > 0
+      ) {
+        officialCollegeRate = asNumber(advancementRows[0]?.advancement_rate)
+      }
+    } catch {
+      officialCollegeRate = null
+    }
 
     const progression: ProgressionStats = {
       general_highschool_rate: mv(avgGeneral, 'inferred', '%'),
       special_purpose_highschool_rate: mv(avgSpecial, 'inferred', '%'),
       autonomy_highschool_rate: mv(avgAutonomy, 'inferred', '%'),
-      college_progression_rate: mv(avgCollege, 'inferred', '%'),
+      college_progression_rate: mv(
+        officialCollegeRate ?? avgCollege,
+        officialCollegeRate !== null ? 'official' : 'inferred',
+        '%'
+      ),
     }
 
     const density = academy ? asNumber(academy.density_score) : null
@@ -451,28 +680,30 @@ export async function POST(request: NextRequest) {
     const inferredConf = asNumber(preview.inferred_confidence) ?? 0
     const totalConf = asNumber(preview.confidence_score) ?? 0
 
-    const schoolList: SchoolOverview[] = schools.slice(0, 50).map((s) => {
-      const score = normalizedWeightedScore([
-        { value: asNumber(s.achievement_score), weight: 0.3 },
-        { value: asNumber(s.progression_outcome_score), weight: 0.25 },
-        { value: asNumber(s.education_environment_score), weight: 0.15 },
-        { value: asNumber(s.safety_life_score), weight: 0.15 },
-        { value: asNumber(s.program_score), weight: 0.15 },
-      ])
+    const schoolList: SchoolOverview[] = enrichedSchools
+      .slice(0, 50)
+      .map((s) => {
+        const score = normalizedWeightedScore([
+          { value: asNumber(s.achievement_score), weight: 0.3 },
+          { value: asNumber(s.progression_outcome_score), weight: 0.25 },
+          { value: asNumber(s.education_environment_score), weight: 0.15 },
+          { value: asNumber(s.safety_life_score), weight: 0.15 },
+          { value: asNumber(s.program_score), weight: 0.15 },
+        ])
 
-      const schoolId = String(s.school_id || '')
-      return {
-        school_id: schoolId,
-        school_name: String(s.school_name || `School ${schoolId}`),
-        school_level: String(s.school_level || 'other') as
-          | 'elementary'
-          | 'middle'
-          | 'high'
-          | 'other',
-        overall_score: mv(score, 'official'),
-        data_status: getDataStatus(schoolId),
-      }
-    })
+        const schoolId = String(s.school_id || '')
+        return {
+          school_id: schoolId,
+          school_name: String(s.school_name || `School ${schoolId}`),
+          school_level: String(s.school_level || 'other') as
+            | 'elementary'
+            | 'middle'
+            | 'high'
+            | 'other',
+          overall_score: mv(score, 'official'),
+          data_status: getDataStatus(schoolId),
+        }
+      })
 
     const reportId = existingRow?.id || crypto.randomUUID()
     const districtName = String(

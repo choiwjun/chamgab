@@ -39,8 +39,59 @@ function round(v: number, p = 1) {
 }
 
 function asNumber(value: unknown): number | null {
+  if (value === null || value === undefined) return null
+  if (typeof value === 'string' && value.trim() === '') return null
   const n = Number(value)
   return Number.isFinite(n) ? n : null
+}
+
+function sanitizeScore(value: unknown): number | null {
+  const n = asNumber(value)
+  if (n === null) return null
+  if (n <= 0) return null
+  return round(n, 1)
+}
+
+function resolveOfficialCollegeRateFromMetrics(
+  metrics: Record<string, number | string | null>
+): number | null {
+  const direct = sanitizeScore(metrics.college_progression_rate)
+  if (direct !== null) return direct
+
+  const keySets = [
+    ['college_sky', 'college_medical', 'college_seoul', 'college_national'],
+    [
+      'college_sky_rate',
+      'college_medical_rate',
+      'college_seoul_rate',
+      'college_national_rate',
+    ],
+  ] as const
+
+  for (const keys of keySets) {
+    const values = keys
+      .map((key) => sanitizeScore(metrics[key]))
+      .filter((v): v is number => v !== null)
+    if (values.length === 0) continue
+    const sum = values.reduce((acc, v) => acc + v, 0)
+    if (sum > 0) return round(Math.min(sum, 100), 1)
+  }
+
+  return null
+}
+
+function weightedAverage(
+  values: Array<{ value: number | null; weight: number }>
+): number | null {
+  const valid = values.filter((item) => item.value !== null)
+  if (valid.length === 0) return null
+  const weightSum = valid.reduce((sum, item) => sum + item.weight, 0)
+  if (weightSum <= 0) return null
+  const weighted = valid.reduce(
+    (sum, item) => sum + (item.value as number) * item.weight,
+    0
+  )
+  return round(weighted / weightSum, 1)
 }
 
 export async function GET(
@@ -124,72 +175,147 @@ export async function GET(
 
     const { data: metricsRows } = await supabase
       .from('school_metrics_official')
-      .select('metrics')
+      .select('metrics,metric_year,metric_term,source_updated_at,updated_at')
       .eq('school_id', id)
       .order('metric_year', { ascending: false })
-      .limit(1)
+      .order('updated_at', { ascending: false })
+      .limit(12)
 
-    const rawMetrics = (metricsRows?.[0]?.metrics ?? {}) as Record<
+    const pickBestMetricRow = (
+      rows: Array<{
+        metrics?: Record<string, unknown> | null
+        metric_year?: number | null
+        source_updated_at?: string | null
+        updated_at?: string | null
+      }>
+    ) => {
+      if (!rows?.length) return null
+      const completeness = (
+        metrics: Record<string, unknown> | null | undefined
+      ) => {
+        if (!metrics) return 0
+        const scores = [
+          sanitizeScore(metrics.achievement_score),
+          sanitizeScore(metrics.progression_outcome_score),
+          sanitizeScore(metrics.education_environment_score),
+          sanitizeScore(metrics.safety_life_score),
+          sanitizeScore(metrics.program_score),
+        ]
+        return scores.filter((v) => v !== null).length
+      }
+
+      const sorted = [...rows].sort((a, b) => {
+        const aComp = completeness(a.metrics)
+        const bComp = completeness(b.metrics)
+        if (aComp !== bComp) return bComp - aComp
+
+        const aYear = Number(a.metric_year || 0)
+        const bYear = Number(b.metric_year || 0)
+        if (aYear !== bYear) return bYear - aYear
+
+        const aTs = Date.parse(a.updated_at || '') || 0
+        const bTs = Date.parse(b.updated_at || '') || 0
+        return bTs - aTs
+      })
+
+      return sorted[0] || null
+    }
+
+    const metricRow = pickBestMetricRow(
+      (metricsRows ?? []) as Array<{
+        metrics?: Record<string, unknown> | null
+        metric_year?: number | null
+        source_updated_at?: string | null
+        updated_at?: string | null
+      }>
+    )
+    const rawMetrics = (metricRow?.metrics ?? {}) as Record<
       string,
       number | string | null
     >
 
+    const ach =
+      sanitizeScore(row.achievement_score) ??
+      sanitizeScore(rawMetrics.achievement_score)
+    const prog =
+      sanitizeScore(row.progression_outcome_score) ??
+      sanitizeScore(rawMetrics.progression_outcome_score)
+    const env =
+      sanitizeScore(row.education_environment_score) ??
+      sanitizeScore(rawMetrics.education_environment_score)
+    const saf =
+      sanitizeScore(row.safety_life_score) ??
+      sanitizeScore(rawMetrics.safety_life_score)
+    const prg =
+      sanitizeScore(row.program_score) ??
+      sanitizeScore(rawMetrics.program_score)
+
     const hasOfficialSchoolinfo =
-      typeof rawMetrics.schoolinfo_schul_code === 'string' ||
-      typeof rawMetrics.achievement_score === 'number' ||
-      typeof rawMetrics.progression_outcome_score === 'number'
+      typeof rawMetrics.schoolinfo_schul_code === 'string' &&
+      [ach, prog, env, saf, prg].some((v) => v !== null)
 
     const officialProv: MetricProvenance = hasOfficialSchoolinfo
       ? 'official'
       : 'inferred'
 
-    const ach = asNumber(row.achievement_score) ?? 0
-    const prog = asNumber(row.progression_outcome_score) ?? 0
-    const env = asNumber(row.education_environment_score) ?? 0
-    const saf = asNumber(row.safety_life_score) ?? 0
-    const prg = asNumber(row.program_score) ?? 0
-
-    const overall = round(
-      ach * 0.3 + prog * 0.25 + env * 0.15 + saf * 0.15 + prg * 0.15,
-      1
-    )
+    const overall = weightedAverage([
+      { value: ach, weight: 0.3 },
+      { value: prog, weight: 0.25 },
+      { value: env, weight: 0.15 },
+      { value: saf, weight: 0.15 },
+      { value: prg, weight: 0.15 },
+    ])
 
     const quality: SchoolQualityScore = {
       overall: mv(overall, officialProv),
-      achievement: mv(round(ach, 1), officialProv),
-      progression_outcome: mv(round(prog, 1), officialProv),
-      education_environment: mv(round(env, 1), officialProv),
-      safety_life: mv(round(saf, 1), officialProv),
-      programs: mv(round(prg, 1), 'inferred'),
+      achievement: mv(ach, officialProv),
+      progression_outcome: mv(prog, officialProv),
+      education_environment: mv(env, officialProv),
+      safety_life: mv(saf, officialProv),
+      programs: mv(prg, officialProv),
+    }
+
+    const sigunguCode = String(info?.sigungu_code || row.sigungu_code || '')
+    let officialCollegeRate: number | null =
+      resolveOfficialCollegeRateFromMetrics(rawMetrics)
+    if (officialCollegeRate === null && sigunguCode) {
+      try {
+        const { data: advancementRows } = await supabase
+          .from('sigungu_advancement_stats')
+          .select('year,advancement_rate')
+          .eq('sigungu_code', sigunguCode)
+          .not('advancement_rate', 'is', null)
+          .order('year', { ascending: false })
+          .limit(1)
+
+        const latest = Array.isArray(advancementRows)
+          ? advancementRows[0]
+          : null
+        officialCollegeRate = sanitizeScore(latest?.advancement_rate)
+      } catch {
+        officialCollegeRate = null
+      }
     }
 
     const progression: ProgressionStats = {
       general_highschool_rate: mv(
-        row.general_highschool_rate != null
-          ? round(Number(row.general_highschool_rate), 1)
-          : null,
+        sanitizeScore(row.general_highschool_rate),
         'inferred',
         '%'
       ),
       special_purpose_highschool_rate: mv(
-        row.special_purpose_highschool_rate != null
-          ? round(Number(row.special_purpose_highschool_rate), 1)
-          : null,
+        sanitizeScore(row.special_purpose_highschool_rate),
         'inferred',
         '%'
       ),
       autonomy_highschool_rate: mv(
-        row.autonomy_highschool_rate != null
-          ? round(Number(row.autonomy_highschool_rate), 1)
-          : null,
+        sanitizeScore(row.autonomy_highschool_rate),
         'inferred',
         '%'
       ),
       college_progression_rate: mv(
-        row.college_progression_rate != null
-          ? round(Number(row.college_progression_rate), 1)
-          : null,
-        'inferred',
+        officialCollegeRate ?? sanitizeScore(row.college_progression_rate),
+        officialCollegeRate !== null ? 'official' : 'inferred',
         '%'
       ),
     }
@@ -224,7 +350,14 @@ export async function GET(
       district_name: districtName,
       address: info?.address || '',
       location,
-      data_freshness: row.source_updated_at || new Date().toISOString(),
+      data_freshness:
+        metricRow?.source_updated_at ||
+        metricRow?.updated_at ||
+        row.source_updated_at ||
+        new Date().toISOString(),
+      official_reference_year: hasOfficialSchoolinfo
+        ? (metricRow?.metric_year ?? null)
+        : null,
       confidence_breakdown: {
         official_confidence: officialConf,
         inferred_confidence: inferredConf,

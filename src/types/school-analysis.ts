@@ -3,6 +3,7 @@ import type { QualityMeta } from './quality'
 export type MetricProvenance = 'official' | 'inferred'
 export type SchoolAnalysisMode = 'preview_only' | 'open'
 export type ApiErrorCode =
+  | 'insufficient_credits'
   | 'insufficient_official_data'
   | 'preview_only_mode'
   | 'report_not_found'
@@ -89,12 +90,36 @@ export interface SchoolDistrictSummary {
   confidence_score: number
   confidence_breakdown: ConfidenceBreakdown
   quality?: DistrictQuality
+  insights: SchoolDistrictInsights
 }
 
 export interface DistrictQuality {
   official_coverage_pct: number
   inferred_ratio_pct: number
   flags: QualityFlag[]
+}
+
+export type SchoolDistrictGrade = 'S' | 'A' | 'B' | 'C' | 'D'
+
+export interface SchoolLevelBreakdown {
+  elementary: number
+  middle: number
+  high: number
+  other: number
+}
+
+export interface SchoolDistrictInsights {
+  rank: number | null
+  grade: SchoolDistrictGrade
+  college_progression_rate: number | null
+  special_purpose_highschool_rate: number | null
+  autonomy_highschool_rate: number | null
+  school_level_breakdown: SchoolLevelBreakdown
+  academy_count: number | null
+  academy_avg_monthly_fee: number | null
+  college_progression_estimated: boolean
+  academy_fee_estimated: boolean
+  academy_fee_reliability: 'ok' | 'low'
 }
 
 export interface SchoolReadinessMeta {
@@ -141,6 +166,7 @@ export interface SchoolDetail {
     lng: number
   } | null
   data_freshness: string
+  official_reference_year?: number | null
   confidence_breakdown: ConfidenceBreakdown
   quality: SchoolQualityScore
   progression: ProgressionStats
