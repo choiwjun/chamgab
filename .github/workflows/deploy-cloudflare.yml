@@ -1,0 +1,56 @@
+name: Deploy to Cloudflare
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [cloudflare-deploy]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chamgab-cloudflare-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      NEXT_PUBLIC_KAKAO_MAP_KEY: ${{ secrets.NEXT_PUBLIC_KAKAO_MAP_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      ML_API_URL: ${{ secrets.ML_API_BASE_URL }}
+      NEXT_PUBLIC_ML_API_URL: ${{ secrets.ML_API_BASE_URL }}
+      ML_ADMIN_TOKEN: ${{ secrets.ML_ADMIN_TOKEN }}
+      UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
+      UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+      NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+      NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+      ADMIN_EMAILS: ${{ secrets.ADMIN_EMAILS }}
+      NEXT_PUBLIC_SITE_URL: https://chamgab.wj94128871.workers.dev
+      APP_BASE_URL: https://chamgab.wj94128871.workers.dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Validate and prepare runtime secrets
+        run: node scripts/cloudflare-env.mjs
+      - name: Build for Cloudflare Workers
+        run: npm run build:cloudflare
+      - name: Deploy Worker and encrypted secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CHAMGAB_CLOUDFLARE_DEPLOY_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ffd9a82c0fb9a5a7d9001eb7de25bef5
+        run: npx wrangler deploy --keep-vars --secrets-file .cloudflare-secrets.json
+      - name: Verify deployed homepage
+        run: curl --fail --silent --show-error --retry 5 --retry-delay 5 "$NEXT_PUBLIC_SITE_URL" --output /dev/null
+      - name: Remove temporary secrets file
+        if: always()
+        run: rm -f .cloudflare-secrets.json
