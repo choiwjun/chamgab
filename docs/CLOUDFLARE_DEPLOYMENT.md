@@ -1,42 +1,22 @@
-# Cloudflare deployment
+# Cloudflare deployment with Neon
 
-Production URL: https://chamgab.wj94128871.workers.dev
+Status: waiting for the target Neon project connection. The Supabase deployment
+was cancelled before upload, and its workflow and temporary deployment credential
+were removed. No Chamgab Worker has been deployed.
 
-The Next.js app runs on Cloudflare Workers through OpenNext. Supabase and the
-existing Python ML service remain external services. The ML service URL comes
-from the repository's existing `ML_API_BASE_URL` secret.
+Cloudflare build configuration is prepared in wrangler.jsonc and
+open-next.config.ts. The intended Worker name is chamgab.
 
-## Build and deploy
+A local environment file containing the target DATABASE_URL, or a local Neon API
+credential, is required before inspecting and configuring the Neon database.
+Never commit database credentials.
 
-Use Node.js 22 or newer. OpenNext 1.15.1 is pinned because this app uses Next.js 14.
+The app still contains its original Supabase database and authentication
+integration. Both need migration, including SQL authorization helpers, PostGIS,
+row-level policies, and the Python ML service database/storage integration. The
+Neon Data API and Auth SDK provide migration interfaces for the existing client
+APIs. Inspect the target project before choosing the final configuration.
 
-```sh
-npm ci
-npm run build:cloudflare
-npm run preview:cloudflare
-npx wrangler login
-npx wrangler deploy --keep-vars
-```
-
-Set the public Supabase URL, anon key, and Kakao map key in your local
-`.env.local` before building. Set server credentials as Worker secrets. Never
-commit `.env.local`, `.dev.vars`, or `.cloudflare-secrets.json`.
-
-## GitHub Actions
-
-`.github/workflows/deploy-cloudflare.yml` builds using the existing repository
-secrets and uploads runtime settings as encrypted Worker secrets. Pushes to
-`cloudflare-deploy` trigger deployment. A future automated deployment requires
-the `CLOUDFLARE_API_TOKEN` repository secret, with Worker deployment permissions
-for the account in `wrangler.jsonc`.
-
-The initial deployment can use a temporary
-`CHAMGAB_CLOUDFLARE_DEPLOY_TOKEN` secret. Remove it after that deployment.
-
-## Authentication and maps
-
-To enable social login on this URL, add
-`https://chamgab.wj94128871.workers.dev/auth/callback` to Supabase's redirect
-allowlist, and allow the new origin in the relevant provider console. Naver
-also needs its own callback URL and client credentials. Add the new origin to
-the Kakao JavaScript SDK's allowed domains for maps.
+Use Node.js 22 or newer. OpenNext 1.15.1 is pinned for Next.js 14 compatibility.
+The additional scripts are build:cloudflare, preview:cloudflare, and
+deploy:cloudflare. Do not deploy until the Neon migration is complete.
