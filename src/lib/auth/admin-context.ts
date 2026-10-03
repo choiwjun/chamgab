@@ -1,6 +1,6 @@
 import 'server-only'
 
-import { createClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/neon/server'
 import { isAdminEmail } from '@/lib/auth/admin'
 
 export type AdminRole = 'viewer' | 'admin' | 'super_admin'

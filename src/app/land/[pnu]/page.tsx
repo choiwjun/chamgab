@@ -1,7 +1,7 @@
 // @TASK Land Detail Page - Individual parcel view with transaction history
 export const dynamic = 'force-dynamic'
 
-import { createClient } from '@supabase/supabase-js'
+import { createDatabaseClient as createClient } from '@/lib/neon/database'
 import { notFound } from 'next/navigation'
 import { LandDetailClient } from '@/components/land/LandDetailClient'
 import type {
@@ -16,10 +16,7 @@ import { buildLandAnalysisSummary } from '@/lib/land/analysis'
 import { buildLandValuationSummaryWithMl } from '@/lib/land/valuation'
 
 function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-  )
+  return createClient()
 }
 
 async function fetchParcelByPnu(pnu: string): Promise<LandParcel | null> {

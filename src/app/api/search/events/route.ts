@@ -3,15 +3,12 @@
 
 export const dynamic = 'force-dynamic'
 
-import { createClient } from '@supabase/supabase-js'
+import { createDatabaseClient as createClient } from '@/lib/neon/database'
 import { NextRequest, NextResponse } from 'next/server'
 import { sanitizeFilterInput } from '@/lib/sanitize'
 
 function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-  )
+  return createClient()
 }
 
 type EventType = 'autocomplete_select' | 'search_submit'

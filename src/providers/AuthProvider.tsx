@@ -14,8 +14,8 @@ import {
   useRef,
   type ReactNode,
 } from 'react'
-import { createClient } from '@/lib/supabase/client'
-import type { User, AuthChangeEvent, Session } from '@supabase/supabase-js'
+import { createClient } from '@/lib/neon/client'
+import type { User, AuthChangeEvent, Session } from '@/lib/neon/types'
 import type { AuthContextType, UserProfile } from '@/types/auth'
 
 // Auth Context 생성

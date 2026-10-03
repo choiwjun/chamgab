@@ -3,7 +3,7 @@ export const runtime = 'nodejs'
 
 import { NextResponse } from 'next/server'
 import { requireApiUser } from '@/app/api/_auth'
-import { createClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/neon/server'
 import type { SchoolAnalysisReport } from '@/types/school-analysis'
 import { getSchoolAnalysisMode, schoolApiError } from '../../_helpers'
 

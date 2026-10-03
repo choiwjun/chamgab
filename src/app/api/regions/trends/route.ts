@@ -2,7 +2,7 @@
 // @SPEC specs/domain/resources.yaml#regions
 // @SPEC docs/planning/04-database-design.md#regions-api
 
-import { createClient } from '@supabase/supabase-js'
+import { createDatabaseClient as createClient } from '@/lib/neon/database'
 import { NextRequest, NextResponse } from 'next/server'
 
 // 동적 렌더링 강제 (searchParams 사용)
@@ -10,10 +10,7 @@ export const dynamic = 'force-dynamic'
 import type { RegionTrend } from '@/types/region'
 
 function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-  )
+  return createClient()
 }
 
 /**

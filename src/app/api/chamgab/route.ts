@@ -5,8 +5,8 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { createClient } from '@/lib/neon/server'
+import { createAdminClient } from '@/lib/neon/admin'
 import { buildChamgabQuality, deriveChamgabQualityMeta } from './_quality'
 import {
   CreditConsumeError,

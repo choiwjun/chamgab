@@ -1,7 +1,7 @@
 // @TASK P1-R1 - Auth 타입 정의
 // @SPEC specs/domain/resources.yaml#users
 
-import type { User } from '@supabase/supabase-js'
+import type { User } from '@/lib/neon/types'
 
 /**
  * 사용자 티어

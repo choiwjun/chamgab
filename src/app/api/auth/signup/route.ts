@@ -3,7 +3,7 @@
 // @SPEC specs/screens/auth-login.yaml
 
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/neon/server'
 import { signupSchema } from '@/lib/validations/auth'
 import type { AuthErrorResponse, AuthSuccessResponse } from '@/types/auth'
 

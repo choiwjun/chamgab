@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
+import type { DatabaseClient as SupabaseClient } from '@/lib/neon/database'
 
 export type ChamgabGapBand = 'safe' | 'watch' | 'severe' | 'unknown'
 export type ChamgabQualityFlag =

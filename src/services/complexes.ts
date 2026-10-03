@@ -1,13 +1,10 @@
 // @TASK P2-R0-T1 - Complexes ?쒕퉬???덉씠??// @SPEC specs/domain/resources.yaml#complexes
 
-import { createClient } from '@supabase/supabase-js'
+import { createDatabaseClient as createClient } from '@/lib/neon/database'
 import type { Complex, ComplexSearchParams } from '@/types/complex'
 import { buildSearchTerms, sanitizeFilterInput } from '@/lib/sanitize'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-)
+const supabase = createClient()
 
 export interface ComplexListResult {
   items: Complex[]

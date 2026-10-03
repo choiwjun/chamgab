@@ -5,17 +5,14 @@ export const dynamic = 'force-dynamic'
 
 import { Metadata } from 'next'
 import { notFound } from 'next/navigation'
-import { createClient } from '@supabase/supabase-js'
+import { createDatabaseClient as createClient } from '@/lib/neon/database'
 import { PropertyDetailClient } from './PropertyDetailClient'
 import {
   BreadcrumbJsonLd,
   RealEstateListingJsonLd,
 } from '@/components/seo/JsonLd'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-)
+const supabase = createClient()
 
 interface Props {
   params: Promise<{ id: string }>

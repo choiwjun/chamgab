@@ -5,15 +5,12 @@
 // 동적 렌더링 강제 (Supabase 사용)
 export const dynamic = 'force-dynamic'
 
-import { createClient } from '@supabase/supabase-js'
+import { createDatabaseClient as createClient } from '@/lib/neon/database'
 import { NextRequest, NextResponse } from 'next/server'
 import type { RegionWithChildren } from '@/types/region'
 
 function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-  )
+  return createClient()
 }
 
 /**

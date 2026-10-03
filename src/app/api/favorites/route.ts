@@ -3,7 +3,7 @@
 // 동적 렌더링 강제 (Supabase 사용)
 export const dynamic = 'force-dynamic'
 
-import { createClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/neon/server'
 import { NextRequest, NextResponse } from 'next/server'
 
 /**

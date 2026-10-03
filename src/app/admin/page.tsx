@@ -1,6 +1,6 @@
 export const dynamic = 'force-dynamic'
 
-import { createAdminClient } from '@/lib/supabase/admin'
+import { createAdminClient } from '@/lib/neon/admin'
 
 export default async function AdminDashboardPage() {
   const admin = createAdminClient()

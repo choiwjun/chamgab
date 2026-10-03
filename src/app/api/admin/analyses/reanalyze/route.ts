@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { createAdminClient } from '@/lib/neon/admin'
 import { auditLog, requireAdmin } from '../../_utils'
 
 const ML_API_URL = process.env.ML_API_URL || 'http://localhost:8000'

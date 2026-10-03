@@ -7,7 +7,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Eye, EyeOff, Loader2, Check, X, ExternalLink } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
+import { createClient } from '@/lib/neon/client'
 
 // 회원가입 스키마
 const signupSchema = z
@@ -139,6 +139,11 @@ export function SignupForm() {
       }
 
       if (authData.user) {
+        if (authData.session) {
+          router.push('/')
+          router.refresh()
+          return
+        }
         // 이메일 인증 안내 페이지로 이동
         router.push(
           ('/auth/verify-email?email=' +

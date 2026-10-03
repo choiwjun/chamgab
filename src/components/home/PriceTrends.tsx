@@ -1,16 +1,13 @@
 // @TASK P2-S1-T3 - 가격 트렌드 섹션
 // @SPEC specs/screens/home.yaml#price_trends
 
-import { createClient } from '@supabase/supabase-js'
+import { createDatabaseClient as createClient } from '@/lib/neon/database'
 import { PriceTrendsClient } from './PriceTrendsClient'
 import type { RegionTrend } from '@/types/region'
 
 async function fetchTrends(limit = 6): Promise<RegionTrend[]> {
   try {
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-    )
+    const supabase = createClient()
 
     const { data, error } = await supabase
       .from('regions')

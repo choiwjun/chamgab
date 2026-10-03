@@ -1,7 +1,7 @@
 // @TASK P2-S1-T4 - 인기 매물 섹션
 // @SPEC specs/screens/home.yaml#popular_properties
 
-import { createClient } from '@supabase/supabase-js'
+import { createDatabaseClient as createClient } from '@/lib/neon/database'
 import { PopularPropertiesClient } from './PopularPropertiesClient'
 import type { Property } from '@/types/property'
 import { REGION_COORDS } from '@/lib/region-coords'
@@ -28,10 +28,7 @@ function parseWKBPoint(wkb: string): { lat: number; lng: number } | null {
 
 async function fetchPopularProperties(limit = 10): Promise<Property[]> {
   try {
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-    )
+    const supabase = createClient()
 
     const { data, error } = await supabase
       .from('properties')

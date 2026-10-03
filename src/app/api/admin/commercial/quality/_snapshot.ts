@@ -1,4 +1,4 @@
-import { createAdminClient } from '@/lib/supabase/admin'
+import { createAdminClient } from '@/lib/neon/admin'
 import { FACTOR_NAME_MAP, INDUSTRY_NAMES } from '@/app/api/commercial/_helpers'
 
 type AnyRow = Record<string, unknown>

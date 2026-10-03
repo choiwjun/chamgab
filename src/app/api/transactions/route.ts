@@ -1,15 +1,12 @@
 // @TASK P3-R3-T2 - Transactions API
-import { createClient } from '@supabase/supabase-js'
+import { createDatabaseClient as createClient } from '@/lib/neon/database'
 import { NextRequest, NextResponse } from 'next/server'
 
 // 동적 렌더링 강제 (searchParams 사용)
 export const dynamic = 'force-dynamic'
 
 function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-  )
+  return createClient()
 }
 
 function parseArea(value: unknown): number | null {

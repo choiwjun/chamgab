@@ -11,7 +11,7 @@ import type {
   SchoolLevel,
   SchoolQualityScore,
 } from '@/types/school-analysis'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { createAdminClient } from '@/lib/neon/admin'
 import { getSchoolAnalysisMode, schoolApiError } from '../../_helpers'
 
 function mv(

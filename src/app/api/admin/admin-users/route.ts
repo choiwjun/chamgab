@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { createAdminClient } from '@/lib/neon/admin'
 import { auditLog, requireAdmin } from '../_utils'
 
 export async function GET(req: NextRequest) {

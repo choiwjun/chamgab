@@ -4,7 +4,7 @@ export const runtime = 'nodejs'
 import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireApiUser } from '@/app/api/_auth'
-import { createClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/neon/server'
 import {
   CreditConsumeError,
   consumeCredits,
@@ -23,7 +23,7 @@ import type {
   SchoolOverview,
   SchoolQualityScore,
 } from '@/types/school-analysis'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { createAdminClient } from '@/lib/neon/admin'
 import {
   createRequestHash,
   getSchoolAnalysisMode,

@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { readFile } from 'fs/promises'
 import path from 'path'
 import { requireAdmin } from '../../_utils'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { createAdminClient } from '@/lib/neon/admin'
 import {
   evaluateCommercialSnapshotGate,
   getLatestCommercialQualitySnapshot,

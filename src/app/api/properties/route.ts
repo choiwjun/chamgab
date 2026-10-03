@@ -5,16 +5,13 @@
 // ?숈쟻 ?뚮뜑留?媛뺤젣 (Supabase ?ъ슜)
 export const dynamic = 'force-dynamic'
 
-import { createClient } from '@supabase/supabase-js'
+import { createDatabaseClient as createClient } from '@/lib/neon/database'
 import { NextRequest, NextResponse } from 'next/server'
 import { REGION_COORDS, expandCityToDistricts } from '@/lib/region-coords'
 import { buildSearchTerms, sanitizeFilterInput } from '@/lib/sanitize'
 
 function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-  )
+  return createClient()
 }
 
 interface RegionFilters {

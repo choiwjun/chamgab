@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import type { SchoolAnalysisReport } from '@/types/school-analysis'
-import { createClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/neon/server'
 
 function isTokenShapeValid(token: string): boolean {
   const trimmed = token.trim()

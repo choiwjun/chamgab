@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/neon/server'
 
 type ApiAuthOk = { userId: string }
 type ApiAuthFailed = { response: NextResponse }

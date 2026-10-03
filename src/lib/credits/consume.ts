@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
+import type { DatabaseClient as SupabaseClient } from '@/lib/neon/database'
 import { getCreditCost, type CreditProduct } from './cost'
 
 type ConsumeCreditsRpcRow = {

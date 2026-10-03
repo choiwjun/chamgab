@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { requireApiUser } from '@/app/api/_auth'
-import { createClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/neon/server'
 import {
   CreditConsumeError,
   consumeCredits,

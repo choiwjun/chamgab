@@ -1,7 +1,7 @@
 // @TASK P1-R1-T1 - OAuth 콜백 라우트
 // @SPEC specs/screens/auth-login.yaml#connections
 
-import { createClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/neon/server'
 import { NextResponse } from 'next/server'
 
 /**
@@ -15,7 +15,6 @@ export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
 
   // OAuth 인증 코드
-  const code = searchParams.get('code')
 
   // 원래 리다이렉트 경로 (Open Redirect 방지: 내부 경로만 허용)
   const raw = searchParams.get('next') ?? searchParams.get('redirect') ?? '/'
@@ -35,23 +34,10 @@ export async function GET(request: Request) {
     )
   }
 
-  if (code) {
-    try {
-      const supabase = await createClient()
-
-      // 코드로 세션 교환
-      const { error: exchangeError } =
-        await supabase.auth.exchangeCodeForSession(code)
-
-      if (!exchangeError) {
-        // 인증 성공 - 원래 경로로 리다이렉트
-        return NextResponse.redirect(`${origin}${next}`)
-      }
-
-      console.error('Session exchange error:', exchangeError)
-    } catch (err) {
-      console.error('Callback error:', err)
-    }
+  const client = await createClient()
+  const { data, error: sessionError } = await client.auth.getUser()
+  if (!sessionError && data.user) {
+    return NextResponse.redirect(`${origin}${next}`)
   }
 
   // 인증 실패 - 로그인 페이지로 리다이렉트 (에러 메시지 포함)

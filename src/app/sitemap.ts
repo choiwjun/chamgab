@@ -1,14 +1,11 @@
 import { MetadataRoute } from 'next'
-import { createClient } from '@supabase/supabase-js'
+import { createDatabaseClient as createClient } from '@/lib/neon/database'
 
 const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL || 'https://chamgab.vercel.app'
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-  )
+  const supabase = createClient()
 
   // 정적 페이지
   const staticPages: MetadataRoute.Sitemap = [

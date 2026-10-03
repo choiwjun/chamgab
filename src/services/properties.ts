@@ -2,7 +2,7 @@
 // @SPEC docs/planning/04-database-design.md#properties-table
 // @SPEC specs/domain/resources.yaml#properties
 
-import { createClient } from '@supabase/supabase-js'
+import { createDatabaseClient as createClient } from '@/lib/neon/database'
 import type {
   Property,
   PropertyQueryParams,
@@ -11,10 +11,7 @@ import type {
 } from '@/types/property'
 import { sanitizeFilterInput } from '@/lib/sanitize'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-)
+const supabase = createClient()
 
 /**
  * Properties 서비스

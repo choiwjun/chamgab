@@ -2,7 +2,7 @@
 // @SPEC specs/domain/resources.yaml#users
 // @SPEC .claude/constitutions/supabase/auth-integration.md
 
-import { createServerClient, type CookieOptions } from '@supabase/ssr'
+import { createRequestAuth } from '@/lib/neon/request-auth'
 import { NextResponse, type NextRequest } from 'next/server'
 
 const AUTH_REQUEST_TIMEOUT_MS = 8000
@@ -203,46 +203,22 @@ export async function middleware(request: NextRequest) {
     },
   })
 
-  // Supabase 서버 클라이언트 생성 (쿠키 갱신)
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies
-            .getAll()
-            .map((c) => ({ name: c.name, value: c.value }))
-        },
-        setAll(
-          cookiesToSet: {
-            name: string
-            value: string
-            options: CookieOptions
-          }[]
-        ) {
-          // Important: apply all cookie mutations to a single response instance.
-          response = NextResponse.next({
-            request: { headers: request.headers },
-          })
-          for (const { name, value, options } of cookiesToSet) {
-            request.cookies.set({ name, value, ...options })
-            response.cookies.set({ name, value, ...options })
-          }
-        },
-      },
-    }
-  )
-
-  // Session lookup with timeout to prevent route hangs.
-  const {
-    data: { session },
-  } = await withTimeout(
-    supabase.auth.getSession(),
-    { data: { session: null }, error: null },
+  const neonAuth = createRequestAuth({
+    getCookies: () => request.cookies.toString(),
+    getHeader: (name) => request.headers.get(name),
+    getOrigin: () => request.nextUrl.origin,
+    getFramework: () => 'nextjs',
+    setCookie(name, value, options) {
+      request.cookies.set(name, value)
+      response.cookies.set(name, value, options)
+    },
+  })
+  const sessionResult = await withTimeout(
+    neonAuth.getSession(),
+    { data: null, error: null },
     'getSession'
   )
-  const user = session?.user ?? null
+  const user = sessionResult.data?.user ?? null
 
   // 보호된 라우트 접근 제어
   const isAuthRoute = AUTH_ROUTES.some((route) => isRouteMatch(pathname, route))

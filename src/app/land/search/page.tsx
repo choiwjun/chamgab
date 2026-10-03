@@ -1,6 +1,6 @@
 export const dynamic = 'force-dynamic'
 
-import { createClient } from '@supabase/supabase-js'
+import { createDatabaseClient as createClient } from '@/lib/neon/database'
 import { LandHeroSection } from '@/components/land/LandHeroSection'
 import { LandRecentTransactions } from '@/components/land/LandRecentTransactions'
 import { buildSearchTerms, normalizeSearchQuery } from '@/lib/sanitize'
@@ -26,10 +26,7 @@ const TRANSACTION_SELECT_COLUMNS = `
 `
 
 function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-  )
+  return createClient()
 }
 
 function pickFirst(value: string | string[] | undefined): string | undefined {

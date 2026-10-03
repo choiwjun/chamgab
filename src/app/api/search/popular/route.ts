@@ -1,7 +1,7 @@
 // @TASK P2-R3-T1 - 인기 검색어 API
 // @SPEC specs/domain/resources.yaml#popular_searches
 
-import { createClient } from '@supabase/supabase-js'
+import { createDatabaseClient as createClient } from '@/lib/neon/database'
 import { NextRequest, NextResponse } from 'next/server'
 import type {
   PopularSearch,
@@ -13,10 +13,7 @@ import type {
 export const dynamic = 'force-dynamic'
 
 function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-  )
+  return createClient()
 }
 
 /**

@@ -7,7 +7,7 @@ import type {
   SchoolDistrictSummary,
   SchoolPreviewResponse,
 } from '@/types/school-analysis'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { createAdminClient } from '@/lib/neon/admin'
 import { getSchoolAnalysisMode, schoolApiError } from '../_helpers'
 
 function asNumber(value: unknown, fallback = 0): number {

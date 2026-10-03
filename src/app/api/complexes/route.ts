@@ -1,7 +1,7 @@
 // @TASK P2-R0-T1 - Complexes API - 목록 조회
 // @SPEC specs/domain/resources.yaml#complexes
 
-import { createClient } from '@supabase/supabase-js'
+import { createDatabaseClient as createClient } from '@/lib/neon/database'
 import { NextRequest, NextResponse } from 'next/server'
 
 // 동적 렌더링 강제 (searchParams 사용)
@@ -11,10 +11,7 @@ import { REGION_COORDS } from '@/lib/region-coords'
 import { buildSearchTerms, sanitizeFilterInput } from '@/lib/sanitize'
 
 function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-  )
+  return createClient()
 }
 
 interface RegionFilters {

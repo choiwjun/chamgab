@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '../../_utils'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { createAdminClient } from '@/lib/neon/admin'
 
 function monthsSince(yyyymm: string): number | null {
   if (!/^\d{6}$/.test(yyyymm)) return null

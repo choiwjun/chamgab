@@ -3,10 +3,11 @@
   "name": "chamgab",
   "account_id": "ffd9a82c0fb9a5a7d9001eb7de25bef5",
   "main": ".open-next/worker.js",
-  "compatibility_date": "2026-10-03",
+  "compatibility_date": "2026-10-02",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "workers_dev": true,
   "minify": true,
+  "keep_names": false,
   "keep_vars": true,
   "assets": {
     "directory": ".open-next/assets",

@@ -1,8 +1,9 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { createAdminClient } from '@/lib/neon/admin'
 import { auditLog, requireAdmin } from '../../_utils'
+import { neon } from '@neondatabase/serverless'
 
 export async function POST(req: NextRequest) {
   const gate = await requireAdmin(req)
@@ -25,6 +26,12 @@ export async function POST(req: NextRequest) {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
+
+    const sql = neon(process.env.DATABASE_URL!)
+    await sql`DELETE FROM neon_auth.session WHERE "userId"=${userId}::uuid`
+    // The compatibility adapter maps updatedAt to last_sign_in_at. Advance
+    // it so subsequent sign-ins are newer than the revoked-session marker.
+    await sql`UPDATE neon_auth."user" SET "updatedAt"=now() WHERE id=${userId}::uuid`
 
     await auditLog({
       actorUserId: gate.userId,

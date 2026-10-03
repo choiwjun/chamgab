@@ -1,9 +1,9 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { createDatabaseClient as createSupabaseClient } from '@/lib/neon/database'
 import { requireApiUser } from '@/app/api/_auth'
-import { createClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/neon/server'
 import {
   CreditConsumeError,
   consumeCredits,
@@ -21,10 +21,7 @@ type QualityGateStatus = 'pass' | 'warn' | 'fail'
 type QualityGrade = 'A' | 'B' | 'C' | 'D'
 
 function getSupabase() {
-  return createSupabaseClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-  )
+  return createSupabaseClient()
 }
 
 async function fetchParcelByPnu(pnu: string): Promise<LandParcel | null> {

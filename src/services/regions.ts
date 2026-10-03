@@ -2,13 +2,10 @@
 // @SPEC docs/planning/04-database-design.md#regions-table
 // @SPEC specs/domain/resources.yaml#regions
 
-import { createClient } from '@supabase/supabase-js'
+import { createDatabaseClient as createClient } from '@/lib/neon/database'
 import type { Region, RegionWithChildren, RegionTrend, RegionQueryParams } from '@/types/region'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-)
+const supabase = createClient()
 
 /**
  * Regions 서비스

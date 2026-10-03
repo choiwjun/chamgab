@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import type { SupabaseClient } from '@supabase/supabase-js'
+import type { DatabaseClient as SupabaseClient } from '@/lib/neon/database'
 import {
   INDUSTRY_NAMES,
   fetchBusinessStats,

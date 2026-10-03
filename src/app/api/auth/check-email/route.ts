@@ -2,7 +2,7 @@
 // @SPEC specs/domain/resources.yaml#users
 
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/neon/admin'
 import { checkEmailSchema } from '@/lib/validations/auth'
 import type { AuthErrorResponse, CheckEmailResponse } from '@/types/auth'
 
@@ -36,7 +36,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const supabase = await createClient()
+    const supabase = createAdminClient()
 
     const { data, error } = await supabase
       .from('user_profiles')
@@ -94,7 +94,7 @@ export async function POST(request: Request) {
 
     // Supabase에서 이메일 존재 여부 확인
     // 참고: auth.users 테이블은 직접 조회 불가, user_profiles 사용
-    const supabase = await createClient()
+    const supabase = createAdminClient()
 
     const { data, error } = await supabase
       .from('user_profiles')

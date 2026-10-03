@@ -4,7 +4,7 @@ export const runtime = 'nodejs'
 import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireApiUser } from '@/app/api/_auth'
-import { createClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/neon/server'
 import { getSchoolAnalysisMode, schoolApiError } from '../../../_helpers'
 
 const UUID_REGEX =
